@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from solana.rpc.api import Client
 from solders.transaction import Transaction
 from solders.keypair import Keypair
-from solders.system_program import ID as SYS_PROGRAM_ID
+from solders.system_program import ID as SYS_PROGRAM_ID, create_account
 from solders.pubkey import Pubkey
 from solders.instruction import Instruction, AccountMeta
 from solders.compute_budget import set_compute_unit_limit, set_compute_unit_price
@@ -131,40 +131,13 @@ async def create_prompt_account(prompt: str) -> tuple[Pubkey, Transaction]:
         # Get minimum rent
         rent = await get_minimum_rent()
         
-        # Create account instruction
-        create_account_ix = Instruction(
-            program_id=SYS_PROGRAM_ID,
-            data=bytes([0]),  # Create account instruction
-            accounts=[
-                AccountMeta(
-                    pubkey=account_keypair.pubkey(),
-                    is_signer=True,
-                    is_writable=True
-                ),
-                AccountMeta(
-                    pubkey=PROGRAM_ID,
-                    is_signer=False,
-                    is_writable=False
-                ),
-            ],
-        )
-        
-        # Create transfer instruction to fund the account
-        transfer_ix = Instruction(
-            program_id=SYS_PROGRAM_ID,
-            data=bytes([2]) + rent.to_bytes(8, 'little'),  # Transfer instruction with amount
-            accounts=[
-                AccountMeta(
-                    pubkey=payer_keypair.pubkey(),  # From account (payer)
-                    is_signer=True,
-                    is_writable=True
-                ),
-                AccountMeta(
-                    pubkey=account_keypair.pubkey(),  # To account (new account)
-                    is_signer=False,
-                    is_writable=True
-                ),
-            ],
+        # Create account instruction using the helper
+        create_account_ix = create_account(
+            from_pubkey=payer_keypair.pubkey(),
+            to_pubkey=account_keypair.pubkey(),
+            lamports=rent,
+            space=ACCOUNT_SIZE,
+            owner=PROGRAM_ID
         )
         
         # Create compute budget instructions
@@ -176,7 +149,7 @@ async def create_prompt_account(prompt: str) -> tuple[Pubkey, Transaction]:
         
         # Create transaction
         transaction = Transaction.new_with_payer(
-            instructions=[compute_limit_ix, compute_price_ix, transfer_ix, create_account_ix],
+            instructions=[compute_limit_ix, compute_price_ix, create_account_ix],
             payer=payer_keypair.pubkey()
         )
         
