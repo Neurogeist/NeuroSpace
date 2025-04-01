@@ -18,13 +18,6 @@ import uuid
 import asyncio
 from datetime import datetime
 import logging
-import borsh_construct as borsh
-from .solana_utils import (
-    create_prompt_account,
-    create_submit_prompt_instruction,
-    submit_transaction,
-    Keypair
-)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -77,25 +70,6 @@ class PromptResponse(BaseModel):
     response: Optional[str]
     is_processed: bool
     account_address: Optional[str]
-    transaction_signature: Optional[str]
-
-def serialize_instruction(prompt: str) -> bytes:
-    """Serialize the instruction data using Borsh."""
-    try:
-        # Create a buffer for the serialized data
-        buffer = bytearray()
-        
-        # Write the variant (0 for SubmitPrompt)
-        buffer.extend(borsh.U8.build(0))
-        
-        # Write the string length and string data
-        prompt_bytes = prompt.encode('utf-8')
-        buffer.extend(borsh.U32.build(len(prompt_bytes)))
-        buffer.extend(prompt_bytes)
-        
-        return bytes(buffer)
-    except Exception as e:
-        raise Exception(f"Error serializing instruction: {str(e)}")
 
 async def get_minimum_rent() -> int:
     """Get the minimum rent for an account of our size."""
@@ -107,15 +81,15 @@ async def get_minimum_rent() -> int:
         logger.error(f"Error getting minimum rent: {str(e)}")
         raise
 
-async def create_prompt_account(prompt: str) -> tuple[Pubkey, list[Instruction], Keypair]:
-    """Create a new account for storing the prompt, returning instructions and keypair."""
+async def create_prompt_account(prompt: str) -> tuple[Pubkey, Transaction]:
+    """Create a new account for storing the prompt."""
     try:
         # Generate a new keypair for the account
         account_keypair = Keypair()
-
+        
         # Get minimum rent
         rent = await get_minimum_rent()
-
+        
         # Create account instruction
         create_account_ix = Instruction(
             program_id=SYS_PROGRAM_ID,
@@ -133,27 +107,40 @@ async def create_prompt_account(prompt: str) -> tuple[Pubkey, list[Instruction],
                 ),
             ],
         )
-
+        
         # Create compute budget instructions
-        compute_limit_ix = set_compute_unit_limit(200_000)
-        compute_price_ix = set_compute_unit_price(1)
-
-        # Return the instructions and keypair
-        return account_keypair.pubkey(), [compute_limit_ix, compute_price_ix, create_account_ix], account_keypair
+        compute_limit_ix = set_compute_unit_limit(200_000)  # Adjust based on needs
+        compute_price_ix = set_compute_unit_price(1)  # Minimum priority fee
+        
+        # Create transaction
+        transaction = Transaction.new_with_payer(
+            instructions=[
+                compute_limit_ix,
+                compute_price_ix,
+                create_account_ix
+            ],
+            payer=account_keypair.pubkey(),
+        )
+        
+        # TODO: Add token transfer for payment
+        
+        return account_keypair.pubkey(), transaction
     except Exception as e:
         logger.error(f"Error creating prompt account: {str(e)}")
         raise
 
-def create_submit_prompt_instruction(prompt: str, account_pubkey: Pubkey) -> Instruction:
-    """Create a SubmitPrompt instruction."""
+async def submit_prompt_to_chain(prompt: str, account_pubkey: Pubkey) -> str:
+    """Submit prompt to the Solana program."""
     try:
-        # Serialize the instruction data
-        serialized_data = serialize_instruction(prompt)
-
-        # Create the instruction
-        return Instruction(
+        # Create instruction to submit prompt
+        prompt_data = json.dumps({
+            "prompt": prompt,
+            "timestamp": datetime.utcnow().isoformat()
+        }).encode()
+        
+        submit_prompt_ix = Instruction(
             program_id=PROGRAM_ID,
-            data=serialized_data,
+            data=prompt_data,
             accounts=[
                 AccountMeta(
                     pubkey=account_pubkey,
@@ -162,70 +149,58 @@ def create_submit_prompt_instruction(prompt: str, account_pubkey: Pubkey) -> Ins
                 ),
             ],
         )
-    except Exception as e:
-        logger.error(f"Error creating submit prompt instruction: {str(e)}")
-        raise
-
-async def submit_transaction(transaction: Transaction, keypair: Keypair) -> str:
-    """Submit a transaction to the Solana network."""
-    try:
-        # Sign the transaction
-        transaction.sign([keypair])
         
-        # Send the transaction
-        result = solana_client.send_transaction(transaction)
+        # Create compute budget instructions
+        compute_limit_ix = set_compute_unit_limit(200_000)
+        compute_price_ix = set_compute_unit_price(1)
         
-        if result.value.err:
-            raise Exception(f"Transaction failed: {result.value.err}")
-            
-        return str(result.value)
+        # Create and send transaction
+        transaction = Transaction.new_with_payer(
+            instructions=[
+                compute_limit_ix,
+                compute_price_ix,
+                submit_prompt_ix
+            ],
+            payer=account_pubkey,
+        )
+        
+        # TODO: Sign and send transaction
+        # For now, return the account address
+        return str(account_pubkey)
     except Exception as e:
-        logger.error(f"Error submitting transaction: {str(e)}")
+        logger.error(f"Error submitting prompt to chain: {str(e)}")
         raise
 
 @app.post("/prompts", response_model=PromptResponse)
 async def submit_prompt(request: PromptRequest, background_tasks: BackgroundTasks):
     try:
         # Create new account for the prompt
-        account_pubkey, create_account_instructions, account_keypair = await create_prompt_account(request.prompt)
-
-        # Create the submit prompt instruction
-        submit_prompt_ix = create_submit_prompt_instruction(request.prompt, account_pubkey)
-
-        # Get recent blockhash
-        recent_blockhash = solana_client.get_latest_blockhash().value.blockhash
-
-        # Create a new transaction with all instructions
-        transaction = Transaction.new_with_payer(
-            instructions=create_account_instructions + [submit_prompt_ix],
-            payer=account_pubkey
-        )
-
-        # Set the blockhash
-        transaction.set_blockhash(recent_blockhash)
-
+        account_pubkey, transaction = await create_prompt_account(request.prompt)
+        
+        # Submit prompt to chain
+        account_address = await submit_prompt_to_chain(request.prompt, account_pubkey)
+        
         # Generate a unique ID for tracking
         prompt_id = str(uuid.uuid4())
-
+        
         # Store the prompt in memory
         prompts[prompt_id] = {
             "prompt": request.prompt,
             "response": None,
             "is_processed": False,
-            "account_address": str(account_pubkey),
+            "account_address": account_address,
             "created_at": datetime.utcnow().isoformat()
         }
-
-        # Submit the transaction
-        transaction_signature = await submit_transaction(transaction, account_keypair)
-
+        
+        # Add to background tasks for processing
+        background_tasks.add_task(process_prompt_background, prompt_id)
+        
         return PromptResponse(
             prompt_id=prompt_id,
             prompt=request.prompt,
             response=None,
             is_processed=False,
-            account_address=str(account_pubkey),
-            transaction_signature=transaction_signature
+            account_address=account_address
         )
     except Exception as e:
         logger.error(f"Error in submit_prompt: {str(e)}")
@@ -237,7 +212,7 @@ async def get_prompt(prompt_id: str):
     try:
         if prompt_id not in prompts:
             raise HTTPException(status_code=404, detail="Prompt not found")
-
+            
         prompt_data = prompts[prompt_id]
         return PromptResponse(
             prompt_id=prompt_id,
@@ -255,29 +230,29 @@ async def process_prompt_background(prompt_id: str):
     try:
         if prompt_id not in prompts:
             return
-
+            
         prompt_data = prompts[prompt_id]
         if prompt_data["is_processed"]:
             return
-
+            
         # Process the prompt
         response = await process_prompt(prompt_data["prompt"])
-
+        
         # TODO: Calculate hash of model, prompt, and response
         # hash_data = calculate_hash(model, prompt_data["prompt"], response)
-
+        
         # Submit response to chain
         await submit_response_to_chain(
             prompt_data["account_address"],
             response,
             # hash_data
         )
-
+        
         # Update local state
         prompts[prompt_id]["response"] = response
         prompts[prompt_id]["is_processed"] = True
         prompts[prompt_id]["processed_at"] = datetime.utcnow().isoformat()
-
+        
     except Exception as e:
         logger.error(f"Error processing prompt {prompt_id}: {str(e)}")
         prompts[prompt_id]["error"] = str(e)
