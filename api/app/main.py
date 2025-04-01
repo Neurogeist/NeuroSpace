@@ -34,6 +34,11 @@ solana_client = Client(os.getenv("SOLANA_RPC_URL", "http://localhost:8899"))
 # Load program ID from environment or use a default
 PROGRAM_ID = Pubkey.from_string(os.getenv("PROGRAM_ID", "EYRgrzQXVT5m2WENS9FtFuq3rS8nFkba9Rs6pkuXcFri"))
 
+# Load payer public key
+PAYER_PUBKEY = os.getenv("PAYER_PUBKEY")
+if not PAYER_PUBKEY:
+    raise ValueError("PAYER_PUBKEY environment variable is not set. Please set it in your .env file.")
+
 # Constants for account sizing
 DISCRIMINATOR_SIZE = 8  # Size of the account discriminator
 PUBKEY_SIZE = 32  # Size of a public key
@@ -81,11 +86,47 @@ async def get_minimum_rent() -> int:
         logger.error(f"Error getting minimum rent: {str(e)}")
         raise
 
+async def submit_transaction(transaction: Transaction) -> str:
+    """Submit a transaction to the Solana network.
+    
+    Args:
+        transaction: The transaction to submit
+        
+    Returns:
+        str: The transaction signature
+        
+    Raises:
+        HTTPException: If the transaction fails to submit
+    """
+    try:
+        # Submit the transaction
+        result = solana_client.send_transaction(transaction)
+        
+        if result.value.err:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Transaction failed: {result.value.err}"
+            )
+            
+        return result.value
+    except Exception as e:
+        logger.error(f"Error submitting transaction: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to submit transaction: {str(e)}"
+        )
+
 async def create_prompt_account(prompt: str) -> tuple[Pubkey, Transaction]:
     """Create a new account for storing the prompt."""
     try:
         # Generate a new keypair for the account
         account_keypair = Keypair()
+        
+        # Load the payer keypair from environment
+        payer_private_key = os.getenv("PAYER_PRIVATE_KEY")
+        if not payer_private_key:
+            raise ValueError("PAYER_PRIVATE_KEY environment variable is not set")
+        payer_keypair = Keypair.from_bytes(base58.b58decode(payer_private_key))
         
         # Get minimum rent
         rent = await get_minimum_rent()
@@ -108,21 +149,41 @@ async def create_prompt_account(prompt: str) -> tuple[Pubkey, Transaction]:
             ],
         )
         
+        # Create transfer instruction to fund the account
+        transfer_ix = Instruction(
+            program_id=SYS_PROGRAM_ID,
+            data=bytes([2]) + rent.to_bytes(8, 'little'),  # Transfer instruction with amount
+            accounts=[
+                AccountMeta(
+                    pubkey=payer_keypair.pubkey(),  # From account (payer)
+                    is_signer=True,
+                    is_writable=True
+                ),
+                AccountMeta(
+                    pubkey=account_keypair.pubkey(),  # To account (new account)
+                    is_signer=False,
+                    is_writable=True
+                ),
+            ],
+        )
+        
         # Create compute budget instructions
         compute_limit_ix = set_compute_unit_limit(200_000)  # Adjust based on needs
         compute_price_ix = set_compute_unit_price(1)  # Minimum priority fee
         
+        # Get recent blockhash
+        recent_blockhash = solana_client.get_latest_blockhash().value.blockhash
+        
         # Create transaction
         transaction = Transaction.new_with_payer(
-            instructions=[
-                compute_limit_ix,
-                compute_price_ix,
-                create_account_ix
-            ],
-            payer=account_keypair.pubkey(),
+            instructions=[compute_limit_ix, compute_price_ix, transfer_ix, create_account_ix],
+            payer=payer_keypair.pubkey()
         )
         
-        # TODO: Add token transfer for payment
+        # Sign and submit the transaction with both keypairs
+        transaction.sign([payer_keypair, account_keypair], recent_blockhash)
+        signature = await submit_transaction(transaction)
+        logger.info(f"Created prompt account with signature: {signature}")
         
         return account_keypair.pubkey(), transaction
     except Exception as e:
