@@ -54,3 +54,7 @@ program/target/
 *.onnx
 *.h5
 *.hdf5 
+
+# Ignore local ledger/test data
+program/test-ledger/
+*.sst
