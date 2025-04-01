@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./api:/app/api
+      - ./program:/app/program
+    environment:
+      - SOLANA_RPC_URL=http://localhost:8899
+      - PROGRAM_ID=${PROGRAM_ID}
+    depends_on:
+      - solana-validator
+
+  solana-validator:
+    image: solanalabs/solana:stable
+    ports:
+      - "8899:8899"
+    command: solana-test-validator
+    volumes:
+      - solana-data:/root/.local/share/solana/install/active_release/bin/validator-ledger
+    environment:
+      - RUST_LOG=info
+
+volumes:
+  solana-data: 

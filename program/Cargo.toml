@@ -1,0 +1,22 @@
+[package]
+name = "neurochain"
+version = "0.1.0"
+description = "Verifiable LLM inference on Solana"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "neurochain"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+
+[dependencies]
+solana-program = "1.17"
+thiserror = "1.0"
+borsh = "0.10"
+borsh-derive = "0.10" 
