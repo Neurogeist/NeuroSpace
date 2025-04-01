@@ -52,7 +52,7 @@ app = FastAPI(title="NeuroChain API")
 solana_client = Client(os.getenv("SOLANA_RPC_URL", "https://api.devnet.solana.com"))
 
 # Load program ID from environment
-PROGRAM_ID = Pubkey.from_string(os.getenv("PROGRAM_ID", "YOUR_PROGRAM_ID_HERE"))
+PROGRAM_ID = Pubkey.from_string(os.getenv("PROGRAM_ID", "eYL6zeSQgDAkgaXAT2AKhaEGs8H6qrrJKZXWdtoWkoe"))
 
 # Constants for account sizing
 DISCRIMINATOR_SIZE = 8
@@ -229,6 +229,7 @@ async def create_prompt_account(prompt: str) -> tuple[Pubkey, Transaction, Keypa
         await fund_account(account_keypair.pubkey(), funding_amount)
         
         # Create account instruction
+        """
         create_account_ix = Instruction(
             program_id=SYS_PROGRAM_ID,
             data=bytes([0]),  # Create account instruction
@@ -244,6 +245,18 @@ async def create_prompt_account(prompt: str) -> tuple[Pubkey, Transaction, Keypa
                     is_writable=False
                 ),
             ],
+        )"""
+
+        from solders.system_program import create_account, CreateAccountParams
+
+        create_account_ix = create_account(
+            CreateAccountParams(
+                from_pubkey=FUNDING_KEYPAIR.pubkey(),
+                to_pubkey=account_keypair.pubkey(),
+                lamports=funding_amount,
+                space=ACCOUNT_SIZE,
+                owner=PROGRAM_ID,
+            )
         )
         
         # Create compute budget instructions
@@ -264,34 +277,27 @@ async def submit_prompt_to_chain(prompt: str, account_pubkey: Pubkey, account_ke
     """Submit prompt to the Solana program."""
     try:
         # Create instruction to submit prompt
-        from borsh_construct import CStruct, Enum as BorshEnum, String
-        from construct import Container
+        from borsh_construct import CStruct, U8, String
+        from construct import Bytes
 
-        # Define the enum properly
-        PromptInstructionEnum = BorshEnum(
-            "SubmitPrompt" / CStruct("prompt" / String),
-            "SubmitResponse" / CStruct("response" / String),
-            enum_name="PromptInstructionEnum"
+        # Manual enum discriminator + struct
+        SubmitPromptInstruction = CStruct(
+            "variant" / U8,
+            "prompt" / String
         )
 
-        # Build the SubmitPrompt instruction data
-        instruction_data = PromptInstructionEnum.build(
-            Container(
-                SubmitPrompt=Container(
-                    prompt=prompt
-                )
-            )
-        )
+        instruction_data = SubmitPromptInstruction.build({
+            "variant": 0,  # 0 = SubmitPrompt
+            "prompt": prompt
+        })
+
+        print("Instruction data!", instruction_data.hex())
         
         submit_prompt_ix = Instruction(
             program_id=PROGRAM_ID,
             data=instruction_data,
             accounts=[
-                AccountMeta(
-                    pubkey=account_pubkey,
-                    is_signer=True,
-                    is_writable=True
-                ),
+                AccountMeta(pubkey=account_pubkey, is_signer=True, is_writable=True),
             ],
         )
         
