@@ -1,8 +1,13 @@
 fastapi==0.109.2
 uvicorn==0.27.1
 python-dotenv==1.0.1
-solana==0.30.2
-solders==0.18.1
+web3==6.15.1
+ipfshttpclient>=0.8.0a2
+pydantic==2.6.1
+pydantic-settings==2.1.0
+python-multipart==0.0.9
+pytest==8.0.0
+httpx==0.26.0 
 transformers==4.37.2
 torch==2.2.0
-pydantic==2.6.1 
+accelerate==0.27.2
