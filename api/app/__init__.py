@@ -1,0 +1,3 @@
+"""
+NeuroChain application package.
+""" 

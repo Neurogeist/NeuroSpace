@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 import uuid
 from typing import Dict
@@ -8,10 +9,19 @@ from .services.ipfs import IPFSService
 from .services.llm import LLMService
 from .core.config import get_settings
 
-app = FastAPI(title="Web3 Prompt API")
-settings = get_settings()
+app = FastAPI(title="NeuroChain API")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Initialize services
+settings = get_settings()
 blockchain_service = BlockchainService()
 ipfs_service = IPFSService()
 llm_service = LLMService()
@@ -19,51 +29,42 @@ llm_service = LLMService()
 # In-memory storage for development
 prompts: Dict[str, Dict] = {}
 
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {"status": "healthy"}
+
 @app.post("/prompts", response_model=PromptResponse)
-async def create_prompt(request: PromptRequest):
-    """Create a new prompt, generate a response, and store everything on-chain."""
+async def submit_prompt(request: PromptRequest):
+    """Submit a prompt and get an AI-generated response."""
     try:
-        # Generate unique prompt ID
-        prompt_id = str(uuid.uuid4())
-        
         # Generate response using LLM
-        response = llm_service.generate_response(request.prompt)
-        
-        # Create metadata with both prompt and response
-        timestamp = datetime.utcnow()
-        metadata = {
-            "prompt": request.prompt,
-            "response": response,
-            "timestamp": timestamp.isoformat(),
-            "user_address": request.user_address
-        }
+        response = await llm_service.generate_response(request.prompt)
         
         # Upload to IPFS
-        ipfs_cid = ipfs_service.upload_prompt(metadata)
-        
-        # Create hash and submit to blockchain
-        prompt_hash = blockchain_service.hash_prompt(
-            request.prompt,
-            response,
-            timestamp.isoformat(),
-            request.user_address
-        )
-        transaction_hash = blockchain_service.submit_hash(prompt_hash)
-        
-        # Store metadata
-        prompt_data = {
-            "prompt_id": prompt_id,
+        ipfs_data = {
             "prompt": request.prompt,
             "response": response,
-            "ipfs_cid": ipfs_cid,
-            "timestamp": timestamp,
-            "transaction_hash": transaction_hash,
+            "timestamp": request.timestamp,
             "user_address": request.user_address
         }
-        prompts[prompt_id] = prompt_data
+        ipfs_result = await ipfs_service.upload_to_ipfs(ipfs_data)
+        ipfs_cid = ipfs_result["IpfsHash"]
         
-        return PromptResponse(**prompt_data)
+        # Submit to blockchain
+        hash_result = blockchain_service.hash_prompt(
+            request.prompt,
+            response,
+            request.timestamp,
+            request.user_address
+        )
+        signature = blockchain_service.submit_hash(hash_result)
         
+        return PromptResponse(
+            response=response,
+            ipfs_cid=ipfs_cid,
+            signature=signature
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -1,92 +1,76 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from .core.config import get_settings
 import torch
 from typing import Optional
-from ..core.config import get_settings
-
-settings = get_settings()
 
 class LLMService:
     def __init__(self):
+        settings = get_settings()
         self.model_name = settings.LLM_MODEL_NAME
+        self.max_length = settings.LLM_MAX_LENGTH
+        self.temperature = settings.LLM_TEMPERATURE
+        self.top_p = settings.LLM_TOP_P
         
-        # Determine the device
-        if torch.cuda.is_available():
-            self.device = "cuda"
-        elif torch.backends.mps.is_available():
-            self.device = "mps"
-        else:
-            self.device = "cpu"
-            
-        print(f"Loading model {self.model_name} on {self.device}...")
-        
-        # Load tokenizer and model
+        # Initialize model and tokenizer
+        self.model = AutoModelForCausalLM.from_pretrained(
+            self.model_name,
+            torch_dtype=torch.float16,
+            device_map="auto"
+        )
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         
-        # Configure model loading based on device
-        model_kwargs = {
-            "torch_dtype": torch.float16 if self.device == "cuda" else torch.float32,
-            "device_map": "auto",
-            "low_cpu_mem_usage": True  # Optimize memory usage
-        }
+        # Set padding token if not set
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+            self.model.config.pad_token_id = self.model.config.eos_token_id
+
+    def _format_prompt(self, prompt: str) -> str:
+        """Format the prompt for the model."""
+        return f"Question: {prompt}\nAnswer:"
+
+    def _clean_response(self, response: str, prompt: str) -> str:
+        """Clean the model's response."""
+        # Remove the prompt from the response
+        response = response.replace(self._format_prompt(prompt), "").strip()
         
-        if self.device == "mps":
-            # For MPS, we need to load in CPU first and then move to MPS
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_name,
-                **model_kwargs
-            ).to(self.device)
-        else:
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_name,
-                **model_kwargs
-            )
+        # Remove any additional question/answer markers
+        response = response.replace("Question:", "").replace("Answer:", "").strip()
         
-        # Set generation parameters for faster responses
-        self.max_length = 100  # Reduced from 512
-        self.temperature = 0.3  # Reduced from 0.7 for more focused responses
-        self.top_p = 0.7  # Reduced from 0.9
-        self.num_return_sequences = 1
-        self.do_sample = True
-        self.pad_token_id = self.tokenizer.eos_token_id
-        
-    def generate_response(self, prompt: str) -> str:
-        """Generate a response to the given prompt."""
-        # Format the prompt according to the model's requirements
-        formatted_prompt = self._format_prompt(prompt)
-        
-        # Tokenize input
-        inputs = self.tokenizer(formatted_prompt, return_tensors="pt")
-        if self.device != "cpu":
-            inputs = {k: v.to(self.device) for k, v in inputs.items()}
-        
-        # Generate response with optimized parameters
-        with torch.no_grad():
-            outputs = self.model.generate(
-                **inputs,
-                max_length=self.max_length,
-                temperature=self.temperature,
-                top_p=self.top_p,
-                num_return_sequences=self.num_return_sequences,
-                do_sample=self.do_sample,
-                pad_token_id=self.pad_token_id,
-                early_stopping=True  # Stop when we have a complete response
-            )
-        
-        # Decode and clean up response
-        response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-        response = self._clean_response(response, prompt)
+        # Remove any student/teacher markers
+        response = response.replace("Student:", "").replace("Teacher:", "").strip()
         
         return response
-    
-    def _format_prompt(self, prompt: str) -> str:
-        """Format the prompt according to the model's requirements."""
-        # More focused prompt template
-        return f"Question: {prompt}\nAnswer:"
-    
-    def _clean_response(self, response: str, prompt: str) -> str:
-        """Clean up the generated response."""
-        # Remove the prompt from the response
-        response = response.replace(f"Question: {prompt}\nAnswer:", "").strip()
-        # Remove any additional questions or conversation
-        response = response.split("\n")[0].strip()
-        return response 
+
+    async def generate_response(self, prompt: str) -> str:
+        """Generate a response for the given prompt."""
+        try:
+            # Format the prompt
+            formatted_prompt = self._format_prompt(prompt)
+            
+            # Tokenize the input
+            inputs = self.tokenizer(formatted_prompt, return_tensors="pt").to(self.model.device)
+            
+            # Generate response
+            with torch.no_grad():
+                outputs = self.model.generate(
+                    **inputs,
+                    max_length=self.max_length,
+                    temperature=self.temperature,
+                    top_p=self.top_p,
+                    do_sample=True,
+                    num_return_sequences=1,
+                    pad_token_id=self.tokenizer.pad_token_id,
+                    eos_token_id=self.tokenizer.eos_token_id,
+                    early_stopping=True
+                )
+            
+            # Decode the response
+            response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+            
+            # Clean the response
+            cleaned_response = this._clean_response(response, prompt)
+            
+            return cleaned_response
+            
+        except Exception as e:
+            raise Exception(f"Failed to generate response: {str(e)}") 
