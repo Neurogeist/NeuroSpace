@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     IPFS_API_URL: str = os.getenv("IPFS_API_URL", "http://localhost:5001/api/v0")
     PINATA_JWT: str = os.getenv("PINATA_JWT", "")
     
+    # Hugging Face settings
+    HUGGINGFACE_TOKEN: str = os.getenv("HUGGINGFACE_TOKEN", "")
+    
     # LLM settings
     LLM_MODEL_NAME: str = os.getenv("LLM_MODEL_NAME", "microsoft/phi-2")
     LLM_MAX_LENGTH: int = int(os.getenv("LLM_MAX_LENGTH", "512"))

@@ -12,16 +12,21 @@ import {
     Link,
     Tooltip,
     Container,
+    Select,
+    FormControl,
+    FormLabel,
 } from '@chakra-ui/react';
 import { FiSend, FiRefreshCw, FiHash, FiLink } from 'react-icons/fi';
 import { ChatMessage } from '../types/chat';
-import { submitPrompt } from '../services/api';
+import { submitPrompt, getAvailableModels, Model } from '../services/api';
 
 export const Chat: React.FC = () => {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [availableModels, setAvailableModels] = useState<Model[]>([]);
+    const [selectedModel, setSelectedModel] = useState<string>('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
@@ -36,6 +41,23 @@ export const Chat: React.FC = () => {
     const inputTextColor = useColorModeValue('gray.800', 'white');
     const placeholderColor = useColorModeValue('gray.500', 'gray.400');
     const timestampColor = useColorModeValue('gray.500', 'gray.400');
+
+    // Load available models on component mount
+    useEffect(() => {
+        const loadModels = async () => {
+            try {
+                const models = await getAvailableModels();
+                setAvailableModels(models);
+                if (models.length > 0) {
+                    setSelectedModel(models[0].name);
+                }
+            } catch (err) {
+                setError(err instanceof Error ? err.message : 'Failed to load models');
+            }
+        };
+        
+        loadModels();
+    }, []);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -61,13 +83,19 @@ export const Chat: React.FC = () => {
         setError(null);
 
         try {
-            const response = await submitPrompt(input.trim());
+            const response = await submitPrompt(input.trim(), selectedModel);
             const assistantMessage: ChatMessage = {
                 role: 'assistant',
                 content: response.response,
                 timestamp: new Date().toISOString(),
                 ipfsHash: response.ipfs_cid,
                 transactionHash: response.signature,
+                metadata: {
+                    model: response.model_name,
+                    model_id: response.model_id,
+                    temperature: response.metadata.temperature,
+                    max_tokens: response.metadata.max_tokens
+                }
             };
             setMessages(prev => [...prev, assistantMessage]);
         } catch (err) {
@@ -110,100 +138,104 @@ export const Chat: React.FC = () => {
     };
 
     return (
-        <Flex h="100vh" direction="column" bg={bgColor}>
-            {/* Header */}
-            <Box p={4} borderBottom="1px" borderColor={borderColor}>
-                <Container maxW="3xl">
-                    <HStack justify="space-between">
-                        <Text fontSize="xl" fontWeight="bold" color={textColor}>
-                            NeuroChain Chat
-                        </Text>
-                        <IconButton
-                            aria-label="Refresh chat"
-                            icon={<FiRefreshCw />}
-                            onClick={handleRefresh}
-                            variant="ghost"
-                            size="sm"
-                            isDisabled={isLoading}
-                            color={textColor}
-                        />
-                    </HStack>
+        <Flex direction="column" h="100vh" bg={bgColor}>
+            <Box flex="1" overflowY="auto" p={4}>
+                <Container maxW="container.md">
+                    <VStack spacing={4} align="stretch">
+                        <HStack justify="space-between" mb={4}>
+                            <Text fontSize="xl" fontWeight="bold" color={textColor}>
+                                NeuroChain Chat
+                            </Text>
+                            <HStack>
+                                <FormControl maxW="200px">
+                                    <Select
+                                        value={selectedModel}
+                                        onChange={(e) => setSelectedModel(e.target.value)}
+                                        size="sm"
+                                    >
+                                        {availableModels.map((model) => (
+                                            <option key={model.name} value={model.name}>
+                                                {model.name}
+                                            </option>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+                                <IconButton
+                                    aria-label="Clear chat"
+                                    icon={<FiRefreshCw />}
+                                    onClick={handleRefresh}
+                                    size="sm"
+                                />
+                            </HStack>
+                        </HStack>
+                        
+                        {messages.map((message, index) => (
+                            <Box
+                                key={index}
+                                p={4}
+                                borderRadius="lg"
+                                bg={message.role === 'user' ? userMessageBgColor : messageBgColor}
+                                maxW="80%"
+                                alignSelf={message.role === 'user' ? 'flex-end' : 'flex-start'}
+                            >
+                                <Text color={textColor}>{message.content}</Text>
+                                
+                                <HStack spacing={4} mt={2} fontSize="xs" color={timestampColor}>
+                                    <Text>{new Date(message.timestamp).toLocaleTimeString()}</Text>
+                                    {message.ipfsHash && (
+                                        <Tooltip label="View on IPFS">
+                                            <Link
+                                                href={`https://ipfs.io/ipfs/${message.ipfsHash}`}
+                                                isExternal
+                                                color={linkColor}
+                                                display="flex"
+                                                alignItems="center"
+                                                gap={1}
+                                            >
+                                                <FiHash />
+                                                {formatHash(message.ipfsHash)}
+                                            </Link>
+                                        </Tooltip>
+                                    )}
+                                    {message.transactionHash && (
+                                        <Tooltip label="View on BaseScan">
+                                            <Link
+                                                href={`https://sepolia.basescan.org/tx/${message.transactionHash}`}
+                                                isExternal
+                                                color={linkColor}
+                                                display="flex"
+                                                alignItems="center"
+                                                gap={1}
+                                            >
+                                                <FiLink />
+                                                {formatHash(message.transactionHash)}
+                                            </Link>
+                                        </Tooltip>
+                                    )}
+                                </HStack>
+                                {message.role === 'assistant' && renderMetadata(message)}
+                            </Box>
+                        ))}
+                        {isLoading && (
+                            <Box p={4} borderRadius="lg" bg={messageBgColor} maxW="80%">
+                                <Text color={textColor}>Thinking...</Text>
+                            </Box>
+                        )}
+                        {error && (
+                            <Box p={4} borderRadius="lg" bg="red.50" maxW="80%">
+                                <Text color="red.500">{error}</Text>
+                            </Box>
+                        )}
+                        <div ref={messagesEndRef} />
+                    </VStack>
                 </Container>
             </Box>
 
-            {/* Main Chat Area */}
-            <Flex flex={1} overflow="hidden">
-                {/* Messages Container */}
-                <Box flex={1} overflowY="auto" p={4}>
-                    <Container maxW="3xl" h="100%">
-                        <VStack spacing={4} align="stretch">
-                            {messages.map((message, index) => (
-                                <Box
-                                    key={index}
-                                    p={4}
-                                    borderRadius="lg"
-                                    bg={message.role === 'user' ? userMessageBgColor : messageBgColor}
-                                    maxW="80%"
-                                    alignSelf={message.role === 'user' ? 'flex-end' : 'flex-start'}
-                                >
-                                    <Text color={textColor}>{message.content}</Text>
-                                    <HStack spacing={4} mt={2} fontSize="xs" color={timestampColor}>
-                                        <Text>{new Date(message.timestamp).toLocaleTimeString()}</Text>
-                                        {message.ipfsHash && (
-                                            <Tooltip label="View on IPFS">
-                                                <Link
-                                                    href={`https://ipfs.io/ipfs/${message.ipfsHash}`}
-                                                    isExternal
-                                                    color={linkColor}
-                                                    display="flex"
-                                                    alignItems="center"
-                                                    gap={1}
-                                                >
-                                                    <FiHash />
-                                                    {formatHash(message.ipfsHash)}
-                                                </Link>
-                                            </Tooltip>
-                                        )}
-                                        {message.transactionHash && (
-                                            <Tooltip label="View on BaseScan">
-                                                <Link
-                                                    href={`https://sepolia.basescan.org/tx/${message.transactionHash}`}
-                                                    isExternal
-                                                    color={linkColor}
-                                                    display="flex"
-                                                    alignItems="center"
-                                                    gap={1}
-                                                >
-                                                    <FiLink />
-                                                    {formatHash(message.transactionHash)}
-                                                </Link>
-                                            </Tooltip>
-                                        )}
-                                    </HStack>
-                                    {message.role === 'assistant' && renderMetadata(message)}
-                                </Box>
-                            ))}
-                            {isLoading && (
-                                <Box p={4} borderRadius="lg" bg={messageBgColor} maxW="80%">
-                                    <Text color={textColor}>Thinking...</Text>
-                                </Box>
-                            )}
-                            {error && (
-                                <Box p={4} borderRadius="lg" bg="red.50" maxW="80%">
-                                    <Text color="red.500">{error}</Text>
-                                </Box>
-                            )}
-                            <div ref={messagesEndRef} />
-                        </VStack>
-                    </Container>
-                </Box>
-            </Flex>
-
             {/* Input Area */}
             <Box p={4} borderTop="1px" borderColor={borderColor}>
-                <Container maxW="3xl">
+                <Container maxW="container.md">
                     <form onSubmit={handleSubmit}>
-                        <HStack spacing={4}>
+                        <HStack>
                             <Input
                                 ref={inputRef}
                                 value={input}
@@ -211,26 +243,19 @@ export const Chat: React.FC = () => {
                                 onKeyPress={handleKeyPress}
                                 placeholder="Type your message..."
                                 size="lg"
-                                borderRadius="full"
                                 bg={inputBgColor}
                                 borderColor={inputBorderColor}
                                 color={inputTextColor}
                                 _placeholder={{ color: placeholderColor }}
-                                _focus={{
-                                    borderColor: 'blue.500',
-                                    boxShadow: '0 0 0 1px var(--chakra-colors-blue-500)',
-                                }}
                             />
-                            <Button
+                            <IconButton
+                                aria-label="Send message"
+                                icon={<FiSend />}
                                 type="submit"
                                 colorScheme="blue"
                                 size="lg"
-                                borderRadius="full"
                                 isLoading={isLoading}
-                                leftIcon={<FiSend />}
-                            >
-                                Send
-                            </Button>
+                            />
                         </HStack>
                     </form>
                 </Container>

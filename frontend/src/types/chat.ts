@@ -15,6 +15,7 @@ export interface ChatState {
 
 export interface ModelMetadata {
   model: string;
+  model_id: string;
   temperature: number;
   max_tokens: number;
 }
