@@ -114,53 +114,56 @@ async def health_check():
         logger.error(f"Health check failed: {str(e)}")
         raise HTTPException(status_code=500, detail="Service unhealthy")
 
-@app.post("/prompts", response_model=PromptResponse)
-async def submit_prompt(
-    request: PromptRequest,
-    x_user_address: str = Header(..., alias="X-User-Address")
-):
-    """Submit a prompt for processing."""
+@app.post("/prompts")
+async def submit_prompt(request: Request):
+    """Submit a prompt and get a response."""
     try:
-        logger.info(f"Processing prompt from user {x_user_address}")
+        # Get user address from header
+        user_address = request.headers.get("X-User-Address")
+        if not user_address:
+            raise HTTPException(status_code=400, detail="X-User-Address header is required")
         
-        # Generate response using LLM
-        response = await llm_service.generate_response(request.prompt)
-        logger.info("Response generated successfully")
+        # Get prompt from request body
+        body = await request.json()
+        prompt = body.get("prompt")
+        if not prompt:
+            raise HTTPException(status_code=400, detail="Prompt is required")
+        
+        # Generate response
+        response_text = llm_service.generate_response(prompt)
+        
+        # Create metadata
+        metadata = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "model": settings.LLM_MODEL_NAME,
+            "temperature": settings.LLM_TEMPERATURE,
+            "max_tokens": settings.LLM_MAX_LENGTH
+        }
         
         # Upload to IPFS
-        ipfs_data = {
-            "prompt": request.prompt,
-            "response": response,
-            "timestamp": request.timestamp,
-            "user_address": x_user_address
+        ipfs_cid = await ipfs_service.upload_to_ipfs(prompt, response_text, metadata)
+        
+        # Create hash of prompt data
+        prompt_hash = blockchain_service.hash_prompt(
+            prompt=prompt,
+            response=response_text,
+            timestamp=metadata["timestamp"],
+            user_address=user_address
+        )
+        
+        # Store hash on blockchain
+        signature = await blockchain_service.submit_hash(prompt_hash)
+        
+        return {
+            "response": response_text,
+            "ipfs_cid": ipfs_cid,
+            "signature": signature,
+            "metadata": metadata
         }
-        ipfs_result = await ipfs_service.upload_to_ipfs(ipfs_data)
-        ipfs_cid = ipfs_result["Hash"]  # The hash is in the "Hash" field
-        logger.info(f"Content uploaded to IPFS: {ipfs_cid}")
         
-        # Submit to blockchain
-        hash_result = blockchain_service.hash_prompt(
-            request.prompt,
-            response,
-            request.timestamp,
-            x_user_address
-        )
-        signature = blockchain_service.submit_hash(hash_result)
-        logger.info(f"Hash submitted to blockchain: {signature}")
-        
-        return PromptResponse(
-            response=response,
-            ipfs_cid=ipfs_cid,
-            signature=signature,
-            timestamp=datetime.utcnow(),
-            user_address=x_user_address
-        )
     except Exception as e:
         logger.error(f"Error processing prompt: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to process prompt: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
