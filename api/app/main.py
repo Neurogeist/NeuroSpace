@@ -1,6 +1,8 @@
 from fastapi import FastAPI, HTTPException, Request, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 from datetime import datetime
 import uuid
 from typing import Dict, Any
@@ -26,16 +28,30 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+class CustomCORSMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # Handle preflight requests
+        if request.method == "OPTIONS":
+            response = Response()
+            response.headers["Access-Control-Allow-Origin"] = "http://localhost:5173"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-User-Address"
+            response.headers["Access-Control-Allow-Credentials"] = "false"
+            response.headers["Access-Control-Max-Age"] = "3600"
+            return response
 
-# Add rate limiting middleware
+        # Handle actual requests
+        response = await call_next(request)
+        response.headers["Access-Control-Allow-Origin"] = "http://localhost:5173"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-User-Address"
+        response.headers["Access-Control-Allow-Credentials"] = "false"
+        return response
+
+# Add custom CORS middleware first
+app.add_middleware(CustomCORSMiddleware)
+
+# Add rate limiting middleware after CORS
 app.add_middleware(RateLimitMiddleware)
 
 # Initialize services

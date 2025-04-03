@@ -14,16 +14,23 @@ A decentralized system for submitting prompts and generating responses using loc
 - Health check endpoint
 - CORS support
 - IPFS node integration
+- Modern React frontend with Chakra UI
+- Real-time chat interface
+- Blockchain transaction tracking
+- IPFS content verification
 
 ## Prerequisites
 
 - Python 3.10+
+- Node.js 18+
 - CUDA-capable GPU (optional, for faster inference)
 - Base Goerli testnet ETH
 - IPFS node (local or remote)
 - Base Goerli testnet ETH
 
 ## Installation
+
+### Backend Setup
 
 1. Clone the repository:
 ```bash
@@ -71,7 +78,28 @@ LLM_TOP_P=0.7
 ipfs daemon
 ```
 
+### Frontend Setup
+
+1. Navigate to the frontend directory:
+```bash
+cd frontend
+```
+
+2. Install dependencies:
+```bash
+npm install
+```
+
+3. Start the development server:
+```bash
+npm run dev
+```
+
+The frontend will be available at `http://localhost:5173`
+
 ## Usage
+
+### Backend API
 
 1. Start the API server:
 ```bash
@@ -93,64 +121,38 @@ curl -X POST http://127.0.0.1:8000/prompts \
 curl http://127.0.0.1:8000/health
 ```
 
+### Frontend Interface
+
+1. Open your browser and navigate to `http://localhost:5173`
+2. Enter your prompt in the chat interface
+3. View the response, IPFS hash, and blockchain transaction details
+4. Use the clear button to reset the chat history
+
 ## API Endpoints
 
 - `GET /health` - Health check endpoint
 - `POST /prompts` - Submit a new prompt
   - Required headers: `X-User-Address`
-  - Rate limited: 100 requests per hour per user
+  - Response includes:
+    - Generated response
+    - IPFS CID
+    - Blockchain transaction signature
+    - Timestamp
+    - User address
 
-## Rate Limiting
+## Development
 
-The API implements rate limiting with the following features:
-- Per-user request tracking
-- Configurable limits (default: 100 requests per hour)
-- Rate limit headers in responses
-- Skip rate limiting for health check endpoint
-- User-friendly error messages
+### Backend
 
-## Error Handling
+- Run tests: `pytest`
+- Format code: `black .`
+- Type checking: `mypy .`
 
-The API includes comprehensive error handling:
-- Structured error responses
-- HTTP status codes
-- Detailed error messages
-- Request tracking
-- Global exception handlers
+### Frontend
 
-## Project Structure
-
-```
-NeuroChain/
-├── api/
-│   ├── app/
-│   │   ├── core/
-│   │   │   ├── config.py
-│   │   │   └── rate_limit.py
-│   │   ├── models/
-│   │   │   └── prompt.py
-│   │   ├── services/
-│   │   │   ├── blockchain.py
-│   │   │   ├── ipfs.py
-│   │   │   └── llm.py
-│   │   └── main.py
-│   └── tests/
-│       ├── test_api.py
-│       ├── test_blockchain.py
-│       ├── test_ipfs.py
-│       └── test_llm.py
-├── .env.example
-├── .gitignore
-├── README.md
-└── requirements.txt
-```
-
-## Testing
-
-Run the test suite:
-```bash
-pytest api/tests/
-```
+- Run tests: `npm test`
+- Build for production: `npm run build`
+- Preview production build: `npm run preview`
 
 ## Contributing
 
