@@ -11,4 +11,12 @@ export interface ChatState {
     messages: Message[];
     isLoading: boolean;
     error: string | null;
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+  ipfsHash?: string;
+  transactionHash?: string;
 } 

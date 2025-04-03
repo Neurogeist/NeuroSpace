@@ -1,28 +1,64 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from ..core.config import get_settings
 import torch
 from typing import Optional
+import os
+from functools import lru_cache
 
 class LLMService:
     def __init__(self):
-        settings = get_settings()
-        self.model_name = settings.LLM_MODEL_NAME
-        self.max_length = settings.LLM_MAX_LENGTH
-        self.temperature = settings.LLM_TEMPERATURE
-        self.top_p = settings.LLM_TOP_P
+        self.model_name = os.getenv("LLM_MODEL_NAME", "TinyLlama/TinyLlama-1.1B-Chat-v1.0")
+        self.max_length = int(os.getenv("LLM_MAX_LENGTH", "256"))
+        self.temperature = float(os.getenv("LLM_TEMPERATURE", "0.3"))
+        self.top_p = float(os.getenv("LLM_TOP_P", "0.7"))
+        self.num_beams = int(os.getenv("LLM_NUM_BEAMS", "1"))
+        self.do_sample = os.getenv("LLM_DO_SAMPLE", "false").lower() == "true"
+        self.early_stopping = os.getenv("LLM_EARLY_STOPPING", "false").lower() == "true"
+        self.use_cache = os.getenv("LLM_USE_CACHE", "true").lower() == "true"
+        self.device = os.getenv("LLM_DEVICE", "cuda" if torch.cuda.is_available() else "cpu")
         
-        # Initialize model and tokenizer
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.model_name,
-            torch_dtype=torch.float16,
-            device_map="auto"
-        )
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        
-        # Set padding token if not set
-        if self.tokenizer.pad_token is None:
+        self.model = None
+        self.tokenizer = None
+        self._load_model()
+
+    def _load_model(self):
+        """Load the model and tokenizer with optimized settings."""
+        if self.model is None:
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.model_name,
+                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                device_map="auto",
+                use_cache=self.use_cache
+            )
+            self.model.eval()
+            
+        if self.tokenizer is None:
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
             self.tokenizer.pad_token = self.tokenizer.eos_token
-            self.model.config.pad_token_id = self.model.config.eos_token_id
+
+    @lru_cache(maxsize=100)
+    def generate_response(self, prompt: str) -> str:
+        """Generate a response with optimized settings and caching."""
+        inputs = self.tokenizer(prompt, return_tensors="pt", padding=True, truncation=True)
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        
+        with torch.no_grad():
+            outputs = self.model.generate(
+                **inputs,
+                max_length=self.max_length,
+                temperature=self.temperature,
+                top_p=self.top_p,
+                num_beams=self.num_beams,
+                do_sample=self.do_sample,
+                early_stopping=self.early_stopping,
+                pad_token_id=self.tokenizer.eos_token_id
+            )
+        
+        response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        return response[len(prompt):].strip()
+
+    def clear_cache(self):
+        """Clear the response cache."""
+        self.generate_response.cache_clear()
 
     def _format_prompt(self, prompt: str) -> str:
         """Format the prompt for the model."""
