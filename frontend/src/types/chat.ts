@@ -13,10 +13,17 @@ export interface ChatState {
     error: string | null;
 }
 
+export interface ModelMetadata {
+  model: string;
+  temperature: number;
+  max_tokens: number;
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
   ipfsHash?: string;
   transactionHash?: string;
+  metadata?: ModelMetadata;
 } 

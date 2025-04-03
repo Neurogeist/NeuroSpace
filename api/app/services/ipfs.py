@@ -1,70 +1,58 @@
 import requests
 import json
 from datetime import datetime
-from typing import Optional, Dict, Any
-from ..core.config import get_settings
-from ..models.prompt import PromptMetadata
+from typing import Dict, Any
+from api.app.core.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
 
 class IPFSService:
     def __init__(self):
-        settings = get_settings()
         self.api_url = settings.IPFS_API_URL
         logger.info(f"IPFS service initialized with API URL: {self.api_url}")
 
-    def upload_prompt(self, metadata: Dict[str, Any]) -> str:
-        """Upload prompt and response metadata to IPFS via Pinata."""
-        # Upload to Pinata
-        response = requests.post(
-            f"{self.api_url}/pinning/pinJSONToIPFS",
-            headers=self.headers,
-            json=metadata
-        )
-        
-        if response.status_code != 200:
-            raise Exception(f"Failed to upload to IPFS: {response.text}")
-            
-        return response.json()["IpfsHash"]
-
-    async def upload_to_ipfs(self, data: dict) -> dict:
+    async def upload_to_ipfs(self, prompt: str, response: str, metadata: Dict[str, Any]) -> str:
         """
-        Upload data to IPFS.
+        Upload prompt, response, and metadata to IPFS.
         
         Args:
-            data: Dictionary containing the data to upload
+            prompt: The user's prompt
+            response: The model's response
+            metadata: Model metadata including model name, temperature, etc.
             
         Returns:
-            Dictionary containing the IPFS hash and other metadata
+            str: IPFS CID of the uploaded content
         """
         try:
-            # Convert datetime objects to ISO format strings
-            data_copy = data.copy()
-            for key, value in data_copy.items():
-                if isinstance(value, datetime):
-                    data_copy[key] = value.isoformat()
+            content = {
+                "prompt": prompt,
+                "response": response,
+                "timestamp": datetime.utcnow().isoformat(),
+                "metadata": metadata
+            }
             
-            # Convert data to JSON string
-            json_data = json.dumps(data_copy)
+            # Convert content to JSON string
+            content_json = json.dumps(content)
             
             # Upload to IPFS
-            response = requests.post(
-                f"{self.api_url}/add",
-                files={"file": json_data}
-            )
+            files = {
+                'file': ('content.json', content_json)
+            }
             
-            if response.status_code != 200:
-                raise Exception(f"Failed to upload to IPFS: {response.text}")
+            response = requests.post(f"{self.api_url}/add", files=files)
+            response.raise_for_status()
             
+            # Extract the IPFS hash from the response
             result = response.json()
             logger.info(f"Data uploaded to IPFS with hash: {result['Hash']}")
-            return result
+            return result['Hash']
+            
         except Exception as e:
             logger.error(f"Failed to upload to IPFS: {str(e)}")
             raise Exception(f"IPFS upload failed: {str(e)}")
 
-    async def get_from_ipfs(self, ipfs_hash: str) -> dict:
+    async def get_from_ipfs(self, ipfs_hash: str) -> Dict[str, Any]:
         """
         Retrieve data from IPFS.
         
@@ -76,17 +64,13 @@ class IPFSService:
         """
         try:
             # Retrieve from IPFS
-            response = requests.post(
-                f"{self.api_url}/cat",
-                params={"arg": ipfs_hash}
-            )
+            response = requests.post(f"{self.api_url}/cat", params={'arg': ipfs_hash})
+            response.raise_for_status()
             
-            if response.status_code != 200:
-                raise Exception(f"Failed to retrieve from IPFS: {response.text}")
-            
-            data = response.json()
+            # Parse the JSON content
+            content = json.loads(response.text)
             logger.info(f"Data retrieved from IPFS with hash: {ipfs_hash}")
-            return data
+            return content
         except Exception as e:
             logger.error(f"Failed to retrieve from IPFS: {str(e)}")
             raise Exception(f"IPFS retrieval failed: {str(e)}") 

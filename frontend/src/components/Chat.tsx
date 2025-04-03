@@ -93,6 +93,22 @@ export const Chat: React.FC = () => {
         return `${hash.slice(0, 6)}...${hash.slice(-4)}`;
     };
 
+    const renderMetadata = (message: ChatMessage) => {
+        if (!message.metadata) return null;
+
+        return (
+            <Box mt={2} fontSize="xs" color={timestampColor}>
+                <HStack spacing={2}>
+                    <Text>Model: {message.metadata.model}</Text>
+                    <Text>•</Text>
+                    <Text>Temperature: {message.metadata.temperature}</Text>
+                    <Text>•</Text>
+                    <Text>Max Tokens: {message.metadata.max_tokens}</Text>
+                </HStack>
+            </Box>
+        );
+    };
+
     return (
         <Flex h="100vh" direction="column" bg={bgColor}>
             {/* Header */}
@@ -164,6 +180,7 @@ export const Chat: React.FC = () => {
                                             </Tooltip>
                                         )}
                                     </HStack>
+                                    {message.role === 'assistant' && renderMetadata(message)}
                                 </Box>
                             ))}
                             {isLoading && (

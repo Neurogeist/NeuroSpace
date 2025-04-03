@@ -36,7 +36,7 @@ class BlockchainService:
         data = f"{prompt}{response}{timestamp}{user_address or ''}"
         return hashlib.sha256(data.encode()).hexdigest()
     
-    def submit_hash(self, prompt_hash: str) -> str:
+    async def submit_hash(self, prompt_hash: str) -> str:
         """Submit the hash to the Base chain."""
         # Get the current gas price
         gas_price = self.w3.eth.gas_price
@@ -51,7 +51,7 @@ class BlockchainService:
             'maxFeePerGas': gas_price * 2,  # Maximum fee per gas
             'maxPriorityFeePerGas': gas_price,  # Priority fee per gas
             'chainId': 84532,  # Base Goerli chain ID
-            'data': self.w3.to_hex(prompt_hash.encode())[:2] + prompt_hash  # Ensure proper hex format
+            'data': self.w3.to_hex(prompt_hash.encode('utf-8'))  # Encode as UTF-8 bytes first
         }
         
         # Sign and send the transaction
