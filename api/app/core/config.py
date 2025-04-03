@@ -1,31 +1,35 @@
-from pydantic_settings import BaseSettings
+from pydantic import BaseModel, ConfigDict
 from functools import lru_cache
-from typing import Optional
+import os
+from dotenv import load_dotenv
 
-class Settings(BaseSettings):
-    # Base Chain Configuration
-    BASE_RPC_URL: str
-    PRIVATE_KEY: str
+# Load environment variables from .env file
+load_dotenv()
+
+class Settings(BaseModel):
+    """Application settings."""
+    # Blockchain settings
+    BASE_RPC_URL: str = os.getenv("BASE_RPC_URL", "https://mainnet.base.org")
+    PRIVATE_KEY: str = os.getenv("PRIVATE_KEY", "")
+    CONTRACT_ADDRESS: str = os.getenv("CONTRACT_ADDRESS", "")
     
-    # IPFS Configuration (Pinata)
-    PINATA_API_KEY: str
-    PINATA_API_SECRET: str
-    PINATA_JWT: str
+    # IPFS settings
+    IPFS_API_URL: str = os.getenv("IPFS_API_URL", "http://localhost:5001/api/v0")
+    PINATA_JWT: str = os.getenv("PINATA_JWT", "")
     
-    # API Configuration
-    API_HOST: str = "0.0.0.0"
-    API_PORT: int = 8000
+    # LLM settings
+    LLM_MODEL_NAME: str = os.getenv("LLM_MODEL_NAME", "microsoft/phi-2")
+    LLM_MAX_LENGTH: int = int(os.getenv("LLM_MAX_LENGTH", "512"))
+    LLM_TEMPERATURE: float = float(os.getenv("LLM_TEMPERATURE", "0.7"))
+    LLM_TOP_P: float = float(os.getenv("LLM_TOP_P", "0.9"))
     
-    # LLM Configuration
-    LLM_MODEL_NAME: str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"  # Default to TinyLlama
-    LLM_MAX_LENGTH: int = 512
-    LLM_TEMPERATURE: float = 0.7
-    LLM_TOP_P: float = 0.9
+    # Rate limiting settings
+    RATE_LIMIT_REQUESTS: int = int(os.getenv("RATE_LIMIT_REQUESTS", "60"))
+    RATE_LIMIT_WINDOW: int = int(os.getenv("RATE_LIMIT_WINDOW", "60"))
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    model_config = ConfigDict(env_file=".env")
 
 @lru_cache()
 def get_settings() -> Settings:
+    """Get cached settings instance."""
     return Settings() 
