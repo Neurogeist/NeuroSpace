@@ -38,26 +38,40 @@ class BlockchainService:
     
     async def submit_hash(self, prompt_hash: str) -> str:
         """Submit the hash to the Base chain."""
-        # Get the current gas price
-        gas_price = self.w3.eth.gas_price
-        
-        # Create a transaction with the hash in the data field
-        transaction = {
-            'from': self.account.address,
-            'to': self.account.address,  # Sending to self as a no-op
-            'value': 0,
-            'nonce': self.w3.eth.get_transaction_count(self.account.address),
-            'gas': 100000,  # Increased gas limit
-            'maxFeePerGas': gas_price * 2,  # Maximum fee per gas
-            'maxPriorityFeePerGas': gas_price,  # Priority fee per gas
-            'chainId': 84532,  # Base Goerli chain ID
-            'data': self.w3.to_hex(prompt_hash.encode('utf-8'))  # Encode as UTF-8 bytes first
-        }
-        
-        # Sign and send the transaction
-        signed_txn = self.w3.eth.account.sign_transaction(transaction, self.account.key)
-        tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
-        
-        # Wait for transaction receipt
-        receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
-        return receipt['transactionHash'].hex() 
+        try:
+            # Get the current gas price
+            gas_price = self.w3.eth.gas_price
+            print(f"Current gas price: {self.w3.from_wei(gas_price, 'gwei')} gwei")
+            
+            # Create a transaction with the hash in the data field
+            transaction = {
+                'from': self.account.address,
+                'to': self.account.address,  # Sending to self as a no-op
+                'value': 0,
+                'nonce': self.w3.eth.get_transaction_count(self.account.address),
+                'gas': 100000,  # Increased gas limit
+                'maxFeePerGas': gas_price * 2,  # Maximum fee per gas
+                'maxPriorityFeePerGas': gas_price,  # Priority fee per gas
+                'chainId': 84532,  # Base Sepolia chain ID
+                'data': self.w3.to_hex(prompt_hash.encode('utf-8'))  # Encode as UTF-8 bytes first
+            }
+            
+            print(f"Sending transaction from {transaction['from']}")
+            print(f"Transaction data: {transaction['data']}")
+            
+            # Sign and send the transaction
+            signed_txn = self.w3.eth.account.sign_transaction(transaction, self.account.key)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+            print(f"Transaction sent with hash: {tx_hash.hex()}")
+            
+            # Wait for transaction receipt
+            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+            print(f"Transaction receipt status: {receipt['status']}")
+            print(f"Transaction block number: {receipt['blockNumber']}")
+            print(f"View on Base Sepolia: https://sepolia.basescan.org/tx/{receipt['transactionHash'].hex()}")
+            
+            return receipt['transactionHash'].hex()
+            
+        except Exception as e:
+            print(f"Error submitting hash to blockchain: {str(e)}")
+            raise Exception(f"Blockchain submission failed: {str(e)}") 

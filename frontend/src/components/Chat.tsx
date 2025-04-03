@@ -167,7 +167,7 @@ export const Chat: React.FC = () => {
                                         {message.transactionHash && (
                                             <Tooltip label="View on BaseScan">
                                                 <Link
-                                                    href={`https://basescan.org/tx/${message.transactionHash}`}
+                                                    href={`https://sepolia.basescan.org/tx/${message.transactionHash}`}
                                                     isExternal
                                                     color={linkColor}
                                                     display="flex"
