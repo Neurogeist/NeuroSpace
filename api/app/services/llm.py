@@ -95,19 +95,40 @@ class LLMService:
                 inputs = {k: v.to(self.registry.device) for k, v in inputs.items()}
                 logger.info(f"Using device {self.registry.device} for inputs")
             
+            # Set generation parameters
+            generation_config = {
+                "max_new_tokens": self.config.max_new_tokens,
+                "temperature": self.config.temperature,
+                "top_p": self.config.top_p,
+                "do_sample": self.config.do_sample,
+                "num_beams": self.config.num_beams,
+                "pad_token_id": self.tokenizer.eos_token_id,
+                "eos_token_id": self.tokenizer.eos_token_id,
+                "early_stopping": self.config.early_stopping
+            }
+            
+            # Add timeout for generation
+            if self.registry.device == "mps":
+                generation_config["max_time"] = 30.0  # 30 second timeout for MPS
+            
             # Generate response with model-specific parameters
             with torch.no_grad():
-                outputs = self.model.generate(
-                    **inputs,
-                    max_new_tokens=self.config.max_new_tokens,
-                    temperature=self.config.temperature,
-                    top_p=self.config.top_p,
-                    do_sample=self.config.do_sample,
-                    num_beams=self.config.num_beams,
-                    pad_token_id=self.tokenizer.eos_token_id,
-                    eos_token_id=self.tokenizer.eos_token_id,
-                    early_stopping=self.config.early_stopping
-                )
+                try:
+                    outputs = self.model.generate(
+                        **inputs,
+                        **generation_config
+                    )
+                except RuntimeError as e:
+                    if "out of memory" in str(e).lower():
+                        raise ValueError(
+                            "Model ran out of memory. Try using a smaller model or reducing max_new_tokens."
+                        )
+                    elif "timeout" in str(e).lower():
+                        raise ValueError(
+                            "Generation timed out. The model is taking too long to respond. "
+                            "Try using a smaller model or reducing max_new_tokens."
+                        )
+                    raise
             
             # Decode the response
             response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)

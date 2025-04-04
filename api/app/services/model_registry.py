@@ -41,6 +41,10 @@ class ModelRegistry:
     """Registry for managing different language models."""
     
     def __init__(self):
+        """Initialize the model registry."""
+        # Get settings
+        self.settings = get_settings()
+        
         # Define available models with their configurations
         self.models = {
             "tinyllama": ModelConfig(
@@ -78,10 +82,6 @@ class ModelRegistry:
             )
         }
         
-        # Cache for loaded models and tokenizers
-        self._model_cache = {}
-        self._tokenizer_cache = {}
-        
         # Determine device
         if torch.cuda.is_available():
             self.device = "cuda"
@@ -89,7 +89,25 @@ class ModelRegistry:
             self.device = "mps"
         else:
             self.device = "cpu"
+            
+        # Override with environment variable if set
+        if self.settings.MODEL_REGISTRY_DEVICE != "auto":
+            self.device = self.settings.MODEL_REGISTRY_DEVICE
+            
         logger.info(f"Using device: {self.device}")
+        
+        # Set memory limits from settings
+        self.max_memory_cpu = self.settings.MODEL_REGISTRY_MAX_MEMORY_CPU
+        self.max_memory_gpu = self.settings.MODEL_REGISTRY_MAX_MEMORY_GPU
+        
+        # Set environment variables for better performance
+        os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+        os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "600"  # 10 minutes timeout
+        os.environ["TRANSFORMERS_CACHE"] = os.path.expanduser("~/.cache/huggingface")
+        
+        # Initialize model cache
+        self._model_cache = {}
+        self._tokenizer_cache = {}
     
     def get_available_models(self) -> Dict[str, str]:
         """Get a list of available models with their display names."""
@@ -113,7 +131,7 @@ class ModelRegistry:
             return self._model_cache[model_name], self._tokenizer_cache[model_name]
         
         # Check if model is gated and token is available
-        if config.is_gated and not settings.HUGGINGFACE_TOKEN:
+        if config.is_gated and not self.settings.HUGGINGFACE_TOKEN:
             raise ValueError(
                 f"Model '{model_name}' is a gated repository. "
                 "Please set the HUGGINGFACE_TOKEN environment variable and ensure you have access to the model."
@@ -137,21 +155,62 @@ class ModelRegistry:
             else:
                 device_map = "auto" if use_device_map else None
             
-            model = AutoModelForCausalLM.from_pretrained(
-                config.model_id,
-                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                device_map=device_map,
-                use_cache=True,
-                token=settings.HUGGINGFACE_TOKEN if config.is_gated else None,
-                local_files_only=config.local_files_only
-            )
+            # Load model with different configurations based on model and device
+            if model_name == "tinyllama":
+                logger.info("Loading TinyLlama with optimized MPS settings")
+                model = AutoModelForCausalLM.from_pretrained(
+                    config.model_id,
+                    torch_dtype=torch.float16,
+                    device_map=None,  # No device_map for TinyLlama
+                    use_cache=True,
+                    token=self.settings.HUGGINGFACE_TOKEN if config.is_gated else None,
+                    local_files_only=config.local_files_only
+                )
+                # Move model to MPS after loading
+                if self.device == "mps":
+                    model = model.to(self.device)
+            elif self.device == "mps" and model_name == "phi":
+                logger.info("Loading Phi with optimized CPU settings")
+                model = AutoModelForCausalLM.from_pretrained(
+                    config.model_id,
+                    torch_dtype=torch.float32,  # Use float32 for better stability
+                    device_map="cpu",  # Force CPU for Phi on MPS
+                    use_cache=True,
+                    token=self.settings.HUGGINGFACE_TOKEN if config.is_gated else None,
+                    local_files_only=config.local_files_only,
+                    max_memory={"cpu": self.max_memory_cpu}  # Use configured memory limit
+                )
+            elif self.device == "cuda":
+                logger.info("Using CUDA with 8-bit quantization")
+                model = AutoModelForCausalLM.from_pretrained(
+                    config.model_id,
+                    torch_dtype=torch.float16,
+                    device_map=device_map,
+                    use_cache=True,
+                    token=self.settings.HUGGINGFACE_TOKEN if config.is_gated else None,
+                    local_files_only=config.local_files_only,
+                    load_in_8bit=True,  # Enable 8-bit quantization for CUDA
+                    max_memory={0: self.max_memory_gpu, "cpu": self.max_memory_cpu}  # Use configured memory limits
+                )
+            else:
+                logger.info("Using CPU without quantization")
+                model = AutoModelForCausalLM.from_pretrained(
+                    config.model_id,
+                    torch_dtype=torch.float32,
+                    device_map=device_map,
+                    use_cache=True,
+                    token=self.settings.HUGGINGFACE_TOKEN if config.is_gated else None,
+                    local_files_only=config.local_files_only,
+                    max_memory={"cpu": self.max_memory_cpu}  # Use configured memory limit
+                )
+            
             model.eval()
             
             # Load tokenizer
             logger.info(f"Loading tokenizer for {config.model_id}")
             tokenizer = AutoTokenizer.from_pretrained(
                 config.model_id,
-                token=settings.HUGGINGFACE_TOKEN if config.is_gated else None,
+                token=self.settings.HUGGINGFACE_TOKEN if config.is_gated else None,
                 local_files_only=config.local_files_only
             )
             tokenizer.pad_token = tokenizer.eos_token

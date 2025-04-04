@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from functools import lru_cache
 import os
 from dotenv import load_dotenv
@@ -10,39 +10,41 @@ load_dotenv()
 
 class Settings(BaseSettings):
     """Application settings."""
-    # Blockchain settings
-    BASE_RPC_URL: str = os.getenv("BASE_RPC_URL", "https://mainnet.base.org")
-    PRIVATE_KEY: str = os.getenv("PRIVATE_KEY", "")
-    CONTRACT_ADDRESS: str = os.getenv("CONTRACT_ADDRESS", "")
+    # Base Chain Configuration
+    BASE_RPC_URL: str = Field(..., env="BASE_RPC_URL")
+    PRIVATE_KEY: str = Field(..., env="PRIVATE_KEY")
     
-    # IPFS settings
-    IPFS_API_URL: str = os.getenv("IPFS_API_URL", "http://localhost:5001/api/v0")
-    PINATA_JWT: str = os.getenv("PINATA_JWT", "")
-    
-    # Hugging Face settings
-    HUGGINGFACE_TOKEN: str = os.getenv("HUGGINGFACE_TOKEN", "")
-    
-    # LLM settings
-    LLM_MODEL_NAME: str = os.getenv("LLM_MODEL_NAME", "microsoft/phi-2")
-    LLM_MAX_LENGTH: int = int(os.getenv("LLM_MAX_LENGTH", "512"))
-    LLM_TEMPERATURE: float = float(os.getenv("LLM_TEMPERATURE", "0.7"))
-    LLM_TOP_P: float = float(os.getenv("LLM_TOP_P", "0.9"))
-    LLM_NUM_BEAMS: int = int(os.getenv("LLM_NUM_BEAMS", "1"))
-    LLM_DO_SAMPLE: bool = bool(os.getenv("LLM_DO_SAMPLE", "False"))
-    LLM_EARLY_STOPPING: bool = bool(os.getenv("LLM_EARLY_STOPPING", "False"))
-    LLM_USE_CACHE: bool = bool(os.getenv("LLM_USE_CACHE", "True"))
-    LLM_DEVICE: str = os.getenv("LLM_DEVICE", "cuda")
-    
-    # Rate limiting settings
-    RATE_LIMIT_REQUESTS: int = int(os.getenv("RATE_LIMIT_REQUESTS", "60"))
-    RATE_LIMIT_WINDOW: int = int(os.getenv("RATE_LIMIT_WINDOW", "60"))
+    # IPFS Configuration
+    IPFS_API_URL: str = Field(..., env="IPFS_API_URL")
     
     # API Configuration
-    API_HOST: str = "0.0.0.0"
-    API_PORT: int = int(os.getenv("API_PORT", "8000"))
+    API_HOST: str = Field(default="0.0.0.0", env="API_HOST")
+    API_PORT: int = Field(default=8000, env="API_PORT")
     
-    class Config:
-        env_file = ".env"
+    # LLM Configuration
+    LLM_MODEL_NAME: str = Field(..., env="LLM_MODEL_NAME")
+    LLM_MAX_LENGTH: int = Field(default=256, env="LLM_MAX_LENGTH")
+    LLM_TEMPERATURE: float = Field(default=0.3, env="LLM_TEMPERATURE")
+    LLM_TOP_P: float = Field(default=0.7, env="LLM_TOP_P")
+    LLM_NUM_BEAMS: int = Field(default=1, env="LLM_NUM_BEAMS")
+    LLM_DO_SAMPLE: bool = Field(default=True, env="LLM_DO_SAMPLE")
+    LLM_EARLY_STOPPING: bool = Field(default=True, env="LLM_EARLY_STOPPING")
+    LLM_USE_CACHE: bool = Field(default=True, env="LLM_USE_CACHE")
+    
+    # Hugging Face Configuration
+    HUGGINGFACE_TOKEN: Optional[str] = Field(None, env="HUGGINGFACE_TOKEN")
+    
+    # Model Registry Configuration
+    MODEL_REGISTRY_DEVICE: str = Field(default="auto", env="MODEL_REGISTRY_DEVICE")
+    MODEL_REGISTRY_MAX_MEMORY_CPU: str = Field(default="8GB", env="MODEL_REGISTRY_MAX_MEMORY_CPU")
+    MODEL_REGISTRY_MAX_MEMORY_GPU: str = Field(default="4GB", env="MODEL_REGISTRY_MAX_MEMORY_GPU")
+    
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        protected_namespaces=('settings_',)
+    )
 
 # Create a global settings instance
 settings = Settings()
