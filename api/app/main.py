@@ -5,13 +5,14 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 from datetime import datetime
 import uuid
-from typing import Dict, Any
-from .models.prompt import PromptRequest, PromptResponse
+from typing import Dict, Any, List
+from .models.prompt import PromptRequest, PromptResponse, SessionResponse
 from .services.blockchain import BlockchainService
 from .services.ipfs import IPFSService
 from .services.llm import LLMService
 from .core.config import get_settings
 from .core.rate_limit import RateLimitMiddleware
+from .services.chat_session import ChatSessionService
 import logging
 import time
 
@@ -59,6 +60,7 @@ settings = get_settings()
 llm_service = LLMService()
 blockchain_service = BlockchainService()
 ipfs_service = IPFSService()
+chat_session_service = ChatSessionService()
 
 # Request tracking
 request_stats: Dict[str, Any] = {
@@ -114,87 +116,81 @@ async def health_check():
         logger.error(f"Health check failed: {str(e)}")
         raise HTTPException(status_code=500, detail="Service unhealthy")
 
-@app.post("/prompts")
-async def submit_prompt(request: Request):
+@app.post("/prompt", response_model=PromptResponse)
+async def submit_prompt(request: PromptRequest):
     """Submit a prompt and get a response."""
     try:
-        # Get user address from header
-        user_address = request.headers.get("X-User-Address")
-        if not user_address:
-            raise HTTPException(status_code=400, detail="X-User-Address header is required")
+        # Get or create session
+        session_id = chat_session_service.create_session(request.session_id)
         
-        # Get prompt and model from request body
-        body = await request.json()
-        prompt = body.get("prompt")
-        model_name = body.get("model_name")
+        # Get chat history for context (before adding current message)
+        chat_history = chat_session_service.format_session_history(session_id)
         
-        if not prompt:
-            raise HTTPException(status_code=400, detail="Prompt is required")
+        # Generate response with the specified model and chat history
+        result = llm_service.generate_response(
+            prompt=request.prompt,
+            model_name=request.model_name,
+            chat_history=chat_history
+        )
         
-        try:
-            # Generate response with the specified model
-            result = llm_service.generate_response(prompt, model_name)
-            response_text = result["response"]
-            model_name = result["model_name"]
-            model_id = result["model_id"]
-            
-            # Create metadata
-            metadata = {
-                "timestamp": datetime.utcnow().isoformat(),
-                "model_name": model_name,
-                "model_id": model_id,
-                "temperature": llm_service.config.temperature,
-                "max_tokens": llm_service.config.max_new_tokens
-            }
-            
-            # Upload to IPFS
-            ipfs_cid = await ipfs_service.upload_to_ipfs(prompt, response_text, metadata)
-            
-            # Create hash of prompt data
-            prompt_hash = blockchain_service.hash_prompt(
-                prompt=prompt,
-                response=response_text,
-                timestamp=metadata["timestamp"],
-                user_address=user_address
-            )
-            
-            # Store hash on blockchain
-            signature = await blockchain_service.submit_hash(prompt_hash)
-            
-            return {
-                "response": response_text,
-                "ipfs_cid": ipfs_cid,
-                "signature": signature,
-                "metadata": metadata,
-                "model_name": model_name,
-                "model_id": model_id
-            }
-            
-        except ValueError as e:
-            error_msg = str(e)
-            if "gated repository" in error_msg:
-                raise HTTPException(
-                    status_code=403,
-                    detail={
-                        "error": "Model access denied",
-                        "message": error_msg,
-                        "solution": "Please ensure you have access to the model and have set the HUGGINGFACE_TOKEN environment variable."
-                    }
-                )
-            elif "Model" in error_msg and "not found" in error_msg:
-                available_models = llm_service.get_available_models()
-                raise HTTPException(
-                    status_code=400, 
-                    detail={
-                        "error": "Invalid model",
-                        "message": error_msg,
-                        "available_models": available_models
-                    }
-                )
-            raise HTTPException(status_code=400, detail=error_msg)
-            
-    except HTTPException as e:
-        raise e
+        # Add user message to session
+        chat_session_service.add_message(
+            session_id=session_id,
+            role="user",
+            content=request.prompt
+        )
+        
+        # Create metadata for IPFS storage
+        metadata = {
+            "timestamp": datetime.now().isoformat(),
+            "model_name": result["model_name"],
+            "model_id": result["model_id"],
+            "temperature": llm_service.config.temperature,
+            "max_tokens": llm_service.config.max_new_tokens
+        }
+        
+        # Store on IPFS
+        ipfs_cid = await ipfs_service.upload_to_ipfs(
+            prompt=request.prompt,
+            response=result["response"],
+            metadata=metadata
+        )
+        
+        # Create hash of prompt data
+        prompt_hash = blockchain_service.hash_prompt(
+            prompt=request.prompt,
+            response=result["response"],
+            timestamp=metadata["timestamp"]
+        )
+        
+        # Store hash on blockchain
+        transaction_hash = await blockchain_service.submit_hash(prompt_hash)
+        
+        # Add assistant message to session
+        chat_session_service.add_message(
+            session_id=session_id,
+            role="assistant",
+            content=result["response"],
+            model_name=result["model_name"],
+            model_id=result["model_id"],
+            ipfs_cid=ipfs_cid,
+            transaction_hash=transaction_hash
+        )
+        
+        # Update metadata with blockchain info
+        metadata.update({
+            "ipfs_cid": ipfs_cid,
+            "transaction_hash": transaction_hash
+        })
+        
+        return PromptResponse(
+            response=result["response"],
+            model_name=result["model_name"],
+            model_id=result["model_id"],
+            session_id=session_id,
+            metadata=metadata
+        )
+        
     except Exception as e:
         logger.error(f"Error processing prompt: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -207,6 +203,20 @@ async def get_available_models():
         return {"models": models}
     except Exception as e:
         logger.error(f"Error getting available models: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/sessions/{session_id}", response_model=SessionResponse)
+async def get_session(session_id: str):
+    """Get a chat session by ID."""
+    try:
+        session = chat_session_service.get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        return SessionResponse.from_chat_session(session)
+        
+    except Exception as e:
+        logger.error(f"Error retrieving session: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.exception_handler(HTTPException)

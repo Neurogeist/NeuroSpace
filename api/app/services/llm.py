@@ -58,15 +58,16 @@ class LLMService:
             self._load_model(model_name)
     
     @lru_cache(maxsize=100)
-    def generate_response(self, prompt: str, model_name: Optional[str] = None) -> Dict[str, Any]:
+    def generate_response(self, prompt: str, model_name: Optional[str] = None, chat_history: Optional[str] = None) -> Dict[str, Any]:
         """Generate a response with the specified model."""
         try:
             # Set model if specified
             if model_name and model_name != self.current_model_name:
                 self.set_model(model_name)
             
-            # Format the prompt
-            formatted_prompt = self._format_prompt(prompt)
+            # Format the prompt with chat history
+            formatted_prompt = self._format_prompt(prompt, chat_history)
+            logger.info(f"Formatted prompt: {formatted_prompt}")
             
             # Tokenize the input
             inputs = self.tokenizer(formatted_prompt, return_tensors="pt", padding=True, truncation=True)
@@ -111,6 +112,8 @@ class LLMService:
             if self.registry.device == "mps":
                 generation_config["max_time"] = 30.0  # 30 second timeout for MPS
             
+            logger.info(f"Generation config: {generation_config}")
+            
             # Generate response with model-specific parameters
             with torch.no_grad():
                 try:
@@ -118,6 +121,7 @@ class LLMService:
                         **inputs,
                         **generation_config
                     )
+                    logger.info(f"Raw model output shape: {outputs.shape}")
                 except RuntimeError as e:
                     if "out of memory" in str(e).lower():
                         raise ValueError(
@@ -132,9 +136,11 @@ class LLMService:
             
             # Decode the response
             response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+            logger.info(f"Raw decoded response: {response}")
             
             # Clean the response
-            cleaned_response = self._clean_response(response, prompt)
+            cleaned_response = self._clean_response(response, formatted_prompt)
+            logger.info(f"Cleaned response: {cleaned_response}")
             
             # Return response with metadata
             return {
@@ -151,26 +157,70 @@ class LLMService:
         """Clear the response cache."""
         self.generate_response.cache_clear()
     
-    def _format_prompt(self, prompt: str) -> str:
-        """Format the prompt with system message."""
-        return f"{self.config.system_prompt}\n\nUser: {prompt}\nAssistant:"
+    def _format_prompt(self, prompt: str, chat_history: Optional[str] = None) -> str:
+        """Format the prompt with system message and chat history."""
+        if self.current_model_name == "tinyllama":
+            # TinyLlama uses a specific chat format
+            formatted_prompt = f"<|system|>\n{self.config.system_prompt}\n\n"
+            
+            # Add chat history if provided
+            if chat_history:
+                # Split chat history into messages
+                messages = chat_history.split("\n")
+                for msg in messages:
+                    if msg.startswith("User:"):
+                        formatted_prompt += f"<|user|>\n{msg[5:].strip()}\n\n"
+                    elif msg.startswith("Assistant:"):
+                        formatted_prompt += f"<|assistant|>\n{msg[10:].strip()}\n\n"
+            
+            # Add the current user message
+            formatted_prompt += f"<|user|>\n{prompt}\n\n<|assistant|>\n"
+            return formatted_prompt
+        else:
+            # Default format for other models
+            formatted_prompt = f"{self.config.system_prompt}\n\n"
+            
+            # Add chat history if provided
+            if chat_history:
+                formatted_prompt += chat_history + "\n\n"
+            
+            # Add the current user message
+            formatted_prompt += f"User: {prompt}\nAssistant:"
+            return formatted_prompt
     
-    def _clean_response(self, response: str, prompt: str) -> str:
-        """Clean the model's response to only include the first assistant reply."""
+    def _clean_response(self, response: str, formatted_prompt: str) -> str:
+        """Clean the model's response to only include the assistant's reply."""
         # Remove the prompt from the response
-        response = response.replace(self._format_prompt(prompt), "").strip()
+        response = response.replace(formatted_prompt, "").strip()
         
-        # Check if the response contains additional "User:" markers
-        if "User:" in response:
-            # Split at the first "User:" and take only the first part
-            response = response.split("User:")[0].strip()
-        
-        # Remove any additional "Assistant:" markers
-        if "Assistant:" in response:
-            # Split at the first "Assistant:" and take only the first part
-            response = response.split("Assistant:")[0].strip()
-        
-        # Remove any other conversation markers
-        response = response.replace("Question:", "").replace("Answer:", "").strip()
-        
-        return response 
+        # Handle TinyLlama specific format
+        if self.current_model_name == "tinyllama":
+            # Split at any subsequent markers
+            for marker in ["<|system|>", "<|user|>", "<|assistant|>", "User:", "Assistant:", "AI:"]:
+                if marker in response:
+                    response = response.split(marker)[0].strip()
+            
+            # Remove any remaining conversation markers
+            response = response.replace("Question:", "").replace("Answer:", "").strip()
+            
+            # Remove any trailing newlines and whitespace
+            response = response.strip()
+            
+            # Log the cleaned response for debugging
+            logger.info(f"Cleaned response: {response}")
+            
+            return response
+        else:
+            # Handle other models
+            if "User:" in response:
+                response = response.split("User:")[0].strip()
+            if "Assistant:" in response:
+                response = response.split("Assistant:")[0].strip()
+            
+            # Remove any other conversation markers
+            response = response.replace("Question:", "").replace("Answer:", "").strip()
+            
+            # Log the cleaned response for debugging
+            logger.info(f"Cleaned response: {response}")
+            
+            return response 

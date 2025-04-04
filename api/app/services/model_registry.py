@@ -49,14 +49,15 @@ class ModelRegistry:
         self.models = {
             "tinyllama": ModelConfig(
                 model_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-                max_new_tokens=100,
+                max_new_tokens=128,  # Reduced for faster responses
                 temperature=0.7,
                 top_p=0.9,
                 do_sample=True,
-                num_beams=1,
-                early_stopping=True,
-                system_prompt="You are a helpful assistant. Be concise and clear.",
-                is_gated=False
+                num_beams=1,  # Using single beam for faster generation
+                early_stopping=False,  # Disabled to prevent warnings
+                system_prompt="You are a helpful AI assistant. Answer questions accurately and concisely.",
+                is_gated=False,
+                local_files_only=True  # Use local files only to prevent download issues
             ),
             "mistral": ModelConfig(
                 model_id="mistralai/Mistral-7B-Instruct-v0.2",
