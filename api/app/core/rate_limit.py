@@ -49,8 +49,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.rate_limiter = RateLimiter(requests_per_minute)
     
     async def dispatch(self, request: Request, call_next):
-        # Skip rate limiting for health check endpoint and OPTIONS requests
-        if request.url.path == "/health" or request.method == "OPTIONS":
+        # Skip rate limiting for health check endpoint, models endpoint, and OPTIONS requests
+        if request.url.path in ["/health", "/models"] or request.method == "OPTIONS":
             return await call_next(request)
             
         # Get user address from request (case-insensitive)
