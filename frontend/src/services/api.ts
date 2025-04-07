@@ -58,18 +58,10 @@ export interface ChatMessage {
   };
 }
 
-export const getAvailableModels = async (): Promise<Model[]> => {
-  try {
-    const response = await axios.get(`${API_BASE_URL}/models`);
-    const models = response.data.models;
-    return Object.entries(models).map(([name, id]) => ({
-      name,
-      description: id as string
-    }));
-  } catch (error) {
-    console.error('Error fetching models:', error);
-    return [];
-  }
+export const getAvailableModels = async (): Promise<{ [key: string]: string }> => {
+  const response = await axios.get(`${API_BASE_URL}/models`);
+  // The backend returns { models: { [name: string]: id } }
+  return response.data.models;
 };
 
 export const submitPrompt = async (

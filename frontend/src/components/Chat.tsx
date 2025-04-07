@@ -17,6 +17,7 @@ import {
     FormLabel,
     UnorderedList,
     ListItem,
+    Heading,
 } from '@chakra-ui/react';
 import { FiSend, FiRefreshCw, FiHash, FiLink } from 'react-icons/fi';
 import { ChatMessage, ChatSession } from '../types/chat';
@@ -28,10 +29,10 @@ export const Chat: React.FC = () => {
     const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
+    const [isLoading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [availableModels, setAvailableModels] = useState<Model[]>([]);
-    const [selectedModel, setSelectedModel] = useState<string>('');
+    const [availableModels, setAvailableModels] = useState<{ [key: string]: string }>({});
+    const [selectedModel, setSelectedModel] = useState<string>("mixtral-remote");
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
@@ -56,9 +57,6 @@ export const Chat: React.FC = () => {
                     getSessions()
                 ]);
                 setAvailableModels(models);
-                if (models.length > 0) {
-                    setSelectedModel(models[0].name);
-                }
                 setSessions(sessions);
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Failed to load data');
@@ -107,7 +105,7 @@ export const Chat: React.FC = () => {
         setMessages(prev => [...prev, userMessage]);
 
         setInput('');
-        setIsLoading(true);
+        setLoading(true);
         setError(null);
 
         try {
@@ -185,7 +183,7 @@ export const Chat: React.FC = () => {
                 setError('An unknown error occurred while processing your request');
             }
         } finally {
-            setIsLoading(false);
+            setLoading(false);
         }
     };
 
@@ -226,6 +224,16 @@ export const Chat: React.FC = () => {
         );
     };
 
+    // Group models by provider
+    const groupedModels = Object.entries(availableModels).reduce((acc, [name, id]) => {
+        const provider = name.includes('remote') ? 'Remote' : 'Local';
+        if (!acc[provider]) {
+            acc[provider] = [];
+        }
+        acc[provider].push({ name, id });
+        return acc;
+    }, {} as { [key: string]: { name: string; id: string }[] });
+
     return (
         <Flex h="100vh" bg={bgColor}>
             <Sidebar
@@ -252,10 +260,14 @@ export const Chat: React.FC = () => {
                                     borderColor={inputBorderColor}
                                     color={inputTextColor}
                                 >
-                                    {availableModels.map((model) => (
-                                        <option key={model.name} value={model.name}>
-                                            {model.name}
-                                        </option>
+                                    {Object.entries(groupedModels).map(([provider, models]) => (
+                                        <optgroup key={provider} label={provider}>
+                                            {models.map(({ name }) => (
+                                                <option key={name} value={name}>
+                                                    {name}
+                                                </option>
+                                            ))}
+                                        </optgroup>
                                     ))}
                                 </Select>
                             </FormControl>

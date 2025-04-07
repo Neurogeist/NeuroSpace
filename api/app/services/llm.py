@@ -18,7 +18,7 @@ class LLMService:
         self.registry = ModelRegistry()
         
         # Default model name
-        self.default_model = "tinyllama"
+        self.default_model = "mixtral-remote"
         
         # Current model and tokenizer
         self.current_model_name = self.default_model
