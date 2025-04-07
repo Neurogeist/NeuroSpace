@@ -15,12 +15,17 @@ import {
     Select,
     FormControl,
     FormLabel,
+    UnorderedList,
+    ListItem,
 } from '@chakra-ui/react';
 import { FiSend, FiRefreshCw, FiHash, FiLink } from 'react-icons/fi';
-import { ChatMessage } from '../types/chat';
-import { submitPrompt, getAvailableModels, Model } from '../services/api';
+import { ChatMessage, ChatSession } from '../types/chat';
+import { submitPrompt, getAvailableModels, Model, getSessions, getSession, API_BASE_URL } from '../services/api';
+import { Sidebar } from './Sidebar';
 
 export const Chat: React.FC = () => {
+    const [sessions, setSessions] = useState<ChatSession[]>([]);
+    const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -42,22 +47,44 @@ export const Chat: React.FC = () => {
     const placeholderColor = useColorModeValue('gray.500', 'gray.400');
     const timestampColor = useColorModeValue('gray.500', 'gray.400');
 
-    // Load available models on component mount
+    // Load available models and sessions on component mount
     useEffect(() => {
-        const loadModels = async () => {
+        const loadInitialData = async () => {
             try {
-                const models = await getAvailableModels();
+                const [models, sessions] = await Promise.all([
+                    getAvailableModels(),
+                    getSessions()
+                ]);
                 setAvailableModels(models);
                 if (models.length > 0) {
                     setSelectedModel(models[0].name);
                 }
+                setSessions(sessions);
             } catch (err) {
-                setError(err instanceof Error ? err.message : 'Failed to load models');
+                setError(err instanceof Error ? err.message : 'Failed to load data');
             }
         };
         
-        loadModels();
+        loadInitialData();
     }, []);
+
+    // Load session messages when active session changes
+    useEffect(() => {
+        const loadSessionMessages = async () => {
+            if (activeSessionId) {
+                try {
+                    const session = await getSession(activeSessionId);
+                    setMessages(session.messages);
+                } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Failed to load session');
+                }
+            } else {
+                setMessages([]);
+            }
+        };
+        
+        loadSessionMessages();
+    }, [activeSessionId]);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -71,25 +98,61 @@ export const Chat: React.FC = () => {
         e.preventDefault();
         if (!input.trim() || isLoading) return;
 
+        // Create and show user message immediately
         const userMessage: ChatMessage = {
             role: 'user',
             content: input.trim(),
-            timestamp: new Date().toISOString(),
+            timestamp: new Date().toISOString()
         };
-
         setMessages(prev => [...prev, userMessage]);
+
         setInput('');
         setIsLoading(true);
         setError(null);
 
         try {
-            const response = await submitPrompt(input.trim(), selectedModel);
+            let response;
+            
+            try {
+                // Try with axios first
+                response = await submitPrompt(
+                    input.trim(),
+                    selectedModel,
+                    activeSessionId || undefined
+                );
+                console.log('Backend response:', response);
+            } catch (axiosError) {
+                console.error('Axios request failed, trying with fetch:', axiosError);
+                
+                // Fallback to fetch if axios fails
+                const fetchResponse = await fetch(`${API_BASE_URL}/prompt`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-User-Address': '0x1234567890123456789012345678901234567890'
+                    },
+                    body: JSON.stringify({
+                        prompt: input.trim(),
+                        model_name: selectedModel,
+                        session_id: activeSessionId || undefined
+                    })
+                });
+                
+                if (!fetchResponse.ok) {
+                    throw new Error(`Fetch failed with status: ${fetchResponse.status}`);
+                }
+                
+                response = await fetchResponse.json();
+                console.log('Backend response (fetch):', response);
+            }
+
+            // Create assistant message with all metadata
             const assistantMessage: ChatMessage = {
                 role: 'assistant',
                 content: response.response,
                 timestamp: new Date().toISOString(),
                 ipfsHash: response.ipfs_cid,
-                transactionHash: response.signature,
+                transactionHash: response.transaction_hash,
                 metadata: {
                     model: response.model_name,
                     model_id: response.model_id,
@@ -97,9 +160,30 @@ export const Chat: React.FC = () => {
                     max_tokens: response.metadata.max_tokens
                 }
             };
+            console.log('Created assistant message:', assistantMessage);
+
+            // Add assistant message to the UI
             setMessages(prev => [...prev, assistantMessage]);
+            
+            // If this was a new chat, update the active session and load the session
+            if (!activeSessionId) {
+                setActiveSessionId(response.session_id);
+                // Load the session to get all messages with metadata
+                const session = await getSession(response.session_id);
+                setMessages(session.messages);
+                // Refresh sessions to include the new one
+                const updatedSessions = await getSessions();
+                setSessions(updatedSessions);
+            }
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to get response');
+            console.error('Chat component error:', err);
+            
+            // Display a more user-friendly error message
+            if (err instanceof Error) {
+                setError(err.message);
+            } else {
+                setError('An unknown error occurred while processing your request');
+            }
         } finally {
             setIsLoading(false);
         }
@@ -112,9 +196,14 @@ export const Chat: React.FC = () => {
         }
     };
 
-    const handleRefresh = () => {
+    const handleNewChat = () => {
+        setActiveSessionId(null);
         setMessages([]);
         setError(null);
+    };
+
+    const handleSelectSession = (sessionId: string) => {
+        setActiveSessionId(sessionId);
     };
 
     const formatHash = (hash: string) => {
@@ -138,128 +227,173 @@ export const Chat: React.FC = () => {
     };
 
     return (
-        <Flex direction="column" h="100vh" bg={bgColor}>
-            <Box flex="1" overflowY="auto" p={4}>
-                <Container maxW="container.md">
-                    <VStack spacing={4} align="stretch">
-                        <HStack justify="space-between" mb={4}>
-                            <Text fontSize="xl" fontWeight="bold" color={textColor}>
+        <Flex h="100vh" bg={bgColor}>
+            <Sidebar
+                sessions={sessions}
+                activeSessionId={activeSessionId}
+                onNewChat={handleNewChat}
+                onSelectSession={handleSelectSession}
+            />
+
+            <Flex direction="column" flex="1">
+                {/* Header with title and model selection */}
+                <Box p={4} borderBottom="1px" borderColor={borderColor}>
+                    <Container maxW="container.md">
+                        <HStack justify="space-between" align="center">
+                            <Text fontSize="2xl" fontWeight="bold" color={textColor}>
                                 NeuroChain Chat
                             </Text>
-                            <HStack>
-                                <FormControl maxW="200px">
-                                    <Select
-                                        value={selectedModel}
-                                        onChange={(e) => setSelectedModel(e.target.value)}
-                                        size="sm"
-                                    >
-                                        {availableModels.map((model) => (
-                                            <option key={model.name} value={model.name}>
-                                                {model.name}
-                                            </option>
-                                        ))}
-                                    </Select>
-                                </FormControl>
-                                <IconButton
-                                    aria-label="Clear chat"
-                                    icon={<FiRefreshCw />}
-                                    onClick={handleRefresh}
-                                    size="sm"
-                                />
-                            </HStack>
+                            <FormControl width="auto">
+                                <Select
+                                    value={selectedModel}
+                                    onChange={(e) => setSelectedModel(e.target.value)}
+                                    size="md"
+                                    bg={inputBgColor}
+                                    borderColor={inputBorderColor}
+                                    color={inputTextColor}
+                                >
+                                    {availableModels.map((model) => (
+                                        <option key={model.name} value={model.name}>
+                                            {model.name}
+                                        </option>
+                                    ))}
+                                </Select>
+                            </FormControl>
                         </HStack>
-                        
-                        {messages.map((message, index) => (
-                            <Box
-                                key={index}
-                                p={4}
-                                borderRadius="lg"
-                                bg={message.role === 'user' ? userMessageBgColor : messageBgColor}
-                                maxW="80%"
-                                alignSelf={message.role === 'user' ? 'flex-end' : 'flex-start'}
-                            >
-                                <Text color={textColor}>{message.content}</Text>
-                                
-                                <HStack spacing={4} mt={2} fontSize="xs" color={timestampColor}>
-                                    <Text>{new Date(message.timestamp).toLocaleTimeString()}</Text>
-                                    {message.ipfsHash && (
-                                        <Tooltip label="View on IPFS">
-                                            <Link
-                                                href={`https://ipfs.io/ipfs/${message.ipfsHash}`}
-                                                isExternal
-                                                color={linkColor}
-                                                display="flex"
-                                                alignItems="center"
-                                                gap={1}
-                                            >
-                                                <FiHash />
-                                                {formatHash(message.ipfsHash)}
-                                            </Link>
-                                        </Tooltip>
-                                    )}
-                                    {message.transactionHash && (
-                                        <Tooltip label="View on BaseScan">
-                                            <Link
-                                                href={`https://sepolia.basescan.org/tx/${message.transactionHash}`}
-                                                isExternal
-                                                color={linkColor}
-                                                display="flex"
-                                                alignItems="center"
-                                                gap={1}
-                                            >
-                                                <FiLink />
-                                                {formatHash(message.transactionHash)}
-                                            </Link>
-                                        </Tooltip>
-                                    )}
-                                </HStack>
-                                {message.role === 'assistant' && renderMetadata(message)}
-                            </Box>
-                        ))}
-                        {isLoading && (
-                            <Box p={4} borderRadius="lg" bg={messageBgColor} maxW="80%">
-                                <Text color={textColor}>Thinking...</Text>
-                            </Box>
-                        )}
-                        {error && (
-                            <Box p={4} borderRadius="lg" bg="red.50" maxW="80%">
-                                <Text color="red.500">{error}</Text>
-                            </Box>
-                        )}
-                        <div ref={messagesEndRef} />
-                    </VStack>
-                </Container>
-            </Box>
+                    </Container>
+                </Box>
 
-            {/* Input Area */}
-            <Box p={4} borderTop="1px" borderColor={borderColor}>
-                <Container maxW="container.md">
-                    <form onSubmit={handleSubmit}>
-                        <HStack>
-                            <Input
-                                ref={inputRef}
-                                value={input}
-                                onChange={(e) => setInput(e.target.value)}
-                                onKeyPress={handleKeyPress}
-                                placeholder="Type your message..."
-                                size="lg"
-                                bg={inputBgColor}
-                                borderColor={inputBorderColor}
-                                color={inputTextColor}
-                                _placeholder={{ color: placeholderColor }}
-                            />
-                            <IconButton
-                                aria-label="Send message"
-                                icon={<FiSend />}
-                                type="submit"
-                                colorScheme="blue"
-                                size="lg"
-                                isLoading={isLoading}
-                            />
-                        </HStack>
-                    </form>
-                </Container>
-            </Box>
+                <Box flex="1" overflowY="auto" p={4}>
+                    <Container maxW="container.md">
+                        <VStack spacing={4} align="stretch">
+                            {messages.map((message, index) => (
+                                <Box
+                                    key={index}
+                                    p={4}
+                                    borderRadius="lg"
+                                    bg={message.role === 'user' ? userMessageBgColor : messageBgColor}
+                                    maxW="80%"
+                                    alignSelf={message.role === 'user' ? 'flex-end' : 'flex-start'}
+                                >
+                                    <Text 
+                                        color={textColor}
+                                        whiteSpace="pre-line"
+                                    >
+                                        {message.content}
+                                    </Text>
+                                    
+                                    <HStack spacing={4} mt={2} fontSize="xs" color={timestampColor}>
+                                        <Text>{new Date(message.timestamp).toLocaleTimeString()}</Text>
+                                        {message.ipfsHash && (
+                                            <Tooltip label="View on IPFS">
+                                                <Link
+                                                    href={`https://ipfs.io/ipfs/${message.ipfsHash}`}
+                                                    isExternal
+                                                    color={linkColor}
+                                                    display="flex"
+                                                    alignItems="center"
+                                                    gap={1}
+                                                >
+                                                    <FiHash />
+                                                    {formatHash(message.ipfsHash)}
+                                                </Link>
+                                            </Tooltip>
+                                        )}
+                                        {message.transactionHash && (
+                                            <Tooltip label="View on BaseScan">
+                                                <Link
+                                                    href={`https://sepolia.basescan.org/tx/${message.transactionHash}`}
+                                                    isExternal
+                                                    color={linkColor}
+                                                    display="flex"
+                                                    alignItems="center"
+                                                    gap={1}
+                                                >
+                                                    <FiLink />
+                                                    {formatHash(message.transactionHash)}
+                                                </Link>
+                                            </Tooltip>
+                                        )}
+                                    </HStack>
+                                    {message.role === 'assistant' && renderMetadata(message)}
+                                </Box>
+                            ))}
+                            {isLoading && (
+                                <Box p={4} borderRadius="lg" bg={messageBgColor} maxW="80%">
+                                    <Text color={textColor}>Thinking...</Text>
+                                </Box>
+                            )}
+                            {error && (
+                                <Box p={4} borderRadius="lg" bg="red.100" maxW="100%">
+                                    <Text fontWeight="bold" color="red.600">Error:</Text>
+                                    <Text color="red.600">{error}</Text>
+                                    <Box mt={2}>
+                                        <Text fontSize="sm" color="red.600">
+                                            Troubleshooting tips:
+                                        </Text>
+                                        <UnorderedList fontSize="sm" color="red.600" pl={4}>
+                                            <ListItem>Check that the API server is running at {API_BASE_URL}</ListItem>
+                                            <ListItem>Ensure your prompt doesn't contain any inappropriate content</ListItem>
+                                            <ListItem>Try selecting a different model</ListItem>
+                                            <ListItem>Check the browser console for detailed error information</ListItem>
+                                        </UnorderedList>
+                                    </Box>
+                                </Box>
+                            )}
+                            <div ref={messagesEndRef} />
+                        </VStack>
+                    </Container>
+                </Box>
+
+                <Box p={4} borderTop="1px" borderColor={borderColor}>
+                    <Container maxW="container.md">
+                        <form onSubmit={handleSubmit}>
+                            <VStack spacing={4}>
+                                <HStack w="100%">
+                                    <Input
+                                        ref={inputRef}
+                                        value={input}
+                                        onChange={(e) => setInput(e.target.value)}
+                                        onKeyPress={handleKeyPress}
+                                        placeholder="Type your message..."
+                                        size="lg"
+                                        bg={inputBgColor}
+                                        borderColor={inputBorderColor}
+                                        color={inputTextColor}
+                                        _placeholder={{ color: placeholderColor }}
+                                    />
+                                    <IconButton
+                                        aria-label="Send message"
+                                        icon={<FiSend />}
+                                        type="submit"
+                                        colorScheme="blue"
+                                        size="lg"
+                                        isLoading={isLoading}
+                                    />
+                                </HStack>
+                                
+                                {error && (
+                                    <Button 
+                                        onClick={async () => {
+                                            try {
+                                                const response = await fetch(`${API_BASE_URL}/health`);
+                                                const data = await response.json();
+                                                alert(`API Health Check: ${JSON.stringify(data, null, 2)}`);
+                                            } catch (err) {
+                                                alert(`Failed to connect to API: ${err}`);
+                                            }
+                                        }}
+                                        size="sm"
+                                        colorScheme="red"
+                                    >
+                                        Test API Connection
+                                    </Button>
+                                )}
+                            </VStack>
+                        </form>
+                    </Container>
+                </Box>
+            </Flex>
         </Flex>
     );
 }; 

@@ -165,13 +165,52 @@ class LLMService:
             
             # Add chat history if provided
             if chat_history:
-                # Split chat history into messages
-                messages = chat_history.split("\n")
-                for msg in messages:
-                    if msg.startswith("User:"):
-                        formatted_prompt += f"<|user|>\n{msg[5:].strip()}\n\n"
-                    elif msg.startswith("Assistant:"):
-                        formatted_prompt += f"<|assistant|>\n{msg[10:].strip()}\n\n"
+                # Process chat history more robustly
+                current_role = None
+                current_message = []
+                
+                # Split chat history by lines and process line by line
+                for line in chat_history.split('\n'):
+                    line = line.strip()
+                    if not line:
+                        continue
+                        
+                    if line.startswith("User:"):
+                        # If we were building a previous message, add it to the prompt
+                        if current_role and current_message:
+                            msg_text = '\n'.join(current_message).strip()
+                            if current_role == "user":
+                                formatted_prompt += f"<|user|>\n{msg_text}\n\n"
+                            elif current_role == "assistant":
+                                formatted_prompt += f"<|assistant|>\n{msg_text}\n\n"
+                        
+                        # Start a new user message
+                        current_role = "user"
+                        current_message = [line[5:].strip()]
+                    elif line.startswith("Assistant:"):
+                        # If we were building a previous message, add it to the prompt
+                        if current_role and current_message:
+                            msg_text = '\n'.join(current_message).strip()
+                            if current_role == "user":
+                                formatted_prompt += f"<|user|>\n{msg_text}\n\n"
+                            elif current_role == "assistant":
+                                formatted_prompt += f"<|assistant|>\n{msg_text}\n\n"
+                        
+                        # Start a new assistant message
+                        current_role = "assistant"
+                        current_message = [line[10:].strip()]
+                    else:
+                        # Continue building the current message
+                        if current_role:
+                            current_message.append(line)
+                
+                # Add the final message if there is one
+                if current_role and current_message:
+                    msg_text = '\n'.join(current_message).strip()
+                    if current_role == "user":
+                        formatted_prompt += f"<|user|>\n{msg_text}\n\n"
+                    elif current_role == "assistant":
+                        formatted_prompt += f"<|assistant|>\n{msg_text}\n\n"
             
             # Add the current user message
             formatted_prompt += f"<|user|>\n{prompt}\n\n<|assistant|>\n"
@@ -182,7 +221,43 @@ class LLMService:
             
             # Add chat history if provided
             if chat_history:
-                formatted_prompt += chat_history + "\n\n"
+                # Process chat history more robustly
+                current_role = None
+                current_message = []
+                
+                # Split chat history by lines and process line by line
+                for line in chat_history.split('\n'):
+                    line = line.strip()
+                    if not line:
+                        continue
+                        
+                    if line.startswith("User:"):
+                        # If we were building a previous message, add it to the prompt
+                        if current_role and current_message:
+                            msg_text = '\n'.join(current_message).strip()
+                            formatted_prompt += f"{current_role}: {msg_text}\n\n"
+                        
+                        # Start a new user message
+                        current_role = "User"
+                        current_message = [line[5:].strip()]
+                    elif line.startswith("Assistant:"):
+                        # If we were building a previous message, add it to the prompt
+                        if current_role and current_message:
+                            msg_text = '\n'.join(current_message).strip()
+                            formatted_prompt += f"{current_role}: {msg_text}\n\n"
+                        
+                        # Start a new assistant message
+                        current_role = "Assistant"
+                        current_message = [line[10:].strip()]
+                    else:
+                        # Continue building the current message
+                        if current_role:
+                            current_message.append(line)
+                
+                # Add the final message if there is one
+                if current_role and current_message:
+                    msg_text = '\n'.join(current_message).strip()
+                    formatted_prompt += f"{current_role}: {msg_text}\n\n"
             
             # Add the current user message
             formatted_prompt += f"User: {prompt}\nAssistant:"
@@ -203,11 +278,11 @@ class LLMService:
             # Remove any remaining conversation markers
             response = response.replace("Question:", "").replace("Answer:", "").strip()
             
+            # Format numbered lists with line breaks
+            response = self._format_lists(response)
+            
             # Remove any trailing newlines and whitespace
             response = response.strip()
-            
-            # Log the cleaned response for debugging
-            logger.info(f"Cleaned response: {response}")
             
             return response
         else:
@@ -220,7 +295,53 @@ class LLMService:
             # Remove any other conversation markers
             response = response.replace("Question:", "").replace("Answer:", "").strip()
             
-            # Log the cleaned response for debugging
-            logger.info(f"Cleaned response: {response}")
+            # Format numbered lists with line breaks
+            response = self._format_lists(response)
             
-            return response 
+            return response
+            
+    def _format_lists(self, text: str) -> str:
+        """Format numbered or bulleted lists with proper line breaks."""
+        import re
+        
+        # Already has proper line breaks
+        if "\n1." in text or "\n2." in text or "\n3." in text:
+            return text
+            
+        # Fix numbered lists without line breaks (e.g., "1. item 2. item")
+        # This matches patterns like "1. text 2. text" and adds line breaks
+        text = re.sub(r'(\d+\.\s*[^.0-9]+)(?=\d+\.)', r'\1\n', text)
+        
+        # Improved handling for numbered lists with multiple digits
+        text = re.sub(r'(\d{1,2}\.\s*[^\n.]+?)(\s+\d{1,2}\.)', r'\1\n\2', text)
+        
+        # Fix numbered lists with missing line breaks after the numbers (e.g., "1.item 2.item")
+        text = re.sub(r'(\d+\.)([^\s])', r'\1 \2', text)
+        
+        # Fix bullet points without line breaks
+        text = re.sub(r'(•\s*[^•]+)(?=•)', r'\1\n', text)
+        
+        # Fix dash bullet points without line breaks
+        text = re.sub(r'(-\s*[^-]+)(?=-\s)', r'\1\n', text)
+        
+        # Handle cases where there might be a colon followed by a list
+        parts = text.split(':')
+        if len(parts) > 1:
+            first_part = parts[0] + ':'
+            rest = ':'.join(parts[1:])
+            
+            # Check if the rest starts with what looks like a list item
+            if re.match(r'\s*\d+\.', rest):
+                # Split by number+period+space pattern
+                list_items = re.split(r'(\s*\d+\.\s+)', rest)
+                if len(list_items) > 2:  # We have at least one item
+                    formatted_list = []
+                    for i in range(1, len(list_items), 2):
+                        if i+1 < len(list_items):
+                            formatted_list.append(list_items[i] + list_items[i+1].strip())
+                    
+                    # Join with newlines
+                    formatted_rest = '\n'.join(formatted_list)
+                    text = first_part + '\n' + formatted_rest
+        
+        return text 

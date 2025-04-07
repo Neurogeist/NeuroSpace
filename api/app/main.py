@@ -15,6 +15,9 @@ from .core.rate_limit import RateLimitMiddleware
 from .services.chat_session import ChatSessionService
 import logging
 import time
+import os
+import re
+import ipaddress
 
 # Configure logging
 logging.basicConfig(
@@ -133,13 +136,6 @@ async def submit_prompt(request: PromptRequest):
             chat_history=chat_history
         )
         
-        # Add user message to session
-        chat_session_service.add_message(
-            session_id=session_id,
-            role="user",
-            content=request.prompt
-        )
-        
         # Create metadata for IPFS storage
         metadata = {
             "timestamp": datetime.now().isoformat(),
@@ -166,6 +162,17 @@ async def submit_prompt(request: PromptRequest):
         # Store hash on blockchain
         transaction_hash = await blockchain_service.submit_hash(prompt_hash)
         
+        # Add user message to session with metadata
+        chat_session_service.add_message(
+            session_id=session_id,
+            role="user",
+            content=request.prompt,
+            model_name=result["model_name"],
+            model_id=result["model_id"],
+            ipfs_cid=ipfs_cid,
+            transaction_hash=transaction_hash
+        )
+        
         # Add assistant message to session
         chat_session_service.add_message(
             session_id=session_id,
@@ -188,6 +195,8 @@ async def submit_prompt(request: PromptRequest):
             model_name=result["model_name"],
             model_id=result["model_id"],
             session_id=session_id,
+            ipfs_cid=ipfs_cid,
+            transaction_hash=transaction_hash,
             metadata=metadata
         )
         
@@ -217,6 +226,16 @@ async def get_session(session_id: str):
         
     except Exception as e:
         logger.error(f"Error retrieving session: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/sessions", response_model=List[SessionResponse])
+async def get_all_sessions():
+    """Get all chat sessions."""
+    try:
+        sessions = chat_session_service.get_all_sessions()
+        return [SessionResponse.from_chat_session(session) for session in sessions]
+    except Exception as e:
+        logger.error(f"Error retrieving sessions: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.exception_handler(HTTPException)

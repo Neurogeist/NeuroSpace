@@ -27,6 +27,8 @@ class PromptResponse(BaseModel):
     model_name: str = Field(..., description="The model used for generation")
     model_id: str = Field(..., description="The full model ID from Hugging Face")
     session_id: str = Field(..., description="The chat session ID")
+    ipfs_cid: str = Field(..., description="The IPFS CID of the response")
+    transaction_hash: str = Field(..., description="The transaction hash on the blockchain")
     metadata: Dict[str, Any] = Field(..., description="Additional metadata about the response")
 
     class Config:
@@ -36,6 +38,8 @@ class PromptResponse(BaseModel):
                 "model_name": "tinyllama",
                 "model_id": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
                 "session_id": "session123",
+                "ipfs_cid": "QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco",
+                "transaction_hash": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
                 "metadata": {
                     "timestamp": "2024-02-20T12:00:00",
                     "temperature": 0.7,

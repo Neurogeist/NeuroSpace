@@ -55,6 +55,10 @@ class ChatSessionService:
         """Get a chat session by ID."""
         return self.sessions.get(session_id)
 
+    def get_all_sessions(self) -> List[ChatSession]:
+        """Get all chat sessions."""
+        return list(self.sessions.values())
+
     def add_message(
         self,
         session_id: str,
