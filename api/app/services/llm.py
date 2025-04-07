@@ -7,6 +7,7 @@ from datetime import datetime
 import logging
 from ..core.config import get_settings
 from .model_registry import ModelRegistry
+from .llm_remote import RemoteLLMClient
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -25,6 +26,9 @@ class LLMService:
         self.tokenizer = None
         self.config = None
         
+        # Initialize remote client
+        self.remote_client = RemoteLLMClient()
+        
         # Load the default model
         self._load_model(self.default_model)
     
@@ -36,8 +40,10 @@ class LLMService:
             if not self.config:
                 raise ValueError(f"Model '{model_name}' not found")
             
-            # Get model and tokenizer
-            self.model, self.tokenizer = self.registry.get_model_and_tokenizer(model_name)
+            # Only load model and tokenizer if using local provider
+            if self.config.provider == "local":
+                # Get model and tokenizer
+                self.model, self.tokenizer = self.registry.get_model_and_tokenizer(model_name)
             
             # Update current model name
             self.current_model_name = model_name
@@ -69,73 +75,83 @@ class LLMService:
             formatted_prompt = self._format_prompt(prompt, chat_history)
             logger.info(f"Formatted prompt: {formatted_prompt}")
             
-            # Tokenize the input
-            inputs = self.tokenizer(formatted_prompt, return_tensors="pt", padding=True, truncation=True)
-            
-            # Determine the correct device for inputs
-            # For models using device_map="auto" or with offloaded modules, we need to be careful
-            if hasattr(self.model, 'device_map') and self.model.device_map is not None:
-                # For models with device_map, find the device of the first parameter
-                # that's not on the meta device (offloaded to disk)
-                for param in self.model.parameters():
-                    if param.device.type != 'meta':
-                        target_device = param.device
-                        break
-                else:
-                    # If all parameters are on meta device, use CPU
-                    target_device = torch.device('cpu')
+            # Generate response based on provider
+            if self.config.provider == "local":
+                # Use existing local generation flow
+                inputs = self.tokenizer(formatted_prompt, return_tensors="pt", padding=True, truncation=True)
                 
-                # Move inputs to the target device
-                inputs = {k: v.to(target_device) for k, v in inputs.items()}
-                logger.info(f"Using device {target_device} for inputs with device_map model")
-            else:
-                # For models not using device_map, move to the specified device
+                # Determine the correct device for inputs
+                if hasattr(self.model, 'device_map') and self.model.device_map is not None:
+                    for param in self.model.parameters():
+                        if param.device.type != 'meta':
+                            target_device = param.device
+                            break
+                    else:
+                        target_device = torch.device('cpu')
+                    inputs = {k: v.to(target_device) for k, v in inputs.items()}
+                    logger.info(f"Using device {target_device} for inputs with device_map model")
+                else:
+                    if self.registry.device == "mps":
+                        self.model = self.model.to(self.registry.device)
+                    inputs = {k: v.to(self.registry.device) for k, v in inputs.items()}
+                    logger.info(f"Using device {self.registry.device} for inputs")
+                
+                # Set generation parameters
+                generation_config = {
+                    "max_new_tokens": self.config.max_new_tokens,
+                    "temperature": self.config.temperature,
+                    "top_p": self.config.top_p,
+                    "do_sample": self.config.do_sample,
+                    "num_beams": self.config.num_beams,
+                    "pad_token_id": self.tokenizer.eos_token_id,
+                    "eos_token_id": self.tokenizer.eos_token_id,
+                    "early_stopping": self.config.early_stopping,
+                    "return_dict_in_generate": True,
+                    "output_scores": False
+                }
+                
+                # Add timeout for generation
                 if self.registry.device == "mps":
-                    # For MPS, we need to move the model to MPS first
-                    self.model = self.model.to(self.registry.device)
-                inputs = {k: v.to(self.registry.device) for k, v in inputs.items()}
-                logger.info(f"Using device {self.registry.device} for inputs")
-            
-            # Set generation parameters
-            generation_config = {
-                "max_new_tokens": self.config.max_new_tokens,
-                "temperature": self.config.temperature,
-                "top_p": self.config.top_p,
-                "do_sample": self.config.do_sample,
-                "num_beams": self.config.num_beams,
-                "pad_token_id": self.tokenizer.eos_token_id,
-                "eos_token_id": self.tokenizer.eos_token_id,
-                "early_stopping": self.config.early_stopping
-            }
-            
-            # Add timeout for generation
-            if self.registry.device == "mps":
-                generation_config["max_time"] = 30.0  # 30 second timeout for MPS
-            
-            logger.info(f"Generation config: {generation_config}")
-            
-            # Generate response with model-specific parameters
-            with torch.no_grad():
-                try:
-                    outputs = self.model.generate(
-                        **inputs,
-                        **generation_config
-                    )
-                    logger.info(f"Raw model output shape: {outputs.shape}")
-                except RuntimeError as e:
-                    if "out of memory" in str(e).lower():
-                        raise ValueError(
-                            "Model ran out of memory. Try using a smaller model or reducing max_new_tokens."
+                    generation_config["max_time"] = 60.0
+                
+                logger.info(f"Generation config: {generation_config}")
+                
+                # Generate response with model-specific parameters
+                with torch.no_grad():
+                    try:
+                        outputs = self.model.generate(
+                            **inputs,
+                            **generation_config
                         )
-                    elif "timeout" in str(e).lower():
-                        raise ValueError(
-                            "Generation timed out. The model is taking too long to respond. "
-                            "Try using a smaller model or reducing max_new_tokens."
-                        )
-                    raise
+                        # Get the sequences from the output
+                        sequences = outputs.sequences if hasattr(outputs, 'sequences') else outputs
+                        logger.info(f"Raw model output shape: {sequences.shape}")
+                        # Get input length from the inputs dictionary
+                        input_length = inputs['input_ids'].shape[1]
+                        logger.info(f"Generated token count: {sequences.shape[1] - input_length}")
+                    except RuntimeError as e:
+                        if "out of memory" in str(e).lower():
+                            raise ValueError(
+                                "Model ran out of memory. Try using a smaller model or reducing max_new_tokens."
+                            )
+                        elif "timeout" in str(e).lower():
+                            raise ValueError(
+                                "Generation timed out. The model is taking too long to respond. "
+                                "Try using a smaller model or reducing max_new_tokens."
+                            )
+                        raise
+                
+                # Decode the response
+                response = self.tokenizer.decode(sequences[0], skip_special_tokens=True)
+            else:
+                # Use remote client for generation
+                response = self.remote_client.generate(
+                    model_id=self.config.model_id,
+                    prompt=prompt,
+                    system_prompt=self.config.system_prompt,
+                    config=self.config
+                )
             
-            # Decode the response
-            response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
             logger.info(f"Raw decoded response: {response}")
             
             # Clean the response
@@ -271,9 +287,11 @@ class LLMService:
         # Handle TinyLlama specific format
         if self.current_model_name == "tinyllama":
             # Split at any subsequent markers
-            for marker in ["<|system|>", "<|user|>", "<|assistant|>", "User:", "Assistant:", "AI:"]:
-                if marker in response:
-                    response = response.split(marker)[0].strip()
+            # Truncate response at any known markers that indicate a new message
+            for marker in ["<|system|>", "<|user|>", "<|assistant|>", "User:", "Assistant:", "AI:", "<|endoftext|>"]:
+                idx = response.find(marker)
+                if idx != -1:
+                    response = response[:idx].strip()
             
             # Remove any remaining conversation markers
             response = response.replace("Question:", "").replace("Answer:", "").strip()

@@ -10,12 +10,34 @@ load_dotenv()
 
 class Settings(BaseSettings):
     """Application settings."""
+    # API settings
+    API_V1_STR: str = "/api/v1"
+    PROJECT_NAME: str = "NeuroChain"
+    
+    # Model settings
+    MODEL_REGISTRY_DEVICE: str = "auto"  # "auto", "cpu", "cuda", or "mps"
+    MODEL_REGISTRY_MAX_MEMORY_CPU: str = "8GB"
+    MODEL_REGISTRY_MAX_MEMORY_GPU: str = "8GB"
+    HUGGINGFACE_TOKEN: Optional[str] = None
+    
+    # Remote LLM settings
+    TOGETHER_API_KEY: Optional[str] = None
+    REPLICATE_API_TOKEN: Optional[str] = None
+    
+    # Blockchain settings
+    BLOCKCHAIN_NETWORK: str = "base"
+    BLOCKCHAIN_RPC_URL: str = "https://mainnet.base.org"
+    BLOCKCHAIN_PRIVATE_KEY: Optional[str] = None
+    
+    # IPFS settings
+    IPFS_GATEWAY_URL: str = "https://ipfs.io"
+    IPFS_API_URL: str = "https://ipfs.infura.io:5001"
+    IPFS_PROJECT_ID: Optional[str] = None
+    IPFS_PROJECT_SECRET: Optional[str] = None
+    
     # Base Chain Configuration
     BASE_RPC_URL: str = Field(..., env="BASE_RPC_URL")
     PRIVATE_KEY: str = Field(..., env="PRIVATE_KEY")
-    
-    # IPFS Configuration
-    IPFS_API_URL: str = Field(..., env="IPFS_API_URL")
     
     # API Configuration
     API_HOST: str = Field(default="0.0.0.0", env="API_HOST")
@@ -30,14 +52,6 @@ class Settings(BaseSettings):
     LLM_DO_SAMPLE: bool = Field(default=True, env="LLM_DO_SAMPLE")
     LLM_EARLY_STOPPING: bool = Field(default=True, env="LLM_EARLY_STOPPING")
     LLM_USE_CACHE: bool = Field(default=True, env="LLM_USE_CACHE")
-    
-    # Hugging Face Configuration
-    HUGGINGFACE_TOKEN: Optional[str] = Field(None, env="HUGGINGFACE_TOKEN")
-    
-    # Model Registry Configuration
-    MODEL_REGISTRY_DEVICE: str = Field(default="auto", env="MODEL_REGISTRY_DEVICE")
-    MODEL_REGISTRY_MAX_MEMORY_CPU: str = Field(default="8GB", env="MODEL_REGISTRY_MAX_MEMORY_CPU")
-    MODEL_REGISTRY_MAX_MEMORY_GPU: str = Field(default="4GB", env="MODEL_REGISTRY_MAX_MEMORY_GPU")
     
     model_config = ConfigDict(
         env_file=".env",
