@@ -32,6 +32,12 @@ class PromptResponse(BaseModel):
     metadata: Dict[str, Any] = Field(..., description="Additional metadata about the response")
 
     class Config:
+        allow_population_by_field_name = True
+        json_encoders = {
+            datetime: lambda dt: dt.isoformat()
+        }
+        alias_generator = lambda x: x.replace("_", "") if x.endswith(("_cid", "_hash")) else x
+        populate_by_name = True
         schema_extra = {
             "example": {
                 "response": "The Alchemist by Paulo Coelho is a great choice!",
@@ -60,9 +66,12 @@ class ChatMessage(BaseModel):
     content: str = Field(..., description="The content of the message")
     timestamp: datetime = Field(..., description="When the message was sent")
     model_name: Optional[str] = Field(None, description="The model used for generation")
-    model_id: Optional[str] = Field(None, description="The full model ID from Hugging Face")
-    ipfs_cid: Optional[str] = Field(None, description="The IPFS CID of the message")
-    transaction_hash: Optional[str] = Field(None, description="The blockchain transaction hash")
+    model_id: Optional[str] = Field(None, alias="modelId", description="The full model ID from Hugging Face")
+    ipfs_cid: Optional[str] = Field(None, alias="ipfsHash", description="The IPFS CID of the message")
+    transaction_hash: Optional[str] = Field(None, alias="transactionHash", description="The blockchain transaction hash")
+
+    class Config:
+        allow_population_by_field_name = True
 
 class SessionResponse(BaseModel):
     """Response model for retrieving a chat session."""
@@ -71,19 +80,38 @@ class SessionResponse(BaseModel):
     created_at: datetime = Field(..., description="When the session was created")
     updated_at: datetime = Field(..., description="When the session was last updated")
     
-    model_config = {
-        "json_encoders": {
+    class Config:
+        allow_population_by_field_name = True
+        json_encoders = {
             datetime: lambda dt: dt.isoformat()
-        },
-        "protected_namespaces": ()
-    }
+        }
+        protected_namespaces = ()
         
     @classmethod
     def from_chat_session(cls, session: ChatSession) -> "SessionResponse":
         """Create a SessionResponse from a ChatSession."""
+        # Convert messages to dict with aliases
+        messages = []
+        for msg in session.messages:
+            # Convert message to dict with aliases
+            msg_dict = msg.dict(by_alias=True)
+            
+            # Only include metadata for assistant messages
+            if msg.role == "assistant":
+                msg_dict["metadata"] = {
+                    "model": msg.model_name,
+                    "model_id": msg.model_id,
+                    "timestamp": msg.timestamp.isoformat()
+                }
+            else:
+                # Remove metadata for user messages
+                msg_dict.pop("metadata", None)
+            
+            messages.append(msg_dict)
+        
         return cls(
             session_id=session.session_id,
-            messages=[msg.dict() for msg in session.messages],
+            messages=messages,
             created_at=session.created_at,
             updated_at=session.updated_at
         ) 

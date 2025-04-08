@@ -75,8 +75,68 @@ export default function Chat() {
                     getAvailableModels(),
                     getSessions()
                 ]);
+                
+                // Process sessions to ensure all messages have complete metadata
+                const processedSessions = sessions.map(session => ({
+                    ...session,
+                    messages: session.messages.map(msg => ({
+                        ...msg,
+                        ipfsHash: msg.ipfsHash || undefined,
+                        transactionHash: msg.transactionHash || undefined,
+                        metadata: msg.metadata ? {
+                            model: msg.metadata.model || selectedModel,
+                            model_id: msg.metadata.model_id || '',
+                            temperature: msg.metadata.temperature || 0.7,
+                            max_tokens: msg.metadata.max_tokens || 512,
+                            top_p: msg.metadata.top_p || 0.9,
+                            do_sample: msg.metadata.do_sample ?? true,
+                            num_beams: msg.metadata.num_beams || 1,
+                            early_stopping: msg.metadata.early_stopping ?? false
+                        } : {
+                            model: selectedModel,
+                            model_id: '',
+                            temperature: 0.7,
+                            max_tokens: 512,
+                            top_p: 0.9,
+                            do_sample: true,
+                            num_beams: 1,
+                            early_stopping: false
+                        }
+                    }))
+                }));
+                
                 setAvailableModels(models);
-                setSessions(sessions);
+                setSessions(processedSessions);
+                
+                if (activeSessionId) {
+                    const session = await getSession(activeSessionId);
+                    const processedMessages = session.messages.map(msg => ({
+                        ...msg,
+                        ipfsHash: msg.ipfsHash || undefined,
+                        transactionHash: msg.transactionHash || undefined,
+                        metadata: msg.metadata ? {
+                            model: msg.metadata.model || selectedModel,
+                            model_id: msg.metadata.model_id || '',
+                            temperature: msg.metadata.temperature || 0.7,
+                            max_tokens: msg.metadata.max_tokens || 512,
+                            top_p: msg.metadata.top_p || 0.9,
+                            do_sample: msg.metadata.do_sample ?? true,
+                            num_beams: msg.metadata.num_beams || 1,
+                            early_stopping: msg.metadata.early_stopping ?? false
+                        } : {
+                            model: selectedModel,
+                            model_id: '',
+                            temperature: 0.7,
+                            max_tokens: 512,
+                            top_p: 0.9,
+                            do_sample: true,
+                            num_beams: 1,
+                            early_stopping: false
+                        }
+                    }));
+                    setMessages(processedMessages);
+                }
+                
                 setIsInitializing(false);
             } catch (err) {
                 console.error('Error loading initial data:', err);
@@ -86,7 +146,7 @@ export default function Chat() {
         };
         
         loadInitialData();
-    }, []);
+    }, [activeSessionId]);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -117,20 +177,26 @@ export default function Chat() {
             setMessages(prev => [...prev, userMessage]);
 
             const response = await submitPrompt(currentInput, selectedModel, activeSessionId || undefined);
+            console.log('Response from API:', response);
             
             const assistantMessage: ChatMessage = {
                 role: 'assistant',
                 content: response.response,
                 timestamp: new Date().toISOString(),
-                ipfsHash: response.ipfs_cid,
-                transactionHash: response.transaction_hash,
+                ipfsHash: response.ipfsHash || undefined,
+                transactionHash: response.transactionHash || undefined,
                 metadata: {
                     model: response.model_name,
                     model_id: response.model_id,
                     temperature: response.metadata.temperature,
-                    max_tokens: response.metadata.max_tokens
+                    max_tokens: response.metadata.max_tokens,
+                    top_p: response.metadata.top_p,
+                    do_sample: response.metadata.do_sample,
+                    num_beams: response.metadata.num_beams,
+                    early_stopping: response.metadata.early_stopping
                 }
             };
+            console.log('Created assistant message:', assistantMessage);
             setMessages(prev => [...prev, assistantMessage]);
 
             if (!activeSessionId) {
@@ -154,7 +220,39 @@ export default function Chat() {
     const handleSelectSession = async (sessionId: string) => {
         try {
             const session = await getSession(sessionId);
-            setMessages(session.messages);
+            console.log('Loaded session:', session);
+            
+            const messagesWithMetadata = session.messages.map(msg => {
+                console.log('Processing message:', msg);
+                const processedMessage = {
+                    ...msg,
+                    ipfsHash: msg.ipfsHash || undefined,
+                    transactionHash: msg.transactionHash || undefined,
+                    metadata: msg.metadata ? {
+                        model: msg.metadata.model || selectedModel,
+                        model_id: msg.metadata.model_id || '',
+                        temperature: msg.metadata.temperature || 0.7,
+                        max_tokens: msg.metadata.max_tokens || 512,
+                        top_p: msg.metadata.top_p || 0.9,
+                        do_sample: msg.metadata.do_sample ?? true,
+                        num_beams: msg.metadata.num_beams || 1,
+                        early_stopping: msg.metadata.early_stopping ?? false
+                    } : {
+                        model: selectedModel,
+                        model_id: '',
+                        temperature: 0.7,
+                        max_tokens: 512,
+                        top_p: 0.9,
+                        do_sample: true,
+                        num_beams: 1,
+                        early_stopping: false
+                    }
+                };
+                console.log('Processed message:', processedMessage);
+                return processedMessage;
+            });
+            
+            setMessages(messagesWithMetadata);
             setActiveSessionId(sessionId);
         } catch (err) {
             console.error('Error loading session:', err);

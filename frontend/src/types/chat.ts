@@ -9,6 +9,10 @@ export interface ChatMessage {
         model_id: string;
         temperature: number;
         max_tokens: number;
+        top_p: number;
+        do_sample: boolean;
+        num_beams: number;
+        early_stopping: boolean;
     };
 }
 

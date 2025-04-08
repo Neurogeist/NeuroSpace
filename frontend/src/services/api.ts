@@ -28,12 +28,16 @@ export interface PromptResponse {
   response: string;
   model_name: string;
   model_id: string;
-  ipfs_cid: string;
-  transaction_hash: string;
+  ipfsHash: string;            // ✅ now camelCase
+  transactionHash: string;     // ✅ now camelCase
   session_id: string;
   metadata: {
     temperature: number;
     max_tokens: number;
+    top_p: number;
+    do_sample: boolean;
+    num_beams: number;
+    early_stopping: boolean;
   };
 }
 
@@ -55,6 +59,10 @@ export interface ChatMessage {
     model_id: string;
     temperature: number;
     max_tokens: number;
+    top_p: number;
+    do_sample: boolean;
+    num_beams: number;
+    early_stopping: boolean;
   };
 }
 

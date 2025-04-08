@@ -22,9 +22,11 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
         
         return (
             <Box mt={2} fontSize="xs" color={timestampColor}>
-                <Text fontWeight="bold">Model: {message.metadata.model}</Text>
-                <Text>Temperature: {message.metadata.temperature}</Text>
-                <Text>Max Tokens: {message.metadata.max_tokens}</Text>
+                <HStack spacing={4}>
+                    <Text fontWeight="bold">Model: {message.metadata.model}</Text>
+                    <Text>Temperature: {message.metadata.temperature}</Text>
+                    <Text>Max Tokens: {message.metadata.max_tokens}</Text>
+                </HStack>
             </Box>
         );
     };
