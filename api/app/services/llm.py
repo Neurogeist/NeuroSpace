@@ -18,7 +18,7 @@ class LLMService:
         self.registry = ModelRegistry()
         
         # Default model name
-        self.default_model = "tinyllama"
+        self.default_model = "mixtral-remote"
         
         # Current model and tokenizer
         self.current_model_name = self.default_model
@@ -147,7 +147,7 @@ class LLMService:
                 # Use remote client for generation
                 response = self.remote_client.generate(
                     model_id=self.config.model_id,
-                    prompt=prompt,
+                    prompt=formatted_prompt,  # Pass the formatted prompt with chat history
                     system_prompt=self.config.system_prompt,
                     config=self.config
                 )
@@ -162,7 +162,15 @@ class LLMService:
             return {
                 "response": cleaned_response,
                 "model_name": self.current_model_name,
-                "model_id": self.config.model_id
+                "model_id": self.config.model_id,
+                "metadata": {
+                    "temperature": self.config.temperature,
+                    "max_tokens": self.config.max_new_tokens,
+                    "top_p": self.config.top_p,
+                    "do_sample": self.config.do_sample,
+                    "num_beams": self.config.num_beams,
+                    "early_stopping": self.config.early_stopping
+                }
             }
             
         except Exception as e:

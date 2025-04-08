@@ -28,12 +28,16 @@ export interface PromptResponse {
   response: string;
   model_name: string;
   model_id: string;
-  ipfs_cid: string;
-  transaction_hash: string;
+  ipfsHash: string;            // ✅ now camelCase
+  transactionHash: string;     // ✅ now camelCase
   session_id: string;
   metadata: {
     temperature: number;
     max_tokens: number;
+    top_p: number;
+    do_sample: boolean;
+    num_beams: number;
+    early_stopping: boolean;
   };
 }
 
@@ -55,21 +59,17 @@ export interface ChatMessage {
     model_id: string;
     temperature: number;
     max_tokens: number;
+    top_p: number;
+    do_sample: boolean;
+    num_beams: number;
+    early_stopping: boolean;
   };
 }
 
-export const getAvailableModels = async (): Promise<Model[]> => {
-  try {
-    const response = await axios.get(`${API_BASE_URL}/models`);
-    const models = response.data.models;
-    return Object.entries(models).map(([name, id]) => ({
-      name,
-      description: id as string
-    }));
-  } catch (error) {
-    console.error('Error fetching models:', error);
-    return [];
-  }
+export const getAvailableModels = async (): Promise<{ [key: string]: string }> => {
+  const response = await axios.get(`${API_BASE_URL}/models`);
+  // The backend returns { models: { [name: string]: id } }
+  return response.data.models;
 };
 
 export const submitPrompt = async (

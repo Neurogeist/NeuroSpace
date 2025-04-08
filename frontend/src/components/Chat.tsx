@@ -17,193 +17,247 @@ import {
     FormLabel,
     UnorderedList,
     ListItem,
+    Heading,
+    useDisclosure,
+    Collapse,
+    Textarea,
+    useBreakpointValue,
+    Spinner,
+    Alert,
+    AlertIcon,
+    AlertTitle,
+    AlertDescription
 } from '@chakra-ui/react';
 import { FiSend, FiRefreshCw, FiHash, FiLink } from 'react-icons/fi';
+import { ChevronLeftIcon, ChevronRightIcon } from '@chakra-ui/icons';
 import { ChatMessage, ChatSession } from '../types/chat';
-import { submitPrompt, getAvailableModels, Model, getSessions, getSession, API_BASE_URL } from '../services/api';
-import { Sidebar } from './Sidebar';
+import { submitPrompt, getAvailableModels, getSessions, getSession } from '../services/api';
+import Sidebar from './Sidebar';
+import ChatMessageComponent from './ChatMessage';
 
-export const Chat: React.FC = () => {
+export default function Chat() {
     const [sessions, setSessions] = useState<ChatSession[]>([]);
     const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
+    const [isLoading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [availableModels, setAvailableModels] = useState<Model[]>([]);
-    const [selectedModel, setSelectedModel] = useState<string>('');
+    const [availableModels, setAvailableModels] = useState<{ [key: string]: string }>({});
+    const [selectedModel, setSelectedModel] = useState<string>("mixtral-remote");
+    const [isInitializing, setIsInitializing] = useState(true);
     const messagesEndRef = useRef<HTMLDivElement>(null);
-    const inputRef = useRef<HTMLInputElement>(null);
+    const inputRef = useRef<HTMLTextAreaElement>(null);
+    const { isOpen: isSidebarOpen, onToggle: toggleSidebar } = useDisclosure({ defaultIsOpen: true });
 
-    const bgColor = useColorModeValue('white', 'gray.800');
+    const bgColor = useColorModeValue('gray.50', 'gray.900');
     const borderColor = useColorModeValue('gray.200', 'gray.700');
     const messageBgColor = useColorModeValue('gray.50', 'gray.700');
     const userMessageBgColor = useColorModeValue('blue.50', 'blue.900');
-    const textColor = useColorModeValue('gray.800', 'white');
+    const textColor = useColorModeValue('gray.800', 'gray.200');
     const linkColor = useColorModeValue('blue.500', 'blue.300');
-    const inputBgColor = useColorModeValue('white', 'gray.700');
+    const inputBgColor = useColorModeValue('white', 'gray.800');
     const inputBorderColor = useColorModeValue('gray.200', 'gray.600');
-    const inputTextColor = useColorModeValue('gray.800', 'white');
+    const inputTextColor = useColorModeValue('gray.800', 'gray.200');
     const placeholderColor = useColorModeValue('gray.500', 'gray.400');
     const timestampColor = useColorModeValue('gray.500', 'gray.400');
+    const buttonBgColor = useColorModeValue('blue.500', 'blue.400');
+    const buttonHoverBgColor = useColorModeValue('blue.600', 'blue.500');
 
-    // Load available models and sessions on component mount
+    const sidebarWidth = useBreakpointValue({ base: '100%', md: '300px' });
+    const mainContentWidth = useBreakpointValue({ base: '100%', md: 'calc(100% - 300px)' });
+    const maxMessageWidth = useBreakpointValue({ base: '100%', md: '800px' });
+
     useEffect(() => {
         const loadInitialData = async () => {
             try {
+                setIsInitializing(true);
                 const [models, sessions] = await Promise.all([
                     getAvailableModels(),
                     getSessions()
                 ]);
+                
+                // Process sessions to ensure all messages have complete metadata
+                const processedSessions = sessions.map(session => ({
+                    ...session,
+                    messages: session.messages.map(msg => ({
+                        ...msg,
+                        ipfsHash: msg.ipfsHash || undefined,
+                        transactionHash: msg.transactionHash || undefined,
+                        metadata: msg.metadata ? {
+                            model: msg.metadata.model || selectedModel,
+                            model_id: msg.metadata.model_id || '',
+                            temperature: msg.metadata.temperature || 0.7,
+                            max_tokens: msg.metadata.max_tokens || 512,
+                            top_p: msg.metadata.top_p || 0.9,
+                            do_sample: msg.metadata.do_sample ?? true,
+                            num_beams: msg.metadata.num_beams || 1,
+                            early_stopping: msg.metadata.early_stopping ?? false
+                        } : {
+                            model: selectedModel,
+                            model_id: '',
+                            temperature: 0.7,
+                            max_tokens: 512,
+                            top_p: 0.9,
+                            do_sample: true,
+                            num_beams: 1,
+                            early_stopping: false
+                        }
+                    }))
+                }));
+                
                 setAvailableModels(models);
-                if (models.length > 0) {
-                    setSelectedModel(models[0].name);
+                setSessions(processedSessions);
+                
+                if (activeSessionId) {
+                    const session = await getSession(activeSessionId);
+                    const processedMessages = session.messages.map(msg => ({
+                        ...msg,
+                        ipfsHash: msg.ipfsHash || undefined,
+                        transactionHash: msg.transactionHash || undefined,
+                        metadata: msg.metadata ? {
+                            model: msg.metadata.model || selectedModel,
+                            model_id: msg.metadata.model_id || '',
+                            temperature: msg.metadata.temperature || 0.7,
+                            max_tokens: msg.metadata.max_tokens || 512,
+                            top_p: msg.metadata.top_p || 0.9,
+                            do_sample: msg.metadata.do_sample ?? true,
+                            num_beams: msg.metadata.num_beams || 1,
+                            early_stopping: msg.metadata.early_stopping ?? false
+                        } : {
+                            model: selectedModel,
+                            model_id: '',
+                            temperature: 0.7,
+                            max_tokens: 512,
+                            top_p: 0.9,
+                            do_sample: true,
+                            num_beams: 1,
+                            early_stopping: false
+                        }
+                    }));
+                    setMessages(processedMessages);
                 }
-                setSessions(sessions);
+                
+                setIsInitializing(false);
             } catch (err) {
+                console.error('Error loading initial data:', err);
                 setError(err instanceof Error ? err.message : 'Failed to load data');
+                setIsInitializing(false);
             }
         };
         
         loadInitialData();
-    }, []);
-
-    // Load session messages when active session changes
-    useEffect(() => {
-        const loadSessionMessages = async () => {
-            if (activeSessionId) {
-                try {
-                    const session = await getSession(activeSessionId);
-                    setMessages(session.messages);
-                } catch (err) {
-                    setError(err instanceof Error ? err.message : 'Failed to load session');
-                }
-            } else {
-                setMessages([]);
-            }
-        };
-        
-        loadSessionMessages();
     }, [activeSessionId]);
 
-    const scrollToBottom = () => {
+    useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    };
+    }, [messages]);
 
     useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
+        if (inputRef.current) {
+            inputRef.current.style.height = 'auto';
+            inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 150)}px`;
+        }
+    }, [input]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!input.trim() || isLoading) return;
 
-        // Create and show user message immediately
-        const userMessage: ChatMessage = {
-            role: 'user',
-            content: input.trim(),
-            timestamp: new Date().toISOString()
-        };
-        setMessages(prev => [...prev, userMessage]);
-
+        const currentInput = input;
         setInput('');
-        setIsLoading(true);
+        setLoading(true);
         setError(null);
 
         try {
-            let response;
-            
-            try {
-                // Try with axios first
-                response = await submitPrompt(
-                    input.trim(),
-                    selectedModel,
-                    activeSessionId || undefined
-                );
-                console.log('Backend response:', response);
-            } catch (axiosError) {
-                console.error('Axios request failed, trying with fetch:', axiosError);
-                
-                // Fallback to fetch if axios fails
-                const fetchResponse = await fetch(`${API_BASE_URL}/prompt`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-User-Address': '0x1234567890123456789012345678901234567890'
-                    },
-                    body: JSON.stringify({
-                        prompt: input.trim(),
-                        model_name: selectedModel,
-                        session_id: activeSessionId || undefined
-                    })
-                });
-                
-                if (!fetchResponse.ok) {
-                    throw new Error(`Fetch failed with status: ${fetchResponse.status}`);
-                }
-                
-                response = await fetchResponse.json();
-                console.log('Backend response (fetch):', response);
-            }
+            const userMessage: ChatMessage = {
+                role: 'user',
+                content: currentInput,
+                timestamp: new Date().toISOString()
+            };
+            setMessages(prev => [...prev, userMessage]);
 
-            // Create assistant message with all metadata
+            const response = await submitPrompt(currentInput, selectedModel, activeSessionId || undefined);
+            console.log('Response from API:', response);
+            
             const assistantMessage: ChatMessage = {
                 role: 'assistant',
                 content: response.response,
                 timestamp: new Date().toISOString(),
-                ipfsHash: response.ipfs_cid,
-                transactionHash: response.transaction_hash,
+                ipfsHash: response.ipfsHash || undefined,
+                transactionHash: response.transactionHash || undefined,
                 metadata: {
                     model: response.model_name,
                     model_id: response.model_id,
                     temperature: response.metadata.temperature,
-                    max_tokens: response.metadata.max_tokens
+                    max_tokens: response.metadata.max_tokens,
+                    top_p: response.metadata.top_p,
+                    do_sample: response.metadata.do_sample,
+                    num_beams: response.metadata.num_beams,
+                    early_stopping: response.metadata.early_stopping
                 }
             };
             console.log('Created assistant message:', assistantMessage);
-
-            // Add assistant message to the UI
             setMessages(prev => [...prev, assistantMessage]);
-            
-            // If this was a new chat, update the active session and load the session
+
             if (!activeSessionId) {
                 setActiveSessionId(response.session_id);
-                // Load the session to get all messages with metadata
-                const session = await getSession(response.session_id);
-                setMessages(session.messages);
-                // Refresh sessions to include the new one
                 const updatedSessions = await getSessions();
                 setSessions(updatedSessions);
             }
         } catch (err) {
-            console.error('Chat component error:', err);
-            
-            // Display a more user-friendly error message
-            if (err instanceof Error) {
-                setError(err.message);
-            } else {
-                setError('An unknown error occurred while processing your request');
-            }
+            console.error('Error submitting prompt:', err);
+            setError(err instanceof Error ? err.message : 'Failed to get response');
         } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const handleKeyPress = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            handleSubmit(e);
+            setLoading(false);
         }
     };
 
     const handleNewChat = () => {
-        setActiveSessionId(null);
         setMessages([]);
-        setError(null);
+        setActiveSessionId(null);
     };
 
-    const handleSelectSession = (sessionId: string) => {
-        setActiveSessionId(sessionId);
+    const handleSelectSession = async (sessionId: string) => {
+        try {
+            const session = await getSession(sessionId);
+            console.log('Loaded session:', session);
+            
+            const messagesWithMetadata = session.messages.map(msg => {
+                console.log('Processing message:', msg);
+                const processedMessage = {
+                    ...msg,
+                    ipfsHash: msg.ipfsHash || undefined,
+                    transactionHash: msg.transactionHash || undefined,
+                    metadata: msg.metadata ? {
+                        model: msg.metadata.model || selectedModel,
+                        model_id: msg.metadata.model_id || '',
+                        temperature: msg.metadata.temperature || 0.7,
+                        max_tokens: msg.metadata.max_tokens || 512,
+                        top_p: msg.metadata.top_p || 0.9,
+                        do_sample: msg.metadata.do_sample ?? true,
+                        num_beams: msg.metadata.num_beams || 1,
+                        early_stopping: msg.metadata.early_stopping ?? false
+                    } : {
+                        model: selectedModel,
+                        model_id: '',
+                        temperature: 0.7,
+                        max_tokens: 512,
+                        top_p: 0.9,
+                        do_sample: true,
+                        num_beams: 1,
+                        early_stopping: false
+                    }
+                };
+                console.log('Processed message:', processedMessage);
+                return processedMessage;
+            });
+            
+            setMessages(messagesWithMetadata);
+            setActiveSessionId(sessionId);
+        } catch (err) {
+            console.error('Error loading session:', err);
+            setError(err instanceof Error ? err.message : 'Failed to load session');
+        }
     };
 
     const formatHash = (hash: string) => {
@@ -226,19 +280,64 @@ export const Chat: React.FC = () => {
         );
     };
 
+    const groupedModels = Object.entries(availableModels).reduce((acc, [name, id]) => {
+        const provider = name.includes('remote') ? 'Remote' : 'Local';
+        if (!acc[provider]) {
+            acc[provider] = [];
+        }
+        acc[provider].push({ name, id });
+        return acc;
+    }, {} as { [key: string]: { name: string; id: string }[] });
+
+    if (isInitializing) {
+        return (
+            <Flex h="100vh" align="center" justify="center" bg={bgColor}>
+                <VStack spacing={4}>
+                    <Spinner size="xl" color="blue.500" />
+                    <Text>Loading chat interface...</Text>
+                </VStack>
+            </Flex>
+        );
+    }
+
     return (
-        <Flex h="100vh" bg={bgColor}>
-            <Sidebar
-                sessions={sessions}
-                activeSessionId={activeSessionId}
-                onNewChat={handleNewChat}
-                onSelectSession={handleSelectSession}
+        <Flex h="100vh" bg={bgColor} position="relative">
+            <IconButton
+                aria-label="Toggle sidebar"
+                icon={isSidebarOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
+                onClick={toggleSidebar}
+                position="absolute"
+                left={isSidebarOpen ? "300px" : "0"}
+                top="50%"
+                transform="translateY(-50%)"
+                zIndex={2}
+                bg={inputBgColor}
+                _hover={{ bg: buttonHoverBgColor }}
+                transition="all 0.2s"
             />
 
-            <Flex direction="column" flex="1">
-                {/* Header with title and model selection */}
-                <Box p={4} borderBottom="1px" borderColor={borderColor}>
-                    <Container maxW="container.md">
+            <Collapse in={isSidebarOpen} animateOpacity>
+                <Box
+                    w={sidebarWidth}
+                    h="100%"
+                    borderRight="1px"
+                    borderColor={borderColor}
+                    bg={inputBgColor}
+                    position="relative"
+                    zIndex={1}
+                >
+                    <Sidebar
+                        sessions={sessions}
+                        activeSessionId={activeSessionId}
+                        onNewChat={handleNewChat}
+                        onSelectSession={handleSelectSession}
+                    />
+                </Box>
+            </Collapse>
+
+            <Flex direction="column" flex="1" w={isSidebarOpen ? mainContentWidth : '100%'} transition="all 0.2s">
+                <Box p={4} borderBottom="1px" borderColor={borderColor} bg={inputBgColor}>
+                    <Container maxW={maxMessageWidth}>
                         <HStack justify="space-between" align="center">
                             <Text fontSize="2xl" fontWeight="bold" color={textColor}>
                                 NeuroChain Chat
@@ -252,10 +351,14 @@ export const Chat: React.FC = () => {
                                     borderColor={inputBorderColor}
                                     color={inputTextColor}
                                 >
-                                    {availableModels.map((model) => (
-                                        <option key={model.name} value={model.name}>
-                                            {model.name}
-                                        </option>
+                                    {Object.entries(groupedModels).map(([provider, models]) => (
+                                        <optgroup key={provider} label={provider}>
+                                            {models.map(({ name }) => (
+                                                <option key={name} value={name}>
+                                                    {name}
+                                                </option>
+                                            ))}
+                                        </optgroup>
                                     ))}
                                 </Select>
                             </FormControl>
@@ -263,137 +366,75 @@ export const Chat: React.FC = () => {
                     </Container>
                 </Box>
 
-                <Box flex="1" overflowY="auto" p={4}>
-                    <Container maxW="container.md">
+                {error && (
+                    <Alert status="error" mb={4}>
+                        <AlertIcon />
+                        <AlertTitle>Error:</AlertTitle>
+                        <AlertDescription>{error}</AlertDescription>
+                    </Alert>
+                )}
+
+                <Flex direction="column" flex="1" overflowY="auto" p={4}>
+                    <Container maxW={maxMessageWidth}>
                         <VStack spacing={4} align="stretch">
                             {messages.map((message, index) => (
-                                <Box
-                                    key={index}
-                                    p={4}
-                                    borderRadius="lg"
-                                    bg={message.role === 'user' ? userMessageBgColor : messageBgColor}
-                                    maxW="80%"
-                                    alignSelf={message.role === 'user' ? 'flex-end' : 'flex-start'}
-                                >
-                                    <Text 
-                                        color={textColor}
-                                        whiteSpace="pre-line"
-                                    >
-                                        {message.content}
-                                    </Text>
-                                    
-                                    <HStack spacing={4} mt={2} fontSize="xs" color={timestampColor}>
-                                        <Text>{new Date(message.timestamp).toLocaleTimeString()}</Text>
-                                        {message.ipfsHash && (
-                                            <Tooltip label="View on IPFS">
-                                                <Link
-                                                    href={`https://ipfs.io/ipfs/${message.ipfsHash}`}
-                                                    isExternal
-                                                    color={linkColor}
-                                                    display="flex"
-                                                    alignItems="center"
-                                                    gap={1}
-                                                >
-                                                    <FiHash />
-                                                    {formatHash(message.ipfsHash)}
-                                                </Link>
-                                            </Tooltip>
-                                        )}
-                                        {message.transactionHash && (
-                                            <Tooltip label="View on BaseScan">
-                                                <Link
-                                                    href={`https://sepolia.basescan.org/tx/${message.transactionHash}`}
-                                                    isExternal
-                                                    color={linkColor}
-                                                    display="flex"
-                                                    alignItems="center"
-                                                    gap={1}
-                                                >
-                                                    <FiLink />
-                                                    {formatHash(message.transactionHash)}
-                                                </Link>
-                                            </Tooltip>
-                                        )}
-                                    </HStack>
-                                    {message.role === 'assistant' && renderMetadata(message)}
-                                </Box>
+                                <ChatMessageComponent key={index} message={message} />
                             ))}
                             {isLoading && (
-                                <Box p={4} borderRadius="lg" bg={messageBgColor} maxW="80%">
-                                    <Text color={textColor}>Thinking...</Text>
-                                </Box>
-                            )}
-                            {error && (
-                                <Box p={4} borderRadius="lg" bg="red.100" maxW="100%">
-                                    <Text fontWeight="bold" color="red.600">Error:</Text>
-                                    <Text color="red.600">{error}</Text>
-                                    <Box mt={2}>
-                                        <Text fontSize="sm" color="red.600">
-                                            Troubleshooting tips:
-                                        </Text>
-                                        <UnorderedList fontSize="sm" color="red.600" pl={4}>
-                                            <ListItem>Check that the API server is running at {API_BASE_URL}</ListItem>
-                                            <ListItem>Ensure your prompt doesn't contain any inappropriate content</ListItem>
-                                            <ListItem>Try selecting a different model</ListItem>
-                                            <ListItem>Check the browser console for detailed error information</ListItem>
-                                        </UnorderedList>
-                                    </Box>
+                                <Box p={4} borderRadius="lg" bg={inputBgColor} maxW="80%" alignSelf="flex-start">
+                                    <HStack>
+                                        <Spinner size="sm" />
+                                        <Text>Thinking...</Text>
+                                    </HStack>
                                 </Box>
                             )}
                             <div ref={messagesEndRef} />
                         </VStack>
                     </Container>
-                </Box>
+                </Flex>
 
-                <Box p={4} borderTop="1px" borderColor={borderColor}>
-                    <Container maxW="container.md">
+                <Box p={4} borderTop="1px" borderColor={borderColor} bg={inputBgColor}>
+                    <Container maxW={maxMessageWidth}>
                         <form onSubmit={handleSubmit}>
-                            <VStack spacing={4}>
-                                <HStack w="100%">
-                                    <Input
+                            <HStack>
+                                <FormControl>
+                                    <Textarea
                                         ref={inputRef}
                                         value={input}
                                         onChange={(e) => setInput(e.target.value)}
-                                        onKeyPress={handleKeyPress}
                                         placeholder="Type your message..."
-                                        size="lg"
+                                        size="md"
+                                        resize="none"
+                                        minH="40px"
+                                        maxH="150px"
+                                        overflowY="auto"
                                         bg={inputBgColor}
                                         borderColor={inputBorderColor}
                                         color={inputTextColor}
-                                        _placeholder={{ color: placeholderColor }}
-                                    />
-                                    <IconButton
-                                        aria-label="Send message"
-                                        icon={<FiSend />}
-                                        type="submit"
-                                        colorScheme="blue"
-                                        size="lg"
-                                        isLoading={isLoading}
-                                    />
-                                </HStack>
-                                
-                                {error && (
-                                    <Button 
-                                        onClick={async () => {
-                                            try {
-                                                const response = await fetch(`${API_BASE_URL}/health`);
-                                                const data = await response.json();
-                                                alert(`API Health Check: ${JSON.stringify(data, null, 2)}`);
-                                            } catch (err) {
-                                                alert(`Failed to connect to API: ${err}`);
+                                        _hover={{ borderColor: buttonBgColor }}
+                                        _focus={{ borderColor: buttonBgColor, boxShadow: 'none' }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && !e.shiftKey) {
+                                                e.preventDefault();
+                                                handleSubmit(e);
                                             }
                                         }}
-                                        size="sm"
-                                        colorScheme="red"
-                                    >
-                                        Test API Connection
-                                    </Button>
-                                )}
-                            </VStack>
+                                    />
+                                </FormControl>
+                                <Button
+                                    type="submit"
+                                    colorScheme="blue"
+                                    isLoading={isLoading}
+                                    isDisabled={!input.trim()}
+                                    px={6}
+                                >
+                                    Send
+                                </Button>
+                            </HStack>
                         </form>
                     </Container>
                 </Box>
             </Flex>
         </Flex>
     );
-}; 
+} 

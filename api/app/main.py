@@ -190,7 +190,7 @@ async def submit_prompt(request: PromptRequest):
             "transaction_hash": transaction_hash
         })
         
-        return PromptResponse(
+        response_data = PromptResponse(
             response=result["response"],
             model_name=result["model_name"],
             model_id=result["model_id"],
@@ -199,6 +199,8 @@ async def submit_prompt(request: PromptRequest):
             transaction_hash=transaction_hash,
             metadata=metadata
         )
+        
+        return JSONResponse(content=response_data.dict(by_alias=True))
         
     except Exception as e:
         logger.error(f"Error processing prompt: {str(e)}")

@@ -35,8 +35,10 @@ class ModelRegistry:
         
         # Define available models with their configurations
         self.models = {
-            "tinyllama": ModelConfig(
-                model_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+            "mixtral-remote": ModelConfig(
+                model_id="mistralai/Mixtral-8x7B-Instruct-v0.1",
+                provider="together",
+                api_key_env="TOGETHER_API_KEY",
                 system_prompt="You are a helpful AI assistant. Answer questions accurately and concisely.",
                 max_new_tokens=512,
                 temperature=0.7,
@@ -45,39 +47,39 @@ class ModelRegistry:
                 num_beams=1,
                 early_stopping=False
             ),
-            "mixtral-remote": ModelConfig(
-                model_id="mistralai/Mixtral-8x7B-Instruct-v0.1",
+            "llama2-remote": ModelConfig(
+                model_id="meta-llama/Llama-2-70b-chat-hf",
                 provider="together",
                 api_key_env="TOGETHER_API_KEY",
                 system_prompt="You are a helpful AI assistant. Answer questions accurately and concisely.",
-                max_new_tokens=1024,
+                max_new_tokens=512,
                 temperature=0.7,
                 top_p=0.9,
                 do_sample=True,
                 num_beams=1,
                 early_stopping=False
             ),
-            "mistral": ModelConfig(
-                model_id="mistralai/Mistral-7B-Instruct-v0.2",
-                max_new_tokens=150,
+            "tinyllama": ModelConfig(
+                model_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+                provider="local",
+                system_prompt="You are a helpful AI assistant. Answer questions accurately and concisely.",
+                max_new_tokens=512,
                 temperature=0.7,
                 top_p=0.9,
                 do_sample=True,
                 num_beams=1,
-                early_stopping=True,
-                system_prompt="You are a helpful assistant. Be concise and clear.",
-                is_gated=True
+                early_stopping=False
             ),
             "phi": ModelConfig(
                 model_id="microsoft/phi-2",
-                max_new_tokens=100,
+                provider="local",
+                system_prompt="You are a helpful AI assistant. Answer questions accurately and concisely.",
+                max_new_tokens=512,
                 temperature=0.7,
                 top_p=0.9,
                 do_sample=True,
                 num_beams=1,
-                early_stopping=True,
-                system_prompt="You are a helpful assistant. Be concise and clear.",
-                is_gated=False
+                early_stopping=False
             )
         }
         
