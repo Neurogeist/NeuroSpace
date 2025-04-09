@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     LLM_DO_SAMPLE: bool = Field(default=True, env="LLM_DO_SAMPLE")
     LLM_EARLY_STOPPING: bool = Field(default=True, env="LLM_EARLY_STOPPING")
     LLM_USE_CACHE: bool = Field(default=True, env="LLM_USE_CACHE")
+
+    CONTRACT_ADDRESS: str = Field(..., env="CONTRACT_ADDRESS")
     
     model_config = ConfigDict(
         env_file=".env",

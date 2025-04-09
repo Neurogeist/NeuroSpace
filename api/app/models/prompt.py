@@ -12,6 +12,7 @@ class PromptRequest(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow, description="Timestamp of the request")
     temperature: float = Field(default=0.7, description="Sampling temperature for generation")
     max_tokens: int = Field(default=512, description="Maximum number of tokens to generate")
+    system_prompt: Optional[str] = Field(None, description="Optional system prompt to override the default")
     
     class Config:
         schema_extra = {
@@ -21,7 +22,8 @@ class PromptRequest(BaseModel):
                 "session_id": "session123",
                 "timestamp": "2023-04-14T12:00:00",
                 "temperature": 0.7,
-                "max_tokens": 512
+                "max_tokens": 512,
+                "system_prompt": "You are a helpful AI assistant. Answer questions accurately and concisely."
             }
         }
 
@@ -72,6 +74,8 @@ class ChatMessage(BaseModel):
     model_id: Optional[str] = Field(None, alias="modelId", description="The full model ID from Hugging Face")
     ipfs_cid: Optional[str] = Field(None, alias="ipfsHash", description="The IPFS CID of the message")
     transaction_hash: Optional[str] = Field(None, alias="transactionHash", description="The blockchain transaction hash")
+    verification_hash: Optional[str] = Field(None, description="The hash of the prompt-response pair")
+    signature: Optional[str] = Field(None, description="The digital signature of the verification hash")
 
     class Config:
         allow_population_by_field_name = True
@@ -101,14 +105,15 @@ class SessionResponse(BaseModel):
             
             # Only include metadata for assistant messages
             if msg.role == "assistant":
-                msg_dict["metadata"] = {
+                msg_dict.update({
                     "model": msg.model_name,
                     "model_id": msg.model_id,
-                    "timestamp": msg.timestamp.isoformat()
-                }
-            else:
-                # Remove metadata for user messages
-                msg_dict.pop("metadata", None)
+                    "timestamp": msg.timestamp.isoformat(),
+                    "verification_hash": msg.verification_hash,
+                    "signature": msg.signature,
+                    "ipfs_cid": msg.ipfs_cid,
+                    "transaction_hash": msg.transaction_hash
+                })
             
             messages.append(msg_dict)
         

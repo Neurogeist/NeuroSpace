@@ -5,7 +5,7 @@ export const API_BASE_URL = 'http://localhost:8000';
 // Configure axios defaults
 axios.defaults.withCredentials = false;
 axios.defaults.headers.common['Content-Type'] = 'application/json';
-axios.defaults.headers.common['X-User-Address'] = '0x1234567890123456789012345678901234567890'; // Temporary placeholder
+axios.defaults.headers.common['X-User-Address'] = '0x1234567890123456789012345678901234567890';
 
 // Add response interceptor for better error handling
 axios.interceptors.response.use(
@@ -80,25 +80,15 @@ export const submitPrompt = async (
   try {
     console.log('Submitting prompt:', { prompt, modelName, sessionId });
     
-    // Create specific request config
-    const config = {
-      headers: {
-        'Content-Type': 'application/json',
-        'X-User-Address': '0x1234567890123456789012345678901234567890'
-      },
-      withCredentials: false
-    };
-    
     const data = {
       prompt,
       model_name: modelName,
       session_id: sessionId
     };
     
-    console.log('Request config:', config);
     console.log('Request data:', data);
     
-    const response = await axios.post(`${API_BASE_URL}/prompt`, data, config);
+    const response = await axios.post(`${API_BASE_URL}/prompt`, data);
     console.log('Response received:', response.data);
     return response.data;
   } catch (error) {

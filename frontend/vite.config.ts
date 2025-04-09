@@ -15,6 +15,9 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api/, ''),
         configure: (proxy, _options) => {
           proxy.on('proxyReq', (proxyReq, req, _res) => {
+            // Add X-User-Address header
+            proxyReq.setHeader('X-User-Address', '0x1234567890123456789012345678901234567890');
+            
             // Forward all headers from the original request
             const headers = req.headers;
             Object.keys(headers).forEach(key => {

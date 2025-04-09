@@ -1,6 +1,8 @@
 import { Box, Text, HStack, Link, Tooltip, useColorModeValue } from '@chakra-ui/react';
 import { FiHash, FiLink } from 'react-icons/fi';
 import { ChatMessage } from '../types/chat';
+import React from 'react';
+import VerificationBadge from './VerificationBadge';
 
 interface ChatMessageProps {
     message: ChatMessage;
@@ -31,6 +33,12 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
         );
     };
 
+    // Get hash information from either root level or metadata
+    const ipfsHash = message.ipfsHash || message.metadata?.ipfs_cid;
+    const transactionHash = message.transactionHash || message.metadata?.transaction_hash;
+    const verificationHash = message.metadata?.verification_hash;
+    const signature = message.metadata?.signature;
+
     return (
         <Box
             p={4}
@@ -38,6 +46,7 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
             bg={message.role === 'user' ? userMessageBgColor : messageBgColor}
             maxW="80%"
             alignSelf={message.role === 'user' ? 'flex-end' : 'flex-start'}
+            mb={4}
         >
             <Text 
                 color={textColor}
@@ -46,12 +55,21 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
                 {message.content}
             </Text>
             
+            {message.role === 'assistant' && verificationHash && signature && (
+                <VerificationBadge
+                    verification_hash={verificationHash}
+                    signature={signature}
+                    ipfs_cid={ipfsHash || ''}
+                    transaction_hash={transactionHash || ''}
+                />
+            )}
+            
             <HStack spacing={4} mt={2} fontSize="xs" color={timestampColor}>
                 <Text>{new Date(message.timestamp).toLocaleTimeString()}</Text>
-                {message.ipfsHash && (
+                {ipfsHash && (
                     <Tooltip label="View on IPFS">
                         <Link
-                            href={`https://ipfs.io/ipfs/${message.ipfsHash}`}
+                            href={`https://ipfs.io/ipfs/${ipfsHash}`}
                             isExternal
                             color={linkColor}
                             display="flex"
@@ -59,14 +77,14 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
                             gap={1}
                         >
                             <FiHash />
-                            {formatHash(message.ipfsHash)}
+                            {formatHash(ipfsHash)}
                         </Link>
                     </Tooltip>
                 )}
-                {message.transactionHash && (
+                {transactionHash && (
                     <Tooltip label="View on BaseScan">
                         <Link
-                            href={`https://sepolia.basescan.org/tx/${message.transactionHash}`}
+                            href={`https://sepolia.basescan.org/tx/${transactionHash}`}
                             isExternal
                             color={linkColor}
                             display="flex"
@@ -74,7 +92,7 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
                             gap={1}
                         >
                             <FiLink />
-                            {formatHash(message.transactionHash)}
+                            {formatHash(transactionHash)}
                         </Link>
                     </Tooltip>
                 )}

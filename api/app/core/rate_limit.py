@@ -57,15 +57,54 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.excluded_endpoints = {
             "/health",
             "/signer",
-            "/verify"
+            "/verify",
+            "/",  # Frontend root
+            "/static",  # Static files
+            "/favicon.ico",  # Favicon
+            "/api-docs",  # Swagger UI
+            "/redoc",  # ReDoc
+            "/openapi.json"  # OpenAPI schema
+        }
+        
+        # File extensions that don't require X-User-Address header
+        self.excluded_extensions = {
+            ".js",
+            ".css",
+            ".html",
+            ".ico",
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".svg",
+            ".woff",
+            ".woff2",
+            ".ttf",
+            ".eot"
         }
     
     async def dispatch(self, request: Request, call_next):
-        # Skip rate limiting for excluded endpoints
+        # Skip rate limiting for excluded endpoints (exact matches)
         if request.url.path in self.excluded_endpoints:
             return await call_next(request)
-            
-        # Get user address from header
+
+        # Skip static file paths like /static/...
+        if request.url.path.startswith("/static/"):
+            return await call_next(request)
+
+        # Skip based on file extensions
+        if any(request.url.path.endswith(ext) for ext in self.excluded_extensions):
+            return await call_next(request)
+
+        # Skip API documentation paths
+        if request.url.path.startswith("/api-docs") or request.url.path.startswith("/redoc"):
+            return await call_next(request)
+
+        # Skip OpenAPI schema
+        if request.url.path == "/openapi.json":
+            return await call_next(request)
+
+        # Require X-User-Address header
         user_address = request.headers.get("X-User-Address")
         if not user_address:
             raise HTTPException(
@@ -76,11 +115,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     "example": "X-User-Address: 0x1234567890123456789012345678901234567890"
                 }
             )
-        
+
         # Clean up old requests
         current_time = time.time()
         self._cleanup_requests(current_time)
-        
+
         # Check rate limit
         if not self._check_rate_limit(user_address, current_time):
             raise HTTPException(
@@ -92,10 +131,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     "window": self.window
                 }
             )
-        
-        # Process request
-        response = await call_next(request)
-        return response
+
+        return await call_next(request)
+
     
     def _cleanup_requests(self, current_time: float):
         """Remove old requests outside the time window."""
