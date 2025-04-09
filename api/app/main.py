@@ -5,7 +5,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 from datetime import datetime
 import uuid
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from .models.prompt import PromptRequest, PromptResponse, SessionResponse
 from .services.blockchain import BlockchainService
 from .services.ipfs import IPFSService
@@ -13,11 +13,15 @@ from .services.llm import LLMService
 from .core.config import get_settings
 from .core.rate_limit import RateLimitMiddleware
 from .services.chat_session import ChatSessionService
+from .utils.verifiability import generate_verification_hash
 import logging
 import time
 import os
 import re
 import ipaddress
+from fastapi import BackgroundTasks
+from .services.model_registry import ModelRegistry
+from pydantic import BaseModel
 
 # Configure logging
 logging.basicConfig(
@@ -60,10 +64,11 @@ app.add_middleware(RateLimitMiddleware)
 
 # Initialize services
 settings = get_settings()
-llm_service = LLMService()
+chat_session_service = ChatSessionService()
+llm_service = LLMService(chat_session_service)
 blockchain_service = BlockchainService()
 ipfs_service = IPFSService()
-chat_session_service = ChatSessionService()
+model_registry = ModelRegistry()
 
 # Request tracking
 request_stats: Dict[str, Any] = {
@@ -119,88 +124,86 @@ async def health_check():
         logger.error(f"Health check failed: {str(e)}")
         raise HTTPException(status_code=500, detail="Service unhealthy")
 
-@app.post("/prompt", response_model=PromptResponse)
-async def submit_prompt(request: PromptRequest):
+@app.post("/prompt")
+async def submit_prompt(prompt: PromptRequest, background_tasks: BackgroundTasks):
     """Submit a prompt and get a response."""
     try:
-        # Get or create session
-        session_id = chat_session_service.create_session(request.session_id)
+        # Get the active session or create a new one
+        session_id = prompt.session_id or str(uuid.uuid4())
+        if not chat_session_service.get_session(session_id):
+            chat_session_service.create_session(session_id)
         
-        # Get chat history for context (before adding current message)
-        chat_history = chat_session_service.format_session_history(session_id)
+        # Get model details from registry
+        model_config = model_registry.get_model_config(prompt.model_name)
+        if not model_config:
+            raise HTTPException(status_code=400, detail=f"Model {prompt.model_name} not found")
         
-        # Generate response with the specified model and chat history
-        result = llm_service.generate_response(
-            prompt=request.prompt,
-            model_name=request.model_name,
-            chat_history=chat_history
+        # Generate response with conversation history
+        response = await llm_service.generate_response(
+            prompt.prompt,
+            model_name=prompt.model_name,
+            temperature=prompt.temperature,
+            max_tokens=prompt.max_tokens,
+            session_id=session_id
         )
         
-        # Create metadata for IPFS storage
+        # Create verification hash
+        verification_hash = llm_service.create_verification_hash(prompt.prompt, response["response"])
+        
+        # Sign the verification hash
+        signature = blockchain_service.sign_message(verification_hash)
+        
+        # Upload to IPFS
+        ipfs_data = {
+            "prompt": prompt.prompt,
+            "response": response["response"],
+            "model": prompt.model_name,
+            "timestamp": datetime.now().isoformat()
+        }
+        ipfs_cid = await ipfs_service.upload_json(ipfs_data)
+        
+        # Submit to blockchain
+        blockchain_result = blockchain_service.submit_to_blockchain(verification_hash)
+        
+        # Add messages to session with metadata
+        timestamp = datetime.now()
         metadata = {
-            "timestamp": datetime.now().isoformat(),
-            "model_name": result["model_name"],
-            "model_id": result["model_id"],
-            "temperature": llm_service.config.temperature,
-            "max_tokens": llm_service.config.max_new_tokens
+            "timestamp": timestamp.isoformat(),
+            "model_name": prompt.model_name,
+            "model_id": model_config.model_id,
+            "temperature": prompt.temperature,
+            "max_tokens": prompt.max_tokens,
+            "ipfs_cid": ipfs_cid,
+            "transaction_hash": blockchain_result['transaction_hash'],
+            "verification_hash": verification_hash,
+            "signature": signature
         }
         
-        # Store on IPFS
-        ipfs_cid = await ipfs_service.upload_to_ipfs(
-            prompt=request.prompt,
-            response=result["response"],
-            metadata=metadata
-        )
-        
-        # Create hash of prompt data
-        prompt_hash = blockchain_service.hash_prompt(
-            prompt=request.prompt,
-            response=result["response"],
-            timestamp=metadata["timestamp"]
-        )
-        
-        # Store hash on blockchain
-        transaction_hash = await blockchain_service.submit_hash(prompt_hash)
-        
-        # Add user message to session with metadata
+        # Add user message
         chat_session_service.add_message(
             session_id=session_id,
             role="user",
-            content=request.prompt,
-            model_name=result["model_name"],
-            model_id=result["model_id"],
-            ipfs_cid=ipfs_cid,
-            transaction_hash=transaction_hash
-        )
-        
-        # Add assistant message to session
-        chat_session_service.add_message(
-            session_id=session_id,
-            role="assistant",
-            content=result["response"],
-            model_name=result["model_name"],
-            model_id=result["model_id"],
-            ipfs_cid=ipfs_cid,
-            transaction_hash=transaction_hash
-        )
-        
-        # Update metadata with blockchain info
-        metadata.update({
-            "ipfs_cid": ipfs_cid,
-            "transaction_hash": transaction_hash
-        })
-        
-        response_data = PromptResponse(
-            response=result["response"],
-            model_name=result["model_name"],
-            model_id=result["model_id"],
-            session_id=session_id,
-            ipfs_cid=ipfs_cid,
-            transaction_hash=transaction_hash,
+            content=prompt.prompt,
+            model_name=prompt.model_name,
+            model_id=model_config.model_id,
             metadata=metadata
         )
         
-        return JSONResponse(content=response_data.dict(by_alias=True))
+        # Add assistant message
+        chat_session_service.add_message(
+            session_id=session_id,
+            role="assistant",
+            content=response["response"],
+            model_name=prompt.model_name,
+            model_id=model_config.model_id,
+            metadata=metadata
+        )
+        
+        return {
+            "response": response["response"],
+            "session_id": session_id,
+            "metadata": metadata
+        }
         
     except Exception as e:
         logger.error(f"Error processing prompt: {str(e)}")
@@ -265,4 +268,53 @@ async def get_prompt(prompt_id: str):
     """Get prompt metadata by ID."""
     if prompt_id not in prompts:
         raise HTTPException(status_code=404, detail="Prompt not found")
-    return prompts[prompt_id] 
+    return prompts[prompt_id]
+
+class VerificationRequest(BaseModel):
+    verification_hash: str
+    signature: str
+    expected_address: Optional[str] = None
+
+class VerificationResponse(BaseModel):
+    is_valid: bool
+    recovered_address: str
+    expected_address: str
+    match: bool
+
+@app.get("/signer")
+async def get_signer():
+    """Get the backend's current signing address."""
+    try:
+        return {
+            "signer_address": blockchain_service.account.address
+        }
+    except Exception as e:
+        logger.error(f"Error getting signer address: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/verify", response_model=VerificationResponse)
+async def verify_signature(request: VerificationRequest):
+    """Verify a signature against a verification hash."""
+    try:
+        # Get the expected address (either provided or use backend's address)
+        expected_address = request.expected_address or blockchain_service.account.address
+        
+        # Verify the signature and recover the address
+        recovered_address = blockchain_service.verify_signature(
+            request.verification_hash,
+            request.signature
+        )
+        
+        # Check if the recovered address matches the expected address
+        match = recovered_address.lower() == expected_address.lower()
+        
+        return VerificationResponse(
+            is_valid=True,  # If we got here, the signature is valid
+            recovered_address=recovered_address,
+            expected_address=expected_address,
+            match=match
+        )
+        
+    except Exception as e:
+        logger.error(f"Error verifying signature: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e)) 

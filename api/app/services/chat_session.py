@@ -10,9 +10,9 @@ class ChatMessage(BaseModel):
     timestamp: datetime
     ipfs_cid: Optional[str] = Field(None, alias="ipfsHash")
     transaction_hash: Optional[str] = Field(None, alias="transactionHash")
-    model_name: Optional[str] = None
-    model_id: Optional[str] = Field(None, alias="modelId")
-    metadata: Optional[Dict[str, Any]] = None
+    model_name: str
+    model_id: str
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
     class Config:
         allow_population_by_field_name = True
@@ -21,6 +21,23 @@ class ChatMessage(BaseModel):
         }
         alias_generator = lambda x: x.replace("_", "") if x.endswith(("_cid", "_hash", "_id")) else x
         populate_by_name = True
+        schema_extra = {
+            "example": {
+                "role": "assistant",
+                "content": "Hello! How can I help you today?",
+                "model_name": "mixtral-remote",
+                "model_id": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+                "metadata": {
+                    "timestamp": "2024-03-14T12:00:00",
+                    "ipfs_cid": "QmXyZ...",
+                    "transaction_hash": "0x123...",
+                    "verification_hash": "abc123...",
+                    "signature": "0x456...",
+                    "temperature": 0.7,
+                    "max_tokens": 1000
+                }
+            }
+        }
 
     def dict(self, *args, **kwargs):
         """Override dict to ensure aliases are properly handled and only show links for assistant messages."""
@@ -96,38 +113,27 @@ class ChatSessionService:
         session_id: str,
         role: str,
         content: str,
-        model_name: Optional[str] = None,
-        model_id: Optional[str] = None,
-        ipfs_cid: Optional[str] = None,
-        transaction_hash: Optional[str] = None
-    ) -> ChatMessage:
+        model_name: str,
+        model_id: str,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
         """Add a message to a session."""
-        session = self.get_session(session_id)
-        if session is None:
-            session = self.create_session(session_id)
-            session = self.sessions[session_id]
-
-        # Create metadata dictionary
-        metadata = {
-            "model_name": model_name,
-            "model_id": model_id,
-            "ipfs_cid": ipfs_cid,
-            "transaction_hash": transaction_hash,
-            "timestamp": datetime.now().isoformat()
-        }
-
+        if session_id not in self.sessions:
+            raise ValueError(f"Session {session_id} not found")
+            
+        timestamp = datetime.now()
+        
+        # Create message with metadata
         message = ChatMessage(
             role=role,
             content=content,
-            timestamp=datetime.now(),
-            ipfs_cid=ipfs_cid,
-            transaction_hash=transaction_hash,
+            timestamp=timestamp,
             model_name=model_name,
             model_id=model_id,
-            metadata=metadata
+            metadata=metadata or {}
         )
-        session.add_message(message)
-        return message
+        
+        self.sessions[session_id].messages.append(message)
 
     def get_session_messages(self, session_id: str) -> Optional[List[ChatMessage]]:
         """Get all messages in a session."""
