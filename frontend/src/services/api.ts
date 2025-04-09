@@ -28,8 +28,8 @@ export interface PromptResponse {
   response: string;
   model_name: string;
   model_id: string;
-  ipfsHash: string;            // ✅ now camelCase
-  transactionHash: string;     // ✅ now camelCase
+  ipfsHash: string;
+  transactionHash: string;
   session_id: string;
   metadata: {
     temperature: number;
@@ -38,6 +38,10 @@ export interface PromptResponse {
     do_sample: boolean;
     num_beams: number;
     early_stopping: boolean;
+    verification_hash: string;
+    signature: string;
+    ipfs_cid: string;
+    transaction_hash: string;
   };
 }
 
@@ -66,6 +70,13 @@ export interface ChatMessage {
   };
 }
 
+export interface VerificationResponse {
+    is_valid: boolean;
+    recovered_address: string;
+    expected_address?: string;
+    match: boolean;
+}
+
 export const getAvailableModels = async (): Promise<{ [key: string]: string }> => {
   const response = await axios.get(`${API_BASE_URL}/models`);
   // The backend returns { models: { [name: string]: id } }
@@ -90,6 +101,15 @@ export const submitPrompt = async (
     
     const response = await axios.post(`${API_BASE_URL}/prompt`, data);
     console.log('Response received:', response.data);
+    
+    // Log verification data specifically
+    if (response.data.metadata) {
+      console.log('Verification data:', {
+        verification_hash: response.data.metadata.verification_hash,
+        signature: response.data.metadata.signature
+      });
+    }
+    
     return response.data;
   } catch (error) {
     console.error('Error submitting prompt:', error);
@@ -160,4 +180,22 @@ export const getSession = async (sessionId: string): Promise<ChatSession> => {
       updated_at: new Date().toISOString()
     };
   }
+};
+
+export const verifyMessage = async (
+    verification_hash: string,
+    signature: string,
+    expected_address?: string
+): Promise<VerificationResponse> => {
+    try {
+        const response = await axios.post(`${API_BASE_URL}/verify`, {
+            verification_hash,
+            signature,
+            expected_address
+        });
+        return response.data;
+    } catch (error) {
+        console.error('Error verifying message:', error);
+        throw error;
+    }
 }; 

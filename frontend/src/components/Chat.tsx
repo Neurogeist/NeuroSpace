@@ -183,8 +183,8 @@ export default function Chat() {
                 role: 'assistant',
                 content: response.response,
                 timestamp: new Date().toISOString(),
-                ipfsHash: response.ipfsHash || undefined,
-                transactionHash: response.transactionHash || undefined,
+                ipfsHash: response.metadata.ipfs_cid,
+                transactionHash: response.metadata.transaction_hash,
                 metadata: {
                     model: response.model_name,
                     model_id: response.model_id,
@@ -193,7 +193,9 @@ export default function Chat() {
                     top_p: response.metadata.top_p,
                     do_sample: response.metadata.do_sample,
                     num_beams: response.metadata.num_beams,
-                    early_stopping: response.metadata.early_stopping
+                    early_stopping: response.metadata.early_stopping,
+                    verification_hash: response.metadata.verification_hash,
+                    signature: response.metadata.signature
                 }
             };
             console.log('Created assistant message:', assistantMessage);

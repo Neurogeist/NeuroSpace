@@ -1,8 +1,9 @@
 import { Box, Text, HStack, Link, Tooltip, useColorModeValue } from '@chakra-ui/react';
 import { FiHash, FiLink } from 'react-icons/fi';
 import { ChatMessage } from '../types/chat';
-import React from 'react';
-import VerificationBadge from './VerificationBadge';
+import React, { useState, useEffect } from 'react';
+import { verifyMessage } from '../services/api';
+import VerificationStatus from './VerificationStatus';
 
 interface ChatMessageProps {
     message: ChatMessage;
@@ -13,11 +14,46 @@ const formatHash = (hash: string) => {
 };
 
 export default function ChatMessageComponent({ message }: ChatMessageProps) {
+    const [verificationResult, setVerificationResult] = useState<any>(null);
+    const [isVerifying, setIsVerifying] = useState(false);
+    const [verificationError, setVerificationError] = useState<string | null>(null);
+
     const textColor = useColorModeValue('gray.800', 'gray.200');
     const messageBgColor = useColorModeValue('gray.50', 'gray.700');
     const userMessageBgColor = useColorModeValue('blue.50', 'blue.900');
     const timestampColor = useColorModeValue('gray.500', 'gray.400');
     const linkColor = useColorModeValue('blue.500', 'blue.300');
+
+    useEffect(() => {
+        const verifySignature = async () => {
+            if (message.role === 'assistant' && message.metadata?.verification_hash && message.metadata?.signature) {
+                try {
+                    setIsVerifying(true);
+                    setVerificationError(null);
+                    console.log('Verifying message:', {
+                        verification_hash: message.metadata.verification_hash,
+                        signature: message.metadata.signature,
+                        messageId: message.timestamp // Using timestamp as a unique identifier
+                    });
+                    const result = await verifyMessage(
+                        message.metadata.verification_hash,
+                        message.metadata.signature
+                    );
+                    console.log('Verification result:', result);
+                    setVerificationResult(result);
+                } catch (error) {
+                    console.error('Error verifying message:', error);
+                    setVerificationError('Failed to verify message');
+                } finally {
+                    setIsVerifying(false);
+                }
+            }
+        };
+
+        // Add a small delay to ensure the transaction is mined
+        const timeoutId = setTimeout(verifySignature, 2000);
+        return () => clearTimeout(timeoutId);
+    }, [message]);
 
     const renderMetadata = (message: ChatMessage) => {
         if (!message.metadata) return null;
@@ -34,10 +70,8 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
     };
 
     // Get hash information from either root level or metadata
-    const ipfsHash = message.ipfsHash || message.metadata?.ipfs_cid;
-    const transactionHash = message.transactionHash || message.metadata?.transaction_hash;
-    const verificationHash = message.metadata?.verification_hash;
-    const signature = message.metadata?.signature;
+    const ipfsHash = message.ipfsHash;
+    const transactionHash = message.transactionHash;
 
     return (
         <Box
@@ -55,12 +89,11 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
                 {message.content}
             </Text>
             
-            {message.role === 'assistant' && verificationHash && signature && (
-                <VerificationBadge
-                    verification_hash={verificationHash}
-                    signature={signature}
-                    ipfs_cid={ipfsHash || ''}
-                    transaction_hash={transactionHash || ''}
+            {message.role === 'assistant' && message.metadata?.verification_hash && (
+                <VerificationStatus
+                    verificationResult={verificationResult}
+                    isLoading={isVerifying}
+                    error={verificationError || undefined}
                 />
             )}
             
