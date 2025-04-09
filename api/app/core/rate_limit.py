@@ -2,8 +2,11 @@ from fastapi import HTTPException, Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 from datetime import datetime, timedelta
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 class RateLimiter:
     def __init__(self, requests_per_minute: int = 60):
@@ -44,17 +47,26 @@ class RateLimiter:
         return True, remaining
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, requests_per_minute: int = 60):
+    def __init__(self, app, rate_limit: int = 60, window: int = 60):
         super().__init__(app)
-        self.rate_limiter = RateLimiter(requests_per_minute)
+        self.rate_limit = rate_limit
+        self.window = window
+        self.requests: Dict[str, Dict[str, float]] = {}
+        
+        # Endpoints that don't require X-User-Address header
+        self.excluded_endpoints = {
+            "/health",
+            "/signer",
+            "/verify"
+        }
     
     async def dispatch(self, request: Request, call_next):
-        # Skip rate limiting for health check endpoint, models endpoint, and OPTIONS requests
-        if request.url.path in ["/health", "/models", "/sessions"] or request.method == "OPTIONS":
+        # Skip rate limiting for excluded endpoints
+        if request.url.path in self.excluded_endpoints:
             return await call_next(request)
             
-        # Get user address from request (case-insensitive)
-        user_address = request.headers.get("X-User-Address") or request.headers.get("x-user-address")
+        # Get user address from header
+        user_address = request.headers.get("X-User-Address")
         if not user_address:
             raise HTTPException(
                 status_code=400,
@@ -65,22 +77,43 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 }
             )
         
+        # Clean up old requests
+        current_time = time.time()
+        self._cleanup_requests(current_time)
+        
         # Check rate limit
-        is_allowed, remaining = self.rate_limiter.check_rate_limit(user_address)
-        if not is_allowed:
+        if not self._check_rate_limit(user_address, current_time):
             raise HTTPException(
                 status_code=429,
                 detail={
                     "error": "Rate limit exceeded",
-                    "message": "You have exceeded the rate limit of 60 requests per minute",
-                    "remaining_time": "60 seconds",
-                    "retry_after": 60
+                    "message": f"Too many requests. Please try again in {self.window} seconds.",
+                    "rate_limit": self.rate_limit,
+                    "window": self.window
                 }
             )
         
-        # Add rate limit headers to response
+        # Process request
         response = await call_next(request)
-        response.headers["X-RateLimit-Remaining"] = str(remaining)
-        response.headers["X-RateLimit-Reset"] = str(int(time.time() + 60))
+        return response
+    
+    def _cleanup_requests(self, current_time: float):
+        """Remove old requests outside the time window."""
+        for address in list(self.requests.keys()):
+            self.requests[address] = {
+                timestamp for timestamp in self.requests[address]
+                if current_time - timestamp < self.window
+            }
+            if not self.requests[address]:
+                del self.requests[address]
+    
+    def _check_rate_limit(self, address: str, current_time: float) -> bool:
+        """Check if the request is within the rate limit."""
+        if address not in self.requests:
+            self.requests[address] = set()
         
-        return response 
+        # Add current request timestamp
+        self.requests[address].add(current_time)
+        
+        # Check if we're over the limit
+        return len(self.requests[address]) <= self.rate_limit 

@@ -8,12 +8,13 @@ import logging
 from ..core.config import get_settings
 from .model_registry import ModelRegistry
 from .llm_remote import RemoteLLMClient
+from .chat_session import ChatSessionService
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
 class LLMService:
-    def __init__(self):
+    def __init__(self, chat_session_service: ChatSessionService):
         # Initialize the model registry
         self.registry = ModelRegistry()
         
@@ -28,6 +29,9 @@ class LLMService:
         
         # Initialize remote client
         self.remote_client = RemoteLLMClient()
+        
+        # Store the chat session service
+        self.chat_session_service = chat_session_service
         
         # Load the default model
         self._load_model(self.default_model)
@@ -64,228 +68,75 @@ class LLMService:
             self._load_model(model_name)
     
     @lru_cache(maxsize=100)
-    def generate_response(self, prompt: str, model_name: Optional[str] = None, chat_history: Optional[str] = None) -> Dict[str, Any]:
-        """Generate a response with the specified model."""
+    async def generate_response(
+        self,
+        prompt: str,
+        model_name: str,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        session_id: Optional[str] = None
+    ) -> Dict[str, str]:
+        """Generate a response using the specified model."""
         try:
-            # Set model if specified
-            if model_name and model_name != self.current_model_name:
-                self.set_model(model_name)
+            # Get model config
+            model_config = self.registry.get_model_config(model_name)
+            if not model_config:
+                raise ValueError(f"Model {model_name} not found")
             
-            # Format the prompt with chat history
-            formatted_prompt = self._format_prompt(prompt, chat_history)
-            logger.info(f"Formatted prompt: {formatted_prompt}")
+            # Format the prompt with conversation history
+            formatted_prompt = self._format_prompt(prompt, session_id)
+            logger.info(f"Formatted prompt with session {session_id}: {formatted_prompt}")
             
-            # Generate response based on provider
-            if self.config.provider == "local":
-                # Use existing local generation flow
-                inputs = self.tokenizer(formatted_prompt, return_tensors="pt", padding=True, truncation=True)
-                
-                # Determine the correct device for inputs
-                if hasattr(self.model, 'device_map') and self.model.device_map is not None:
-                    for param in self.model.parameters():
-                        if param.device.type != 'meta':
-                            target_device = param.device
-                            break
-                    else:
-                        target_device = torch.device('cpu')
-                    inputs = {k: v.to(target_device) for k, v in inputs.items()}
-                    logger.info(f"Using device {target_device} for inputs with device_map model")
-                else:
-                    if self.registry.device == "mps":
-                        self.model = self.model.to(self.registry.device)
-                    inputs = {k: v.to(self.registry.device) for k, v in inputs.items()}
-                    logger.info(f"Using device {self.registry.device} for inputs")
-                
-                # Set generation parameters
-                generation_config = {
-                    "max_new_tokens": self.config.max_new_tokens,
-                    "temperature": self.config.temperature,
-                    "top_p": self.config.top_p,
-                    "do_sample": self.config.do_sample,
-                    "num_beams": self.config.num_beams,
-                    "pad_token_id": self.tokenizer.eos_token_id,
-                    "eos_token_id": self.tokenizer.eos_token_id,
-                    "early_stopping": self.config.early_stopping,
-                    "return_dict_in_generate": True,
-                    "output_scores": False
-                }
-                
-                # Add timeout for generation
-                if self.registry.device == "mps":
-                    generation_config["max_time"] = 60.0
-                
-                logger.info(f"Generation config: {generation_config}")
-                
-                # Generate response with model-specific parameters
-                with torch.no_grad():
-                    try:
-                        outputs = self.model.generate(
-                            **inputs,
-                            **generation_config
-                        )
-                        # Get the sequences from the output
-                        sequences = outputs.sequences if hasattr(outputs, 'sequences') else outputs
-                        logger.info(f"Raw model output shape: {sequences.shape}")
-                        # Get input length from the inputs dictionary
-                        input_length = inputs['input_ids'].shape[1]
-                        logger.info(f"Generated token count: {sequences.shape[1] - input_length}")
-                    except RuntimeError as e:
-                        if "out of memory" in str(e).lower():
-                            raise ValueError(
-                                "Model ran out of memory. Try using a smaller model or reducing max_new_tokens."
-                            )
-                        elif "timeout" in str(e).lower():
-                            raise ValueError(
-                                "Generation timed out. The model is taking too long to respond. "
-                                "Try using a smaller model or reducing max_new_tokens."
-                            )
-                        raise
-                
-                # Decode the response
-                response = self.tokenizer.decode(sequences[0], skip_special_tokens=True)
-            else:
-                # Use remote client for generation
-                response = self.remote_client.generate(
-                    model_id=self.config.model_id,
-                    prompt=formatted_prompt,  # Pass the formatted prompt with chat history
-                    system_prompt=self.config.system_prompt,
-                    config=self.config
-                )
-            
-            logger.info(f"Raw decoded response: {response}")
+            # Generate response using remote client
+            response = await self.remote_client.generate(
+                model_id=model_config.model_id,
+                prompt=formatted_prompt,
+                system_prompt=model_config.system_prompt,
+                config=model_config
+            )
             
             # Clean the response
             cleaned_response = self._clean_response(response, formatted_prompt)
             logger.info(f"Cleaned response: {cleaned_response}")
             
-            # Return response with metadata
             return {
-                "response": cleaned_response,
-                "model_name": self.current_model_name,
-                "model_id": self.config.model_id,
-                "metadata": {
-                    "temperature": self.config.temperature,
-                    "max_tokens": self.config.max_new_tokens,
-                    "top_p": self.config.top_p,
-                    "do_sample": self.config.do_sample,
-                    "num_beams": self.config.num_beams,
-                    "early_stopping": self.config.early_stopping
-                }
+                "response": cleaned_response
             }
             
         except Exception as e:
             logger.error(f"Error generating response: {str(e)}")
-            raise Exception(f"Failed to generate response: {str(e)}")
+            raise
     
     def clear_cache(self):
         """Clear the response cache."""
         self.generate_response.cache_clear()
     
-    def _format_prompt(self, prompt: str, chat_history: Optional[str] = None) -> str:
-        """Format the prompt with system message and chat history."""
-        if self.current_model_name == "tinyllama":
-            # TinyLlama uses a specific chat format
-            formatted_prompt = f"<|system|>\n{self.config.system_prompt}\n\n"
+    def _format_prompt(self, prompt: str, session_id: Optional[str] = None) -> str:
+        """Format the prompt with system message and conversation history."""
+        try:
+            # Start with system message
+            formatted_prompt = "You are a helpful AI assistant. Answer questions accurately and concisely.\n\n"
             
-            # Add chat history if provided
-            if chat_history:
-                # Process chat history more robustly
-                current_role = None
-                current_message = []
-                
-                # Split chat history by lines and process line by line
-                for line in chat_history.split('\n'):
-                    line = line.strip()
-                    if not line:
-                        continue
-                        
-                    if line.startswith("User:"):
-                        # If we were building a previous message, add it to the prompt
-                        if current_role and current_message:
-                            msg_text = '\n'.join(current_message).strip()
-                            if current_role == "user":
-                                formatted_prompt += f"<|user|>\n{msg_text}\n\n"
-                            elif current_role == "assistant":
-                                formatted_prompt += f"<|assistant|>\n{msg_text}\n\n"
-                        
-                        # Start a new user message
-                        current_role = "user"
-                        current_message = [line[5:].strip()]
-                    elif line.startswith("Assistant:"):
-                        # If we were building a previous message, add it to the prompt
-                        if current_role and current_message:
-                            msg_text = '\n'.join(current_message).strip()
-                            if current_role == "user":
-                                formatted_prompt += f"<|user|>\n{msg_text}\n\n"
-                            elif current_role == "assistant":
-                                formatted_prompt += f"<|assistant|>\n{msg_text}\n\n"
-                        
-                        # Start a new assistant message
-                        current_role = "assistant"
-                        current_message = [line[10:].strip()]
-                    else:
-                        # Continue building the current message
-                        if current_role:
-                            current_message.append(line)
-                
-                # Add the final message if there is one
-                if current_role and current_message:
-                    msg_text = '\n'.join(current_message).strip()
-                    if current_role == "user":
-                        formatted_prompt += f"<|user|>\n{msg_text}\n\n"
-                    elif current_role == "assistant":
-                        formatted_prompt += f"<|assistant|>\n{msg_text}\n\n"
+            # Add conversation history if session_id is provided
+            if session_id:
+                logger.info(f"Getting session history for session {session_id}")
+                session = self.chat_session_service.get_session(session_id)
+                if session:
+                    logger.info(f"Found session with {len(session.messages)} messages")
+                    for message in session.messages:
+                        formatted_prompt += f"{message.role.capitalize()}: {message.content}\n"
+                else:
+                    logger.warning(f"No session found for ID {session_id}")
             
-            # Add the current user message
-            formatted_prompt += f"<|user|>\n{prompt}\n\n<|assistant|>\n"
-            return formatted_prompt
-        else:
-            # Default format for other models
-            formatted_prompt = f"{self.config.system_prompt}\n\n"
-            
-            # Add chat history if provided
-            if chat_history:
-                # Process chat history more robustly
-                current_role = None
-                current_message = []
-                
-                # Split chat history by lines and process line by line
-                for line in chat_history.split('\n'):
-                    line = line.strip()
-                    if not line:
-                        continue
-                        
-                    if line.startswith("User:"):
-                        # If we were building a previous message, add it to the prompt
-                        if current_role and current_message:
-                            msg_text = '\n'.join(current_message).strip()
-                            formatted_prompt += f"{current_role}: {msg_text}\n\n"
-                        
-                        # Start a new user message
-                        current_role = "User"
-                        current_message = [line[5:].strip()]
-                    elif line.startswith("Assistant:"):
-                        # If we were building a previous message, add it to the prompt
-                        if current_role and current_message:
-                            msg_text = '\n'.join(current_message).strip()
-                            formatted_prompt += f"{current_role}: {msg_text}\n\n"
-                        
-                        # Start a new assistant message
-                        current_role = "Assistant"
-                        current_message = [line[10:].strip()]
-                    else:
-                        # Continue building the current message
-                        if current_role:
-                            current_message.append(line)
-                
-                # Add the final message if there is one
-                if current_role and current_message:
-                    msg_text = '\n'.join(current_message).strip()
-                    formatted_prompt += f"{current_role}: {msg_text}\n\n"
-            
-            # Add the current user message
+            # Add current prompt
             formatted_prompt += f"User: {prompt}\nAssistant:"
+            
+            logger.info(f"Formatted prompt: {formatted_prompt}")
             return formatted_prompt
+            
+        except Exception as e:
+            logger.error(f"Error formatting prompt: {str(e)}")
+            raise
     
     def _clean_response(self, response: str, formatted_prompt: str) -> str:
         """Clean the model's response to only include the assistant's reply."""
@@ -371,3 +222,30 @@ class LLMService:
                     text = first_part + '\n' + formatted_rest
         
         return text 
+
+    def create_verification_hash(self, prompt: str, response: str) -> str:
+        """Create a verification hash for a prompt and response."""
+        try:
+            # Create a dictionary with the data to hash
+            data = {
+                "prompt": prompt,
+                "response": response,
+                "model_name": self.current_model_name,
+                "model_id": self.config.model_id,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Convert to JSON and encode as bytes
+            import json
+            data_bytes = json.dumps(data, sort_keys=True).encode('utf-8')
+            
+            # Hash the bytes
+            import hashlib
+            hash_obj = hashlib.sha256(data_bytes)
+            
+            # Return the hex digest
+            return hash_obj.hexdigest()
+            
+        except Exception as e:
+            logger.error(f"Error creating verification hash: {str(e)}")
+            raise Exception(f"Failed to create verification hash: {str(e)}") 

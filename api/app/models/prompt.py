@@ -10,6 +10,8 @@ class PromptRequest(BaseModel):
     model_name: Optional[str] = Field(None, description="The model to use for generation")
     session_id: Optional[str] = Field(None, description="The chat session ID. If not provided, a new session will be created")
     timestamp: datetime = Field(default_factory=datetime.utcnow, description="Timestamp of the request")
+    temperature: float = Field(default=0.7, description="Sampling temperature for generation")
+    max_tokens: int = Field(default=512, description="Maximum number of tokens to generate")
     
     class Config:
         schema_extra = {
@@ -17,7 +19,9 @@ class PromptRequest(BaseModel):
                 "prompt": "What's a good book to read?",
                 "model_name": "tinyllama",
                 "session_id": "session123",
-                "timestamp": "2023-04-14T12:00:00"
+                "timestamp": "2023-04-14T12:00:00",
+                "temperature": 0.7,
+                "max_tokens": 512
             }
         }
 
@@ -27,8 +31,6 @@ class PromptResponse(BaseModel):
     model_name: str = Field(..., description="The model used for generation")
     model_id: str = Field(..., description="The full model ID from Hugging Face")
     session_id: str = Field(..., description="The chat session ID")
-    ipfs_cid: str = Field(..., description="The IPFS CID of the response")
-    transaction_hash: str = Field(..., description="The transaction hash on the blockchain")
     metadata: Dict[str, Any] = Field(..., description="Additional metadata about the response")
 
     class Config:
@@ -36,20 +38,21 @@ class PromptResponse(BaseModel):
         json_encoders = {
             datetime: lambda dt: dt.isoformat()
         }
-        alias_generator = lambda x: x.replace("_", "") if x.endswith(("_cid", "_hash")) else x
-        populate_by_name = True
         schema_extra = {
             "example": {
                 "response": "The Alchemist by Paulo Coelho is a great choice!",
                 "model_name": "tinyllama",
                 "model_id": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
                 "session_id": "session123",
-                "ipfs_cid": "QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco",
-                "transaction_hash": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
                 "metadata": {
                     "timestamp": "2024-02-20T12:00:00",
+                    "model_name": "tinyllama",
+                    "model_id": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
                     "temperature": 0.7,
-                    "max_tokens": 256
+                    "max_tokens": 256,
+                    "verification_hash": "abc123...",
+                    "ipfs_cid": "QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco",
+                    "transaction_hash": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
                 }
             }
         }
