@@ -79,9 +79,18 @@ export default function Chat() {
     }, [input]);
 
     useEffect(() => {
+        if (availableSessions.length > 0 && !activeSessionId) {
+            setActiveSessionId(availableSessions[0].id);
+        }
+    }, [availableSessions]);
+
+    useEffect(() => {
         const loadSession = async () => {
-            if (!activeSessionId) return;
-            
+            if (!activeSessionId) {
+                setMessages([]);
+                return;
+            }
+
             try {
                 const session = await getSession(activeSessionId);
                 const messages = session.messages.map(msg => ({
@@ -97,15 +106,18 @@ export default function Chat() {
                 setMessages(messages);
             } catch (error) {
                 console.error('Error loading session:', error);
+                toast({
+                    title: "Error",
+                    description: "Failed to load session. Please try again.",
+                    status: "error",
+                    duration: 3000,
+                    isClosable: true,
+                });
             }
         };
 
-        // Only load session if it's not already loaded
-        const currentSession = availableSessions.find(s => s.id === activeSessionId);
-        if (currentSession && currentSession.messages.length !== messages.length) {
-            loadSession();
-        }
-    }, [activeSessionId, availableSessions]);
+        loadSession();
+    }, [activeSessionId]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
