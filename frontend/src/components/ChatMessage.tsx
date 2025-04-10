@@ -1,16 +1,61 @@
-import { Box, Text, HStack, Link, Tooltip, useColorModeValue } from '@chakra-ui/react';
+import { Box, Text, HStack, Link, Tooltip, useColorModeValue, Code } from '@chakra-ui/react';
 import { FiHash, FiLink } from 'react-icons/fi';
 import { ChatMessage } from '../types/chat';
 import React, { useState, useEffect } from 'react';
 import { verifyMessage } from '../services/api';
 import VerificationStatus from './VerificationStatus';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
+import { Components } from 'react-markdown';
 
 interface ChatMessageProps {
     message: ChatMessage;
 }
 
+interface CodeProps {
+    inline?: boolean;
+    children: React.ReactNode;
+}
+
 const formatHash = (hash: string) => {
     return `${hash.slice(0, 6)}...${hash.slice(-4)}`;
+};
+
+const MarkdownComponents: Components = {
+    p: ({ children }) => <Text mb={2}>{children}</Text>,
+    em: ({ children }) => <Text as="em">{children}</Text>,
+    strong: ({ children }) => <Text as="strong" fontWeight="bold">{children}</Text>,
+    code: (props) => {
+        const { inline, children } = props as { inline?: boolean; children: React.ReactNode };
+        if (inline) {
+            return <Code p={1} borderRadius="md">{children}</Code>;
+        }
+        return (
+            <Box
+                as="pre"
+                p={3}
+                bg={useColorModeValue('gray.100', 'gray.800')}
+                borderRadius="md"
+                overflowX="auto"
+                whiteSpace="pre-wrap"
+                fontSize="sm"
+                fontFamily="mono"
+                border="1px solid"
+                borderColor={useColorModeValue('gray.200', 'gray.700')}
+            >
+                <Text color={useColorModeValue('gray.800', 'gray.100')}>{children}</Text>
+            </Box>
+        );
+    },
+    ul: ({ children }) => <Box as="ul" pl={4} mb={2}>{children}</Box>,
+    ol: ({ children }) => <Box as="ol" pl={4} mb={2}>{children}</Box>,
+    li: ({ children }) => <Box as="li" mb={1}>{children}</Box>,
+    a: ({ href, children }) => (
+        <Link href={href} color="blue.500" isExternal>
+            {children}
+        </Link>
+    ),
 };
 
 export default function ChatMessageComponent({ message }: ChatMessageProps) {
@@ -105,12 +150,13 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
             alignSelf={message.role === 'user' ? 'flex-end' : 'flex-start'}
             mb={4}
         >
-            <Text 
-                color={textColor}
-                whiteSpace="pre-line"
+            <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeRaw]}
+                components={MarkdownComponents}
             >
                 {message.content}
-            </Text>
+            </ReactMarkdown>
             
             {message.role === 'assistant' && message.metadata?.verification_hash && (
                 <VerificationStatus
@@ -121,7 +167,14 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
             )}
             
             <HStack spacing={4} mt={2} fontSize="xs" color={timestampColor}>
-                <Text>{new Date(message.timestamp).toLocaleTimeString()}</Text>
+                <Text>
+                    {new Date(message.timestamp).toLocaleTimeString('en-US', {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: true
+                    })}
+                </Text>
                 {ipfsHash && (
                     <Tooltip label="View on IPFS">
                         <Link
