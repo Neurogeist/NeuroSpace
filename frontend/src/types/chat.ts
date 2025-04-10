@@ -1,26 +1,25 @@
-export interface ChatMessageMetadata {
-    model?: string;
-    model_id?: string;
-    temperature?: number;
-    max_tokens?: number;
-    top_p?: number;
-    do_sample?: boolean;
-    verification_hash?: string;
-    signature?: string;
-    ipfs_cid?: string;
-    transaction_hash?: string;
-    signer_address?: string;
-}
-
 export interface ChatMessage {
     role: 'user' | 'assistant';
     content: string;
     timestamp: string;
-    metadata?: ChatMessageMetadata;
-    verification_hash?: string;
-    signature?: string;
     ipfsHash?: string;
     transactionHash?: string;
+    verification_hash?: string;
+    signature?: string;
+    metadata?: {
+        model?: string;
+        model_id?: string;
+        temperature?: number;
+        max_tokens?: number;
+        top_p?: number;
+        do_sample?: boolean;
+        num_beams?: number;
+        early_stopping?: boolean;
+        verification_hash?: string;
+        signature?: string;
+        ipfs_cid?: string;
+        transaction_hash?: string;
+    };
 }
 
 export interface PromptResponse {

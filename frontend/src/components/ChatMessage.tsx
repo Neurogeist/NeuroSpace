@@ -1,127 +1,159 @@
-import React from 'react';
-import {
-    Box,
-    VStack,
-    HStack,
-    Text,
-    useColorModeValue,
-    Link,
-    Tooltip,
-    Code,
-    UnorderedList,
-    ListItem,
-    OrderedList,
-    Table,
-    Thead,
-    Tbody,
-    Tr,
-    Th,
-    Td,
-    Image,
-    Divider
-} from '@chakra-ui/react';
-import ReactMarkdown from 'react-markdown';
-import { Components } from 'react-markdown';
-import { ChatMessage as ChatMessageType } from '../types/chat';
-import VerificationBadge from './VerificationBadge';
+import { Box, Text, HStack, Link, Tooltip, useColorModeValue } from '@chakra-ui/react';
+import { FiHash, FiLink } from 'react-icons/fi';
+import { ChatMessage } from '../types/chat';
+import React, { useState, useEffect } from 'react';
+import { verifyMessage } from '../services/api';
+import VerificationStatus from './VerificationStatus';
 
 interface ChatMessageProps {
-    message: ChatMessageType;
+    message: ChatMessage;
 }
 
-const components: Components = {
-    p: ({ children }) => <Text mb={2}>{children}</Text>,
-    h1: ({ children }) => <Text as="h1" fontSize="2xl" fontWeight="bold" mb={4}>{children}</Text>,
-    h2: ({ children }) => <Text as="h2" fontSize="xl" fontWeight="bold" mb={3}>{children}</Text>,
-    h3: ({ children }) => <Text as="h3" fontSize="lg" fontWeight="bold" mb={2}>{children}</Text>,
-    ul: ({ children }) => <UnorderedList mb={2}>{children}</UnorderedList>,
-    ol: ({ children }) => <OrderedList mb={2}>{children}</OrderedList>,
-    li: ({ children }) => <ListItem>{children}</ListItem>,
-    code: ({ children }) => <Code p={2} borderRadius="md">{children}</Code>,
-    pre: ({ children }) => <Box as="pre" p={4} borderRadius="md" bg="gray.100" overflowX="auto">{children}</Box>,
-    table: ({ children }) => <Table variant="simple" mb={4}>{children}</Table>,
-    thead: ({ children }) => <Thead>{children}</Thead>,
-    tbody: ({ children }) => <Tbody>{children}</Tbody>,
-    tr: ({ children }) => <Tr>{children}</Tr>,
-    th: ({ children }) => <Th>{children}</Th>,
-    td: ({ children }) => <Td>{children}</Td>,
-    a: ({ href, children }) => (
-        <Link href={href} color="blue.500" isExternal>
-            {children}
-        </Link>
-    ),
-    img: ({ src, alt }) => (
-        <Image src={src} alt={alt} maxW="100%" borderRadius="md" />
-    ),
-    hr: () => <Divider my={4} />,
-    blockquote: ({ children }) => (
-        <Box
-            as="blockquote"
-            pl={4}
-            borderLeft="4px"
-            borderColor="gray.200"
-            fontStyle="italic"
-            mb={4}
-        >
-            {children}
-        </Box>
-    ),
+const formatHash = (hash: string) => {
+    return `${hash.slice(0, 6)}...${hash.slice(-4)}`;
 };
 
-export default function ChatMessage({ message }: ChatMessageProps) {
-    const bgColor = useColorModeValue(
-        message.role === 'user' ? 'blue.50' : 'gray.50',
-        message.role === 'user' ? 'blue.900' : 'gray.700'
-    );
-    const textColor = useColorModeValue('gray.800', 'gray.200');
-    const borderColor = useColorModeValue('gray.200', 'gray.600');
-    const timestampColor = useColorModeValue('gray.500', 'gray.400');
+export default function ChatMessageComponent({ message }: ChatMessageProps) {
+    const [verificationResult, setVerificationResult] = useState<any>(null);
+    const [isVerifying, setIsVerifying] = useState(false);
+    const [verificationError, setVerificationError] = useState<string | null>(null);
 
-    const verificationHash = message.metadata?.verification_hash || message.verification_hash;
-    const signature = message.metadata?.signature || message.signature;
-    const ipfsCid = message.metadata?.ipfs_cid || message.ipfsHash;
-    const transactionHash = message.metadata?.transaction_hash || message.transactionHash;
+    const textColor = useColorModeValue('gray.800', 'gray.200');
+    const messageBgColor = useColorModeValue('gray.50', 'gray.700');
+    const userMessageBgColor = useColorModeValue('blue.50', 'blue.900');
+    const timestampColor = useColorModeValue('gray.500', 'gray.400');
+    const linkColor = useColorModeValue('blue.500', 'blue.300');
+
+    useEffect(() => {
+        const verifySignature = async () => {
+            if (
+                message.role === 'assistant' && 
+                message.metadata?.verification_hash && 
+                message.metadata?.signature
+            ) {
+                // Check session storage first
+                const storedResult = sessionStorage.getItem(`verification_${message.metadata.verification_hash}`);
+                if (storedResult) {
+                    setVerificationResult(JSON.parse(storedResult));
+                    return;
+                }
+
+                try {
+                    setIsVerifying(true);
+                    setVerificationError(null);
+                    console.log('Verifying message:', {
+                        verification_hash: message.metadata.verification_hash,
+                        signature: message.metadata.signature,
+                        messageId: message.timestamp
+                    });
+                    
+                    const result = await verifyMessage(
+                        message.metadata.verification_hash,
+                        message.metadata.signature
+                    );
+                    
+                    console.log('Verification result:', result);
+                    setVerificationResult(result);
+                    // Store result in session storage
+                    sessionStorage.setItem(`verification_${message.metadata.verification_hash}`, JSON.stringify(result));
+                } catch (error) {
+                    console.error('Error verifying message:', error);
+                    setVerificationError('Failed to verify message');
+                } finally {
+                    setIsVerifying(false);
+                }
+            }
+        };
+
+        // Try verification immediately
+        verifySignature();
+
+        // If verification hasn't succeeded after 2 seconds, try again
+        const timeoutId = setTimeout(() => {
+            if (!verificationResult && !verificationError) {
+                verifySignature();
+            }
+        }, 2000);
+
+        return () => clearTimeout(timeoutId);
+    }, [message]);
+
+    const renderMetadata = (message: ChatMessage) => {
+        if (!message.metadata) return null;
+        
+        return (
+            <Box mt={2} fontSize="xs" color={timestampColor}>
+                <HStack spacing={4}>
+                    <Text fontWeight="bold">Model: {message.metadata.model}</Text>
+                    <Text>Temperature: {message.metadata.temperature}</Text>
+                    <Text>Max Tokens: {message.metadata.max_tokens}</Text>
+                </HStack>
+            </Box>
+        );
+    };
+
+    // Get hash information from either root level or metadata
+    const ipfsHash = message.ipfsHash || message.metadata?.ipfs_cid;
+    const transactionHash = message.transactionHash || message.metadata?.transaction_hash;
 
     return (
         <Box
             p={4}
             borderRadius="lg"
-            bg={bgColor}
+            bg={message.role === 'user' ? userMessageBgColor : messageBgColor}
             maxW="80%"
             alignSelf={message.role === 'user' ? 'flex-end' : 'flex-start'}
-            border="1px"
-            borderColor={borderColor}
+            mb={4}
         >
-            <VStack align="stretch" spacing={2}>
-                <HStack justify="space-between">
-                    <Text fontWeight="bold" color={textColor}>
-                        {message.role === 'user' ? 'You' : 'Assistant'}
-                    </Text>
-                    <Text fontSize="xs" color={timestampColor}>
-                        {new Date(message.timestamp).toLocaleString()}
-                    </Text>
-                </HStack>
-
-                {message.role === 'assistant' ? (
-                    <>
-                        <ReactMarkdown components={components}>
-                            {message.content}
-                        </ReactMarkdown>
-                        {verificationHash && signature && (
-                            <Box mt={2}>
-                                <VerificationBadge
-                                    verification_hash={verificationHash}
-                                    signature={signature}
-                                    ipfs_cid={ipfsCid}
-                                    transaction_hash={transactionHash}
-                                />
-                            </Box>
-                        )}
-                    </>
-                ) : (
-                    <Text color={textColor}>{message.content}</Text>
+            <Text 
+                color={textColor}
+                whiteSpace="pre-line"
+            >
+                {message.content}
+            </Text>
+            
+            {message.role === 'assistant' && message.metadata?.verification_hash && (
+                <VerificationStatus
+                    verificationResult={verificationResult}
+                    isLoading={isVerifying}
+                    error={verificationError || undefined}
+                />
+            )}
+            
+            <HStack spacing={4} mt={2} fontSize="xs" color={timestampColor}>
+                <Text>{new Date(message.timestamp).toLocaleTimeString()}</Text>
+                {ipfsHash && (
+                    <Tooltip label="View on IPFS">
+                        <Link
+                            href={`https://ipfs.io/ipfs/${ipfsHash}`}
+                            isExternal
+                            color={linkColor}
+                            display="flex"
+                            alignItems="center"
+                            gap={1}
+                        >
+                            <FiHash />
+                            {formatHash(ipfsHash)}
+                        </Link>
+                    </Tooltip>
                 )}
-            </VStack>
+                {transactionHash && (
+                    <Tooltip label="View on BaseScan">
+                        <Link
+                            href={`https://sepolia.basescan.org/tx/${transactionHash}`}
+                            isExternal
+                            color={linkColor}
+                            display="flex"
+                            alignItems="center"
+                            gap={1}
+                        >
+                            <FiLink />
+                            {formatHash(transactionHash)}
+                        </Link>
+                    </Tooltip>
+                )}
+            </HStack>
+            {message.role === 'assistant' && renderMetadata(message)}
         </Box>
     );
 } 
