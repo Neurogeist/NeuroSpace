@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     Box,
     HStack,
@@ -11,23 +11,31 @@ import {
     Collapse,
     Button,
     useClipboard,
-    useToast
+    useToast,
+    Spinner
 } from '@chakra-ui/react';
 import { FiCheck, FiX, FiRefreshCw, FiCopy, FiExternalLink } from 'react-icons/fi';
 import axios from 'axios';
+import { verifyMessage } from '../services/api';
 
 interface VerificationBadgeProps {
     verification_hash: string;
     signature: string;
-    ipfs_cid: string;
-    transaction_hash: string;
+    ipfs_cid?: string;
+    transaction_hash?: string;
 }
 
-interface VerificationResponse {
-    exists: boolean;
-    submitter_address?: string;
-    timestamp?: string;
-}
+// Cache for verification results
+const verificationCache = new Map<string, {
+    is_valid: boolean;
+    recovered_address: string;
+    expected_address?: string;
+    match: boolean;
+    timestamp: number;
+}>();
+
+// Cache expiration time (5 minutes)
+const CACHE_EXPIRATION = 5 * 60 * 1000;
 
 export default function VerificationBadge({
     verification_hash,
@@ -35,49 +43,81 @@ export default function VerificationBadge({
     ipfs_cid,
     transaction_hash
 }: VerificationBadgeProps) {
-    const [isVerified, setIsVerified] = useState<boolean | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [showDetails, setShowDetails] = useState(false);
-    const [verificationData, setVerificationData] = useState<VerificationResponse | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(false);
+    const [verificationResult, setVerificationResult] = useState<{
+        is_valid: boolean;
+        recovered_address: string;
+        expected_address?: string;
+        match: boolean;
+    } | null>(null);
+    const [error, setError] = useState<string | null>(null);
     const { hasCopied: hasCopiedHash, onCopy: onCopyHash } = useClipboard(verification_hash);
     const { hasCopied: hasCopiedSignature, onCopy: onCopySignature } = useClipboard(signature);
     const toast = useToast();
+    const isVerifying = useRef(false);
 
     const bgColor = useColorModeValue('gray.50', 'gray.700');
     const borderColor = useColorModeValue('gray.200', 'gray.600');
     const textColor = useColorModeValue('gray.700', 'gray.300');
     const linkColor = useColorModeValue('blue.500', 'blue.300');
 
-    useEffect(() => {
-        verifyHash();
-    }, [verification_hash]);
-
     const verifyHash = async () => {
+        if (isVerifying.current) return;
+        isVerifying.current = true;
+
         try {
+            // Check cache first
+            const cachedResult = verificationCache.get(verification_hash);
+            if (cachedResult && Date.now() - cachedResult.timestamp < CACHE_EXPIRATION) {
+                setVerificationResult(cachedResult);
+                return;
+            }
+
             setIsLoading(true);
-            const response = await axios.get(`/verify/hash/${verification_hash}`);
-            setVerificationData(response.data);
-            setIsVerified(response.data.exists);
-        } catch (error) {
-            console.error('Error verifying hash:', error);
-            setIsVerified(false);
+            setError(null);
+            const result = await verifyMessage(verification_hash, signature);
+            
+            // Update cache
+            verificationCache.set(verification_hash, {
+                ...result,
+                timestamp: Date.now()
+            });
+            
+            setVerificationResult(result);
+        } catch (err) {
+            console.error('Error verifying hash:', err);
+            setError(err instanceof Error ? err.message : 'Failed to verify hash');
         } finally {
             setIsLoading(false);
+            isVerifying.current = false;
         }
     };
 
-    const handleCopy = (value: string, type: string) => {
+    useEffect(() => {
+        verifyHash();
+    }, [verification_hash, signature]);
+
+    const handleCopy = (type: 'hash' | 'signature') => {
         if (type === 'hash') {
             onCopyHash();
+            toast({
+                title: "Copied",
+                description: "Verification hash copied to clipboard",
+                status: "success",
+                duration: 2000,
+                isClosable: true,
+            });
         } else {
             onCopySignature();
+            toast({
+                title: "Copied",
+                description: "Signature copied to clipboard",
+                status: "success",
+                duration: 2000,
+                isClosable: true,
+            });
         }
-        toast({
-            title: 'Copied to clipboard',
-            status: 'success',
-            duration: 2000,
-            isClosable: true,
-        });
     };
 
     return (
@@ -92,43 +132,40 @@ export default function VerificationBadge({
             <HStack justify="space-between">
                 <HStack>
                     {isLoading ? (
-                        <Text fontSize="sm" color={textColor}>Verifying...</Text>
-                    ) : (
+                        <HStack>
+                            <Spinner size="sm" />
+                            <Text fontSize="sm">Verifying...</Text>
+                        </HStack>
+                    ) : error ? (
+                        <Text fontSize="sm" color="red.500">Error: {error}</Text>
+                    ) : verificationResult ? (
                         <>
-                            {isVerified ? (
-                                <HStack>
-                                    <FiCheck color="green" />
-                                    <Text fontSize="sm" color="green.500">Verified</Text>
-                                </HStack>
-                            ) : (
-                                <HStack>
-                                    <FiX color="red" />
-                                    <Text fontSize="sm" color="red.500">Not Verified</Text>
-                                </HStack>
-                            )}
+                            <Text fontSize="sm">
+                                {verificationResult.is_valid && verificationResult.match ? (
+                                    <span style={{ color: 'green' }}>✅ Verified</span>
+                                ) : (
+                                    <span style={{ color: 'red' }}>⚠️ Invalid</span>
+                                )}
+                            </Text>
+                            <IconButton
+                                aria-label="Refresh verification"
+                                icon={<FiRefreshCw />}
+                                size="xs"
+                                onClick={verifyHash}
+                                isLoading={isLoading}
+                            />
+                            <Button
+                                size="xs"
+                                onClick={() => setIsExpanded(!isExpanded)}
+                            >
+                                {isExpanded ? 'Hide Details' : 'Show Details'}
+                            </Button>
                         </>
-                    )}
-                </HStack>
-                <HStack>
-                    <IconButton
-                        aria-label="Refresh verification"
-                        icon={<FiRefreshCw />}
-                        size="xs"
-                        variant="ghost"
-                        onClick={verifyHash}
-                        isLoading={isLoading}
-                    />
-                    <Button
-                        size="xs"
-                        variant="ghost"
-                        onClick={() => setShowDetails(!showDetails)}
-                    >
-                        {showDetails ? 'Hide Details' : 'Show Details'}
-                    </Button>
+                    ) : null}
                 </HStack>
             </HStack>
 
-            <Collapse in={showDetails}>
+            <Collapse in={isExpanded}>
                 <VStack align="stretch" mt={2} spacing={2}>
                     <Box>
                         <Text fontSize="xs" fontWeight="bold" color={textColor}>Verification Hash</Text>
@@ -141,7 +178,7 @@ export default function VerificationBadge({
                                 icon={<FiCopy />}
                                 size="xs"
                                 variant="ghost"
-                                onClick={() => handleCopy(verification_hash, 'hash')}
+                                onClick={() => handleCopy('hash')}
                             />
                         </HStack>
                     </Box>
@@ -157,48 +194,57 @@ export default function VerificationBadge({
                                 icon={<FiCopy />}
                                 size="xs"
                                 variant="ghost"
-                                onClick={() => handleCopy(signature, 'signature')}
+                                onClick={() => handleCopy('signature')}
                             />
                         </HStack>
                     </Box>
 
-                    {verificationData?.exists && (
-                        <Box>
-                            <Text fontSize="xs" fontWeight="bold" color={textColor}>Submitted by</Text>
+                    {verificationResult && (
+                        <>
+                            <Text fontSize="xs" fontWeight="bold" color={textColor}>Recovered Address</Text>
                             <Text fontSize="xs" color={textColor}>
-                                {verificationData.submitter_address}
+                                {verificationResult.recovered_address}
                             </Text>
+                            <Text fontSize="xs" fontWeight="bold" color={textColor}>Expected Address</Text>
                             <Text fontSize="xs" color={textColor}>
-                                {new Date(verificationData.timestamp || '').toLocaleString()}
+                                {verificationResult.expected_address}
                             </Text>
-                        </Box>
+                            <Text fontSize="xs" fontWeight="bold" color={textColor}>Match</Text>
+                            <Text fontSize="xs" color={textColor}>
+                                {verificationResult.match ? '✅' : '❌'}
+                            </Text>
+                        </>
                     )}
 
                     <HStack spacing={2}>
-                        <Link
-                            href={`https://ipfs.io/ipfs/${ipfs_cid}`}
-                            isExternal
-                            fontSize="xs"
-                            color={linkColor}
-                            display="flex"
-                            alignItems="center"
-                            gap={1}
-                        >
-                            <FiExternalLink />
-                            View on IPFS
-                        </Link>
-                        <Link
-                            href={`https://sepolia.basescan.org/tx/${transaction_hash}`}
-                            isExternal
-                            fontSize="xs"
-                            color={linkColor}
-                            display="flex"
-                            alignItems="center"
-                            gap={1}
-                        >
-                            <FiExternalLink />
-                            View on BaseScan
-                        </Link>
+                        {ipfs_cid && (
+                            <Link
+                                href={`https://ipfs.io/ipfs/${ipfs_cid}`}
+                                isExternal
+                                fontSize="xs"
+                                color={linkColor}
+                                display="flex"
+                                alignItems="center"
+                                gap={1}
+                            >
+                                <FiExternalLink />
+                                View on IPFS
+                            </Link>
+                        )}
+                        {transaction_hash && (
+                            <Link
+                                href={`https://sepolia.basescan.org/tx/${transaction_hash}`}
+                                isExternal
+                                fontSize="xs"
+                                color={linkColor}
+                                display="flex"
+                                alignItems="center"
+                                gap={1}
+                            >
+                                <FiExternalLink />
+                                View on BaseScan
+                            </Link>
+                        )}
                     </HStack>
                 </VStack>
             </Collapse>

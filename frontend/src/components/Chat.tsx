@@ -35,17 +35,14 @@ import { ChatMessage, ChatSession } from '../types/chat';
 import { submitPrompt, getAvailableModels, getSessions, getSession } from '../services/api';
 import Sidebar from './Sidebar';
 import ChatMessageComponent from './ChatMessage';
+import { useApp } from '../context/AppContext';
 
 export default function Chat() {
-    const [sessions, setSessions] = useState<ChatSession[]>([]);
+    const { models: availableModels, sessions: availableSessions, isLoading, error, refreshSessions } = useApp();
     const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [availableModels, setAvailableModels] = useState<{ [key: string]: string }>({});
     const [selectedModel, setSelectedModel] = useState<string>("mixtral-remote");
-    const [isInitializing, setIsInitializing] = useState(true);
     const [isThinking, setIsThinking] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -71,92 +68,6 @@ export default function Chat() {
     const maxMessageWidth = useBreakpointValue({ base: '100%', md: '800px' });
 
     useEffect(() => {
-        const loadInitialData = async () => {
-            try {
-                setIsInitializing(true);
-                const [models, sessions] = await Promise.all([
-                    getAvailableModels(),
-                    getSessions()
-                ]);
-                
-                // Process sessions to ensure all messages have complete metadata
-                const processedSessions = sessions.map(session => ({
-                    ...session,
-                    messages: session.messages.map(msg => ({
-                        ...msg,
-                        ipfsHash: msg.ipfsHash || undefined,
-                        transactionHash: msg.transactionHash || undefined,
-                        metadata: msg.metadata ? {
-                            model: msg.metadata.model || selectedModel,
-                            model_id: msg.metadata.model_id || '',
-                            temperature: msg.metadata.temperature || 0.7,
-                            max_tokens: msg.metadata.max_tokens || 512,
-                            top_p: msg.metadata.top_p || 0.9,
-                            do_sample: msg.metadata.do_sample ?? true,
-                            num_beams: msg.metadata.num_beams || 1,
-                            early_stopping: msg.metadata.early_stopping ?? false
-                        } : {
-                            model: selectedModel,
-                            model_id: '',
-                            temperature: 0.7,
-                            max_tokens: 512,
-                            top_p: 0.9,
-                            do_sample: true,
-                            num_beams: 1,
-                            early_stopping: false
-                        }
-                    }))
-                }));
-                
-                setAvailableModels(models);
-                setSessions(processedSessions);
-                
-                if (activeSessionId) {
-                    const session = await getSession(activeSessionId);
-                    const processedMessages = session.messages.map(msg => ({
-                        ...msg,
-                        ipfsHash: msg.ipfsHash || undefined,
-                        transactionHash: msg.transactionHash || undefined,
-                        metadata: msg.metadata ? {
-                            model: msg.metadata.model || selectedModel,
-                            model_id: msg.metadata.model_id || '',
-                            temperature: msg.metadata.temperature || 0.7,
-                            max_tokens: msg.metadata.max_tokens || 512,
-                            top_p: msg.metadata.top_p || 0.9,
-                            do_sample: msg.metadata.do_sample ?? true,
-                            num_beams: msg.metadata.num_beams || 1,
-                            early_stopping: msg.metadata.early_stopping ?? false
-                        } : {
-                            model: selectedModel,
-                            model_id: '',
-                            temperature: 0.7,
-                            max_tokens: 512,
-                            top_p: 0.9,
-                            do_sample: true,
-                            num_beams: 1,
-                            early_stopping: false
-                        }
-                    }));
-                    setMessages(processedMessages);
-                }
-                
-                // If no model is selected, set the first available model
-                if (!selectedModel && Object.keys(models).length > 0) {
-                    setSelectedModel(Object.keys(models)[0]);
-                }
-                
-                setIsInitializing(false);
-            } catch (err) {
-                console.error('Error loading initial data:', err);
-                setError(err instanceof Error ? err.message : 'Failed to load data');
-                setIsInitializing(false);
-            }
-        };
-        
-        loadInitialData();
-    }, []);
-
-    useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
@@ -169,28 +80,32 @@ export default function Chat() {
 
     useEffect(() => {
         const loadSession = async () => {
-            if (activeSessionId) {
-                try {
-                    const session = await getSession(activeSessionId);
-                    // Ensure metadata is properly structured
-                    const messages = session.messages.map(msg => ({
-                        ...msg,
-                        metadata: {
-                            ...msg.metadata,
-                            verification_hash: msg.metadata?.verification_hash || msg.verification_hash,
-                            signature: msg.metadata?.signature || msg.signature,
-                            ipfs_cid: msg.metadata?.ipfs_cid || msg.ipfsHash,
-                            transaction_hash: msg.metadata?.transaction_hash || msg.transactionHash
-                        }
-                    }));
-                    setMessages(messages);
-                } catch (error) {
-                    console.error('Error loading session:', error);
-                }
+            if (!activeSessionId) return;
+            
+            try {
+                const session = await getSession(activeSessionId);
+                const messages = session.messages.map(msg => ({
+                    ...msg,
+                    metadata: {
+                        ...msg.metadata,
+                        verification_hash: msg.metadata?.verification_hash || msg.verification_hash,
+                        signature: msg.metadata?.signature || msg.signature,
+                        ipfs_cid: msg.metadata?.ipfs_cid || msg.ipfsHash,
+                        transaction_hash: msg.metadata?.transaction_hash || msg.transactionHash
+                    }
+                }));
+                setMessages(messages);
+            } catch (error) {
+                console.error('Error loading session:', error);
             }
         };
-        loadSession();
-    }, [activeSessionId]);
+
+        // Only load session if it's not already loaded
+        const currentSession = availableSessions.find(s => s.id === activeSessionId);
+        if (currentSession && currentSession.messages.length !== messages.length) {
+            loadSession();
+        }
+    }, [activeSessionId, availableSessions]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -251,9 +166,8 @@ export default function Chat() {
             // Update active session if needed
             if (response.session_id && response.session_id !== activeSessionId) {
                 setActiveSessionId(response.session_id);
-                // Fetch updated sessions list
-                const sessions = await getSessions();
-                setSessions(sessions);
+                // Refresh sessions list
+                await refreshSessions();
             }
         } catch (error) {
             console.error('Error submitting prompt:', error);
@@ -275,46 +189,7 @@ export default function Chat() {
     };
 
     const handleSelectSession = async (sessionId: string) => {
-        try {
-            const session = await getSession(sessionId);
-            console.log('Loaded session:', session);
-            
-            const messagesWithMetadata = session.messages.map(msg => {
-                console.log('Processing message:', msg);
-                const processedMessage = {
-                    ...msg,
-                    ipfsHash: msg.ipfsHash || undefined,
-                    transactionHash: msg.transactionHash || undefined,
-                    metadata: msg.metadata ? {
-                        model: msg.metadata.model || selectedModel,
-                        model_id: msg.metadata.model_id || '',
-                        temperature: msg.metadata.temperature || 0.7,
-                        max_tokens: msg.metadata.max_tokens || 512,
-                        top_p: msg.metadata.top_p || 0.9,
-                        do_sample: msg.metadata.do_sample ?? true,
-                        num_beams: msg.metadata.num_beams || 1,
-                        early_stopping: msg.metadata.early_stopping ?? false
-                    } : {
-                        model: selectedModel,
-                        model_id: '',
-                        temperature: 0.7,
-                        max_tokens: 512,
-                        top_p: 0.9,
-                        do_sample: true,
-                        num_beams: 1,
-                        early_stopping: false
-                    }
-                };
-                console.log('Processed message:', processedMessage);
-                return processedMessage;
-            });
-            
-            setMessages(messagesWithMetadata);
-            setActiveSessionId(sessionId);
-        } catch (err) {
-            console.error('Error loading session:', err);
-            setError(err instanceof Error ? err.message : 'Failed to load session');
-        }
+        setActiveSessionId(sessionId);
     };
 
     const formatHash = (hash: string) => {
@@ -346,7 +221,7 @@ export default function Chat() {
         return acc;
     }, {} as { [key: string]: { name: string; id: string }[] });
 
-    if (isInitializing) {
+    if (isLoading) {
         return (
             <Flex h="100vh" align="center" justify="center" bg={bgColor}>
                 <VStack spacing={4}>
@@ -384,7 +259,7 @@ export default function Chat() {
                     zIndex={1}
                 >
                     <Sidebar
-                        sessions={sessions}
+                        sessions={availableSessions}
                         activeSessionId={activeSessionId}
                         onNewChat={handleNewChat}
                         onSelectSession={handleSelectSession}
