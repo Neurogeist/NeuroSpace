@@ -118,8 +118,8 @@ class ChatSessionService:
         session_id: str,
         role: str,
         content: str,
-        model_name: Optional[str] = None,
-        model_id: Optional[str] = None,
+        model_name: str,
+        model_id: str,
         metadata: Optional[Dict[str, Any]] = None
     ) -> None:
         """Add a message to a chat session."""
@@ -129,17 +129,18 @@ class ChatSessionService:
             if not session:
                 raise ValueError(f"Session {session_id} not found")
             
-            # Create the message with verification info if it's an assistant message
+            # Create the message with verification info
             message_metadata = metadata or {}
-            if role == "assistant":
-                # Extract transaction hash from metadata
-                tx_hash = None
-                if isinstance(metadata.get("transaction_hash"), dict):
-                    tx_hash = metadata["transaction_hash"].get("transaction_hash")
-                else:
-                    tx_hash = metadata.get("transaction_hash")
-                
-                # Ensure verification info is included
+            
+            # Extract transaction hash from metadata
+            tx_hash = None
+            if isinstance(metadata.get("transaction_hash"), dict):
+                tx_hash = metadata["transaction_hash"].get("transaction_hash")
+            else:
+                tx_hash = metadata.get("transaction_hash")
+            
+            # Ensure verification info is included if it exists
+            if metadata and (metadata.get("verification_hash") or metadata.get("signature")):
                 message_metadata.update({
                     "verification_hash": metadata.get("verification_hash"),
                     "signature": metadata.get("signature"),

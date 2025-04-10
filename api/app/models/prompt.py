@@ -103,8 +103,8 @@ class SessionResponse(BaseModel):
             # Convert message to dict with aliases
             msg_dict = msg.dict(by_alias=True)
             
-            # Only include metadata for assistant messages
-            if msg.role == "assistant":
+            # Include verification data if it exists
+            if msg.verification_hash or msg.signature:
                 msg_dict.update({
                     "model": msg.model_name,
                     "model_id": msg.model_id,

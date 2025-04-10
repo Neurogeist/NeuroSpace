@@ -26,21 +26,36 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
 
     useEffect(() => {
         const verifySignature = async () => {
-            if (message.role === 'assistant' && message.metadata?.verification_hash && message.metadata?.signature) {
+            if (
+                message.role === 'assistant' && 
+                message.metadata?.verification_hash && 
+                message.metadata?.signature
+            ) {
+                // Check session storage first
+                const storedResult = sessionStorage.getItem(`verification_${message.metadata.verification_hash}`);
+                if (storedResult) {
+                    setVerificationResult(JSON.parse(storedResult));
+                    return;
+                }
+
                 try {
                     setIsVerifying(true);
                     setVerificationError(null);
                     console.log('Verifying message:', {
                         verification_hash: message.metadata.verification_hash,
                         signature: message.metadata.signature,
-                        messageId: message.timestamp // Using timestamp as a unique identifier
+                        messageId: message.timestamp
                     });
+                    
                     const result = await verifyMessage(
                         message.metadata.verification_hash,
                         message.metadata.signature
                     );
+                    
                     console.log('Verification result:', result);
                     setVerificationResult(result);
+                    // Store result in session storage
+                    sessionStorage.setItem(`verification_${message.metadata.verification_hash}`, JSON.stringify(result));
                 } catch (error) {
                     console.error('Error verifying message:', error);
                     setVerificationError('Failed to verify message');
@@ -50,8 +65,16 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
             }
         };
 
-        // Add a small delay to ensure the transaction is mined
-        const timeoutId = setTimeout(verifySignature, 2000);
+        // Try verification immediately
+        verifySignature();
+
+        // If verification hasn't succeeded after 2 seconds, try again
+        const timeoutId = setTimeout(() => {
+            if (!verificationResult && !verificationError) {
+                verifySignature();
+            }
+        }, 2000);
+
         return () => clearTimeout(timeoutId);
     }, [message]);
 
@@ -70,8 +93,8 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
     };
 
     // Get hash information from either root level or metadata
-    const ipfsHash = message.ipfsHash;
-    const transactionHash = message.transactionHash;
+    const ipfsHash = message.ipfsHash || message.metadata?.ipfs_cid;
+    const transactionHash = message.transactionHash || message.metadata?.transaction_hash;
 
     return (
         <Box
