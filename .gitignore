@@ -19,6 +19,134 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.pytest_cache/
+cover/
+*.mo
+*.pot
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+instance/
+.webassets-cache
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.npm
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+dist/
+dist-ssr/
+*.local
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Hardhat
+cache/
+artifacts/
+typechain/
+typechain-types/
+coverage/
+coverage.json
+gas-report.txt
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+.nyc_output/
+
+# Build
+build/
+dist/
+out/
+.next/
+.nuxt/
+.cache/
+.temp/
+.tmp/
+
+# Misc
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem
+*.key
+*.cert
+*.crt
+*.p12
+*.pfx
+*.der
+*.p7b
+*.p7c
+*.p7m
+*.p7s
+*.p8
+*.p10
+*.p12
+*.pfx
+*.pem
+*.key
+*.crt
+*.csr
+*.srl
+*.jks
+*.keystore
+*.truststore
+*.p12
+*.pfx
+*.pem
+*.key
+*.crt
+*.csr
+*.srl
+*.jks
+*.keystore
+*.truststore
 
 # Virtual Environment
 venv/
@@ -61,11 +189,6 @@ htmlcov/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-
-# Local development
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
 
 # Frontend
 frontend/node_modules/

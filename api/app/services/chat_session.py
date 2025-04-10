@@ -2,6 +2,9 @@ from typing import Dict, List, Optional, Any
 import uuid
 from datetime import datetime
 from pydantic import BaseModel, Field
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ChatMessage(BaseModel):
     """Represents a single message in a chat session."""
@@ -12,6 +15,8 @@ class ChatMessage(BaseModel):
     transaction_hash: Optional[str] = Field(None, alias="transactionHash")
     model_name: str
     model_id: str
+    verification_hash: Optional[str] = Field(None, description="The hash of the prompt-response pair")
+    signature: Optional[str] = Field(None, description="The digital signature of the verification hash")
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
     class Config:
@@ -108,7 +113,7 @@ class ChatSessionService:
         """Get all chat sessions."""
         return list(self.sessions.values())
 
-    def add_message(
+    async def add_message(
         self,
         session_id: str,
         role: str,
@@ -117,23 +122,56 @@ class ChatSessionService:
         model_id: str,
         metadata: Optional[Dict[str, Any]] = None
     ) -> None:
-        """Add a message to a session."""
-        if session_id not in self.sessions:
-            raise ValueError(f"Session {session_id} not found")
+        """Add a message to a chat session."""
+        try:
+            # Get the session
+            session = self.get_session(session_id)
+            if not session:
+                raise ValueError(f"Session {session_id} not found")
             
-        timestamp = datetime.now()
-        
-        # Create message with metadata
-        message = ChatMessage(
-            role=role,
-            content=content,
-            timestamp=timestamp,
-            model_name=model_name,
-            model_id=model_id,
-            metadata=metadata or {}
-        )
-        
-        self.sessions[session_id].messages.append(message)
+            # Create the message with verification info
+            message_metadata = metadata or {}
+            
+            # Extract transaction hash from metadata
+            tx_hash = None
+            if isinstance(metadata.get("transaction_hash"), dict):
+                tx_hash = metadata["transaction_hash"].get("transaction_hash")
+            else:
+                tx_hash = metadata.get("transaction_hash")
+            
+            # Ensure verification info is included if it exists
+            if metadata and (metadata.get("verification_hash") or metadata.get("signature")):
+                message_metadata.update({
+                    "verification_hash": metadata.get("verification_hash"),
+                    "signature": metadata.get("signature"),
+                    "ipfs_cid": metadata.get("ipfs_cid"),
+                    "transaction_hash": tx_hash
+                })
+            
+            # Create the message
+            message = ChatMessage(
+                role=role,
+                content=content,
+                timestamp=datetime.utcnow(),
+                model_name=model_name,
+                model_id=model_id,
+                verification_hash=message_metadata.get("verification_hash"),
+                signature=message_metadata.get("signature"),
+                ipfs_cid=message_metadata.get("ipfs_cid"),
+                transaction_hash=message_metadata.get("transaction_hash"),
+                metadata=message_metadata
+            )
+            
+            # Add the message to the session
+            session.messages.append(message)
+            session.updated_at = datetime.utcnow()
+            
+            # Save the session
+            self.sessions[session_id] = session
+            
+        except Exception as e:
+            logger.error(f"Error adding message to session {session_id}: {str(e)}")
+            raise
 
     def get_session_messages(self, session_id: str) -> Optional[List[ChatMessage]]:
         """Get all messages in a session."""

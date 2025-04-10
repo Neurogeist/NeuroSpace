@@ -1,7 +1,7 @@
 from web3 import Web3
 from eth_account import Account
 import hashlib
-from typing import Optional
+from typing import Optional, Dict, Any
 from ..core.config import get_settings
 import os
 import logging
@@ -26,7 +26,7 @@ class BlockchainService:
                 "inputs": [
                     {
                         "internalType": "bytes32",
-                        "name": "hash",
+                        "name": "_hash",
                         "type": "bytes32"
                     }
                 ],
@@ -34,6 +34,74 @@ class BlockchainService:
                 "outputs": [],
                 "stateMutability": "nonpayable",
                 "type": "function"
+            },
+            {
+                "inputs": [
+                    {
+                        "internalType": "bytes32",
+                        "name": "_hash",
+                        "type": "bytes32"
+                    }
+                ],
+                "name": "getHashInfo",
+                "outputs": [
+                    {
+                        "internalType": "address",
+                        "name": "submitter",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    }
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [
+                    {
+                        "internalType": "bytes32",
+                        "name": "_hash",
+                        "type": "bytes32"
+                    }
+                ],
+                "name": "hashExists",
+                "outputs": [
+                    {
+                        "internalType": "bool",
+                        "name": "exists",
+                        "type": "bool"
+                    }
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "anonymous": False,
+                "inputs": [
+                    {
+                        "indexed": True,
+                        "internalType": "address",
+                        "name": "submitter",
+                        "type": "address"
+                    },
+                    {
+                        "indexed": False,
+                        "internalType": "bytes32",
+                        "name": "hash",
+                        "type": "bytes32"
+                    },
+                    {
+                        "indexed": False,
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    }
+                ],
+                "name": "HashStored",
+                "type": "event"
             }
         ]
         self.contract = self.w3.eth.contract(
@@ -67,24 +135,27 @@ class BlockchainService:
         data = f"{prompt}{response}{timestamp}{user_address or ''}"
         return hashlib.sha256(data.encode()).hexdigest()
     
-    async def submit_hash(self, prompt_hash: str) -> str:
+    async def submit_to_blockchain(self, prompt_hash: str) -> Dict[str, str]:
         """Submit the hash to the Base chain."""
         try:
             # Get the current gas price
             gas_price = self.w3.eth.gas_price
             print(f"Current gas price: {self.w3.from_wei(gas_price, 'gwei')} gwei")
             
-            # Create a transaction with the hash in the data field
+            # Convert hash to bytes32
+            hash_bytes = Web3.to_bytes(hexstr=prompt_hash)
+            
+            # Create transaction
             transaction = {
                 'from': self.account.address,
-                'to': self.account.address,  # Sending to self as a no-op
+                'to': self.contract_address,
                 'value': 0,
                 'nonce': self.w3.eth.get_transaction_count(self.account.address),
                 'gas': 100000,  # Increased gas limit
                 'maxFeePerGas': gas_price * 2,  # Maximum fee per gas
                 'maxPriorityFeePerGas': gas_price,  # Priority fee per gas
                 'chainId': 84532,  # Base Sepolia chain ID
-                'data': self.w3.to_hex(prompt_hash.encode('utf-8'))  # Encode as UTF-8 bytes first
+                'data': self.contract.encodeABI(fn_name='storeHash', args=[hash_bytes])
             }
             
             print(f"Sending transaction from {transaction['from']}")
@@ -101,13 +172,43 @@ class BlockchainService:
             print(f"Transaction block number: {receipt['blockNumber']}")
             print(f"View on Base Sepolia: https://sepolia.basescan.org/tx/{receipt['transactionHash'].hex()}")
             
-            return receipt['transactionHash'].hex()
+            # Get the event logs
+            logs = self.contract.events.HashStored().process_receipt(receipt)
+            if logs:
+                print(f"Hash stored event: {logs[0]['args']}")
+            
+            return {
+                'transaction_hash': receipt['transactionHash'].hex(),
+                'block_number': receipt['blockNumber'],
+                'status': receipt['status']
+            }
             
         except Exception as e:
-            print(f"Error submitting hash to blockchain: {str(e)}")
-            raise Exception(f"Blockchain submission failed: {str(e)}")
-
-
+            logger.error(f"Error submitting to blockchain: {str(e)}")
+            raise
+    
+    async def get_hash_info(self, hash_str: str) -> Dict[str, Any]:
+        """Get information about a stored hash."""
+        try:
+            # Convert hash to bytes32
+            hash_bytes = Web3.to_bytes(hexstr=hash_str)
+            
+            # Call the contract
+            submitter, timestamp = self.contract.functions.getHashInfo(hash_bytes).call()
+            
+            return {
+                'submitter': submitter,
+                'timestamp': timestamp,
+                'exists': True
+            }
+            
+        except Exception as e:
+            if "Hash does not exist" in str(e):
+                return {
+                    'exists': False
+                }
+            logger.error(f"Error getting hash info: {str(e)}")
+            raise
 
     def sign_message(self, message_hash: str) -> str:
         """Sign a message hash with the private key."""
@@ -124,53 +225,6 @@ class BlockchainService:
         except Exception as e:
             logger.error(f"Error signing message: {str(e)}")
             raise
-
-    def submit_to_blockchain(self, hash_value: str) -> dict:
-        """
-        Submit a hash to the blockchain.
-        
-        Args:
-            hash_value: The hash to submit (hex string)
-            
-        Returns:
-            Dictionary containing transaction details
-        """
-        try:
-            # Convert hex string to bytes32
-            hash_bytes = Web3.to_bytes(hexstr=hash_value)
-            
-            # Get current gas price
-            gas_price = self.w3.eth.gas_price
-            logger.info(f"Current gas price: {gas_price / 1e9} gwei")
-            
-            # Build transaction
-            nonce = self.w3.eth.get_transaction_count(self.account.address)
-            transaction = self.contract.functions.storeHash(hash_bytes).build_transaction({
-                'chainId': self.w3.eth.chain_id,
-                'gas': 100000,
-                'gasPrice': gas_price,
-                'nonce': nonce,
-                'to': self.contract_address
-            })
-            
-            # Sign and send transaction
-            signed_txn = self.w3.eth.account.sign_transaction(transaction, self.private_key)
-            tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
-            
-            # Wait for transaction receipt
-            tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
-            
-            # Return transaction details
-            return {
-                'transaction_hash': tx_hash.hex(),
-                'block_number': tx_receipt['blockNumber'],
-                'status': tx_receipt['status'],
-                'gas_used': tx_receipt['gasUsed'],
-                'view_on_basescan': f"https://sepolia.basescan.org/tx/{tx_hash.hex()}"
-            }
-        except Exception as e:
-            logger.error(f"Error submitting to blockchain: {str(e)}")
-            raise 
 
     def verify_signature(self, message_hash: str, signature: str) -> str:
         """Verify a signature and recover the signer's address."""

@@ -5,7 +5,7 @@ export const API_BASE_URL = 'http://localhost:8000';
 // Configure axios defaults
 axios.defaults.withCredentials = false;
 axios.defaults.headers.common['Content-Type'] = 'application/json';
-axios.defaults.headers.common['X-User-Address'] = '0x1234567890123456789012345678901234567890'; // Temporary placeholder
+axios.defaults.headers.common['X-User-Address'] = '0x1234567890123456789012345678901234567890';
 
 // Add response interceptor for better error handling
 axios.interceptors.response.use(
@@ -28,8 +28,8 @@ export interface PromptResponse {
   response: string;
   model_name: string;
   model_id: string;
-  ipfsHash: string;            // ✅ now camelCase
-  transactionHash: string;     // ✅ now camelCase
+  ipfsHash: string;
+  transactionHash: string;
   session_id: string;
   metadata: {
     temperature: number;
@@ -38,6 +38,10 @@ export interface PromptResponse {
     do_sample: boolean;
     num_beams: number;
     early_stopping: boolean;
+    verification_hash: string;
+    signature: string;
+    ipfs_cid: string;
+    transaction_hash: string;
   };
 }
 
@@ -54,6 +58,8 @@ export interface ChatMessage {
   timestamp: string;
   ipfsHash?: string;
   transactionHash?: string;
+  verification_hash?: string;
+  signature?: string;
   metadata?: {
     model: string;
     model_id: string;
@@ -63,7 +69,18 @@ export interface ChatMessage {
     do_sample: boolean;
     num_beams: number;
     early_stopping: boolean;
+    verification_hash?: string;
+    signature?: string;
+    ipfs_cid?: string;
+    transaction_hash?: string;
   };
+}
+
+export interface VerificationResponse {
+    is_valid: boolean;
+    recovered_address: string;
+    expected_address?: string;
+    match: boolean;
 }
 
 export const getAvailableModels = async (): Promise<{ [key: string]: string }> => {
@@ -73,54 +90,23 @@ export const getAvailableModels = async (): Promise<{ [key: string]: string }> =
 };
 
 export const submitPrompt = async (
-  prompt: string,
-  modelName: string,
-  sessionId?: string
+    prompt: string,
+    model: string,
+    sessionId?: string
 ): Promise<PromptResponse> => {
-  try {
-    console.log('Submitting prompt:', { prompt, modelName, sessionId });
-    
-    // Create specific request config
-    const config = {
-      headers: {
-        'Content-Type': 'application/json',
-        'X-User-Address': '0x1234567890123456789012345678901234567890'
-      },
-      withCredentials: false
-    };
-    
-    const data = {
-      prompt,
-      model_name: modelName,
-      session_id: sessionId
-    };
-    
-    console.log('Request config:', config);
-    console.log('Request data:', data);
-    
-    const response = await axios.post(`${API_BASE_URL}/prompt`, data, config);
-    console.log('Response received:', response.data);
-    return response.data;
-  } catch (error) {
-    console.error('Error submitting prompt:', error);
-    if (axios.isAxiosError(error)) {
-      if (error.response) {
-        // The request was made and the server responded with a status code
-        // that falls out of the range of 2xx
-        console.error('Response data:', error.response.data);
-        console.error('Response status:', error.response.status);
-        throw new Error(`Server error: ${error.response.status} - ${error.response.data?.detail || error.message}`);
-      } else if (error.request) {
-        // The request was made but no response was received
-        console.error('No response received from server');
-        throw new Error('No response received from server. Please check if the API is running.');
-      } else {
-        // Something happened in setting up the request that triggered an Error
-        throw new Error(`Request setup error: ${error.message}`);
-      }
+    try {
+        console.log('Submitting prompt:', { prompt, model, sessionId });
+        const response = await axios.post<PromptResponse>(`${API_BASE_URL}/prompt`, {
+            prompt,
+            model_name: model,
+            session_id: sessionId
+        });
+        console.log('Prompt response:', response.data);
+        return response.data;
+    } catch (error) {
+        console.error('Error submitting prompt:', error);
+        throw error;
     }
-    throw error;
-  }
 };
 
 export const getSessions = async (): Promise<ChatSession[]> => {
@@ -170,4 +156,22 @@ export const getSession = async (sessionId: string): Promise<ChatSession> => {
       updated_at: new Date().toISOString()
     };
   }
+};
+
+export const verifyMessage = async (
+    verification_hash: string,
+    signature: string,
+    expected_address?: string
+): Promise<VerificationResponse> => {
+    try {
+        const response = await axios.post(`${API_BASE_URL}/verify`, {
+            verification_hash,
+            signature,
+            expected_address
+        });
+        return response.data;
+    } catch (error) {
+        console.error('Error verifying message:', error);
+        throw error;
+    }
 }; 

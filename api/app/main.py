@@ -59,9 +59,6 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 # Add custom CORS middleware first
 app.add_middleware(CustomCORSMiddleware)
 
-# Add rate limiting middleware after CORS
-app.add_middleware(RateLimitMiddleware)
-
 # Initialize services
 settings = get_settings()
 chat_session_service = ChatSessionService()
@@ -78,31 +75,72 @@ request_stats: Dict[str, Any] = {
     "average_response_time": 0
 }
 
+# Temporarily disable rate limiting
+# app.add_middleware(RateLimitMiddleware)
+
+# Add request tracking middleware second
 @app.middleware("http")
 async def track_requests(request: Request, call_next):
-    """Track request metrics and handle errors."""
-    start_time = time.time()
-    request_stats["total_requests"] += 1
-    
+    """Track API requests and log them."""
     try:
+        # Skip tracking for excluded endpoints (exact matches)
+        excluded_endpoints = {
+            "/health",
+            "/signer",
+            "/verify",
+            "/",  # Frontend root
+            "/favicon.ico",  # Favicon
+            "/api-docs",  # Swagger UI
+            "/redoc",  # ReDoc
+            "/openapi.json"  # OpenAPI schema
+        }
+        
+        # Skip tracking for static files
+        excluded_extensions = {
+            ".js",
+            ".css",
+            ".html",
+            ".ico",
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".svg",
+            ".woff",
+            ".woff2",
+            ".ttf",
+            ".eot"
+        }
+        
+        # Skip tracking for excluded endpoints
+        if request.url.path in excluded_endpoints:
+            return await call_next(request)
+            
+        # Skip tracking for static files
+        if request.url.path.startswith("/static/"):
+            return await call_next(request)
+            
+        # Skip tracking for file extensions
+        if any(request.url.path.endswith(ext) for ext in excluded_extensions):
+            return await call_next(request)
+            
+        # Skip tracking for API documentation
+        if request.url.path.startswith("/api-docs") or request.url.path.startswith("/redoc"):
+            return await call_next(request)
+            
+        # Track the request
+        start_time = time.time()
         response = await call_next(request)
-        request_stats["successful_requests"] += 1
         process_time = time.time() - start_time
-        response.headers["X-Process-Time"] = str(process_time)
+        
+        # Log the request
+        logger.info(f"Request: {request.method} {request.url.path} - Processed in {process_time:.2f}s")
+        
         return response
-    except HTTPException as e:
-        # Re-raise HTTP exceptions without modification
-        raise e
+        
     except Exception as e:
-        request_stats["failed_requests"] += 1
-        logger.error(f"Unhandled exception: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        response_time = time.time() - start_time
-        request_stats["average_response_time"] = (
-            (request_stats["average_response_time"] * (request_stats["total_requests"] - 1) + response_time)
-            / request_stats["total_requests"]
-        )
+        logger.error(f"Error tracking request: {str(e)}")
+        raise
 
 @app.get("/health")
 async def health_check():
@@ -138,17 +176,21 @@ async def submit_prompt(prompt: PromptRequest, background_tasks: BackgroundTasks
         if not model_config:
             raise HTTPException(status_code=400, detail=f"Model {prompt.model_name} not found")
         
-        # Generate response with conversation history
+        # Generate response using LLM
         response = await llm_service.generate_response(
-            prompt.prompt,
-            model_name=prompt.model_name,
+            model_id=prompt.model_name,
+            prompt=prompt.prompt,
+            system_prompt=prompt.system_prompt,
             temperature=prompt.temperature,
             max_tokens=prompt.max_tokens,
             session_id=session_id
         )
         
+        # Clean the response
+        cleaned_response = response["response"]  # The response is already cleaned in generate_response
+        
         # Create verification hash
-        verification_hash = llm_service.create_verification_hash(prompt.prompt, response["response"])
+        verification_hash = llm_service.create_verification_hash(prompt.prompt, cleaned_response)
         
         # Sign the verification hash
         signature = blockchain_service.sign_message(verification_hash)
@@ -156,31 +198,33 @@ async def submit_prompt(prompt: PromptRequest, background_tasks: BackgroundTasks
         # Upload to IPFS
         ipfs_data = {
             "prompt": prompt.prompt,
-            "response": response["response"],
-            "model": prompt.model_name,
-            "timestamp": datetime.now().isoformat()
+            "response": cleaned_response,
+            "model_name": prompt.model_name,
+            "model_id": model_config.model_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "verification_hash": verification_hash,
+            "signature": signature
         }
         ipfs_cid = await ipfs_service.upload_json(ipfs_data)
         
         # Submit to blockchain
-        blockchain_result = blockchain_service.submit_to_blockchain(verification_hash)
+        blockchain_result = await blockchain_service.submit_to_blockchain(verification_hash)
+        transaction_hash = blockchain_result['transaction_hash']  # Extract just the hash string
         
-        # Add messages to session with metadata
-        timestamp = datetime.now()
+        # Add messages to chat session
         metadata = {
-            "timestamp": timestamp.isoformat(),
+            "timestamp": datetime.utcnow().isoformat(),
             "model_name": prompt.model_name,
             "model_id": model_config.model_id,
             "temperature": prompt.temperature,
             "max_tokens": prompt.max_tokens,
             "ipfs_cid": ipfs_cid,
-            "transaction_hash": blockchain_result['transaction_hash'],
+            "transaction_hash": transaction_hash,  # Use the extracted hash string
             "verification_hash": verification_hash,
             "signature": signature
         }
         
-        # Add user message
-        chat_session_service.add_message(
+        await chat_session_service.add_message(
             session_id=session_id,
             role="user",
             content=prompt.prompt,
@@ -189,18 +233,17 @@ async def submit_prompt(prompt: PromptRequest, background_tasks: BackgroundTasks
             metadata=metadata
         )
         
-        # Add assistant message
-        chat_session_service.add_message(
+        await chat_session_service.add_message(
             session_id=session_id,
             role="assistant",
-            content=response["response"],
+            content=cleaned_response,
             model_name=prompt.model_name,
             model_id=model_config.model_id,
             metadata=metadata
         )
         
         return {
-            "response": response["response"],
+            "response": cleaned_response,
             "session_id": session_id,
             "metadata": metadata
         }
@@ -317,4 +360,20 @@ async def verify_signature(request: VerificationRequest):
         
     except Exception as e:
         logger.error(f"Error verifying signature: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e)) 
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/verify/hash/{hash}")
+async def verify_hash(hash: str):
+    """Check if a hash has been stored on-chain."""
+    try:
+        # Get hash info from blockchain
+        hash_info = await blockchain_service.get_hash_info(hash)
+        
+        return {
+            "exists": hash_info["exists"],
+            "info": hash_info if hash_info["exists"] else None
+        }
+        
+    except Exception as e:
+        logger.error(f"Error verifying hash: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e)) 

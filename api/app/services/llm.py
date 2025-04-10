@@ -70,8 +70,9 @@ class LLMService:
     @lru_cache(maxsize=100)
     async def generate_response(
         self,
+        model_id: str,
         prompt: str,
-        model_name: str,
+        system_prompt: Optional[str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         session_id: Optional[str] = None
@@ -79,21 +80,53 @@ class LLMService:
         """Generate a response using the specified model."""
         try:
             # Get model config
-            model_config = self.registry.get_model_config(model_name)
+            model_config = self.registry.get_model_config(model_id)
             if not model_config:
-                raise ValueError(f"Model {model_name} not found")
+                raise ValueError(f"Model {model_id} not found")
+            
+            # Override config values if specified
+            if temperature is not None:
+                model_config.temperature = temperature
+            if max_tokens is not None:
+                model_config.max_new_tokens = max_tokens
+            if system_prompt is not None:
+                model_config.system_prompt = system_prompt
             
             # Format the prompt with conversation history
             formatted_prompt = self._format_prompt(prompt, session_id)
             logger.info(f"Formatted prompt with session {session_id}: {formatted_prompt}")
             
-            # Generate response using remote client
-            response = await self.remote_client.generate(
-                model_id=model_config.model_id,
-                prompt=formatted_prompt,
-                system_prompt=model_config.system_prompt,
-                config=model_config
-            )
+            try:
+                # Try generating with the requested model
+                response = await self.remote_client.generate(
+                    model_id=model_config.model_id,
+                    prompt=formatted_prompt,
+                    system_prompt=model_config.system_prompt,
+                    config=model_config
+                )
+            except Exception as e:
+                logger.warning(f"Error with primary model {model_id}: {str(e)}")
+                
+                # If the model is remote and fails, try falling back to a local model
+                if model_config.provider != "local":
+                    logger.info("Attempting to fall back to local model...")
+                    # Get a local model config
+                    local_model = "tinyllama"  # or any other local model you prefer
+                    local_config = self.registry.get_model_config(local_model)
+                    if local_config and local_config.provider == "local":
+                        # Load the local model
+                        self._load_model(local_model)
+                        # Generate with local model
+                        response = await self.remote_client.generate(
+                            model_id=local_config.model_id,
+                            prompt=formatted_prompt,
+                            system_prompt=local_config.system_prompt,
+                            config=local_config
+                        )
+                    else:
+                        raise Exception("No fallback local model available")
+                else:
+                    raise
             
             # Clean the response
             cleaned_response = self._clean_response(response, formatted_prompt)

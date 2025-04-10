@@ -4,15 +4,42 @@ export interface ChatMessage {
     timestamp: string;
     ipfsHash?: string;
     transactionHash?: string;
+    verification_hash?: string;
+    signature?: string;
     metadata?: {
-        model: string;
-        model_id: string;
+        model?: string;
+        model_id?: string;
+        temperature?: number;
+        max_tokens?: number;
+        top_p?: number;
+        do_sample?: boolean;
+        num_beams?: number;
+        early_stopping?: boolean;
+        verification_hash?: string;
+        signature?: string;
+        ipfs_cid?: string;
+        transaction_hash?: string;
+    };
+}
+
+export interface PromptResponse {
+    response: string;
+    model_name: string;
+    model_id: string;
+    ipfsHash: string;
+    transactionHash: string;
+    session_id: string;
+    metadata: {
         temperature: number;
         max_tokens: number;
         top_p: number;
         do_sample: boolean;
         num_beams: number;
         early_stopping: boolean;
+        verification_hash: string;
+        signature: string;
+        ipfs_cid: string;
+        transaction_hash: string;
     };
 }
 

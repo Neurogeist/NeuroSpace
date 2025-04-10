@@ -26,7 +26,8 @@ import {
     Alert,
     AlertIcon,
     AlertTitle,
-    AlertDescription
+    AlertDescription,
+    useToast
 } from '@chakra-ui/react';
 import { FiSend, FiRefreshCw, FiHash, FiLink } from 'react-icons/fi';
 import { ChevronLeftIcon, ChevronRightIcon } from '@chakra-ui/icons';
@@ -40,14 +41,16 @@ export default function Chat() {
     const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
-    const [isLoading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [availableModels, setAvailableModels] = useState<{ [key: string]: string }>({});
     const [selectedModel, setSelectedModel] = useState<string>("mixtral-remote");
     const [isInitializing, setIsInitializing] = useState(true);
+    const [isThinking, setIsThinking] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const { isOpen: isSidebarOpen, onToggle: toggleSidebar } = useDisclosure({ defaultIsOpen: true });
+    const toast = useToast();
 
     const bgColor = useColorModeValue('gray.50', 'gray.900');
     const borderColor = useColorModeValue('gray.200', 'gray.700');
@@ -137,6 +140,11 @@ export default function Chat() {
                     setMessages(processedMessages);
                 }
                 
+                // If no model is selected, set the first available model
+                if (!selectedModel && Object.keys(models).length > 0) {
+                    setSelectedModel(Object.keys(models)[0]);
+                }
+                
                 setIsInitializing(false);
             } catch (err) {
                 console.error('Error loading initial data:', err);
@@ -146,7 +154,7 @@ export default function Chat() {
         };
         
         loadInitialData();
-    }, [activeSessionId]);
+    }, []);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -159,56 +167,105 @@ export default function Chat() {
         }
     }, [input]);
 
+    useEffect(() => {
+        const loadSession = async () => {
+            if (activeSessionId) {
+                try {
+                    const session = await getSession(activeSessionId);
+                    // Ensure metadata is properly structured
+                    const messages = session.messages.map(msg => ({
+                        ...msg,
+                        metadata: {
+                            ...msg.metadata,
+                            verification_hash: msg.metadata?.verification_hash || msg.verification_hash,
+                            signature: msg.metadata?.signature || msg.signature,
+                            ipfs_cid: msg.metadata?.ipfs_cid || msg.ipfsHash,
+                            transaction_hash: msg.metadata?.transaction_hash || msg.transactionHash
+                        }
+                    }));
+                    setMessages(messages);
+                } catch (error) {
+                    console.error('Error loading session:', error);
+                }
+            }
+        };
+        loadSession();
+    }, [activeSessionId]);
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!input.trim() || isLoading) return;
+        if (!input.trim() || isThinking) return;
 
-        const currentInput = input;
+        // Ensure a model is selected
+        if (!selectedModel) {
+            toast({
+                title: "Error",
+                description: "Please select a model before submitting",
+                status: "error",
+                duration: 3000,
+                isClosable: true,
+            });
+            return;
+        }
+
+        // Add user message immediately
+        const userMessage: ChatMessage = {
+            content: input,
+            role: 'user',
+            timestamp: new Date().toISOString(),
+        };
+        setMessages(prev => [...prev, userMessage]);
         setInput('');
-        setLoading(true);
-        setError(null);
+        
+        // Show thinking indicator
+        setIsThinking(true);
 
         try {
-            const userMessage: ChatMessage = {
-                role: 'user',
-                content: currentInput,
-                timestamp: new Date().toISOString()
-            };
-            setMessages(prev => [...prev, userMessage]);
+            const response = await submitPrompt(input, selectedModel, activeSessionId || undefined);
+            console.log('Prompt response:', response);
 
-            const response = await submitPrompt(currentInput, selectedModel, activeSessionId || undefined);
-            console.log('Response from API:', response);
-            
             const assistantMessage: ChatMessage = {
-                role: 'assistant',
                 content: response.response,
+                role: 'assistant',
                 timestamp: new Date().toISOString(),
-                ipfsHash: response.ipfsHash || undefined,
-                transactionHash: response.transactionHash || undefined,
                 metadata: {
-                    model: response.model_name,
+                    model: selectedModel,
                     model_id: response.model_id,
                     temperature: response.metadata.temperature,
                     max_tokens: response.metadata.max_tokens,
                     top_p: response.metadata.top_p,
                     do_sample: response.metadata.do_sample,
                     num_beams: response.metadata.num_beams,
-                    early_stopping: response.metadata.early_stopping
-                }
+                    early_stopping: response.metadata.early_stopping,
+                    verification_hash: response.metadata.verification_hash,
+                    signature: response.metadata.signature,
+                    ipfs_cid: response.metadata.ipfs_cid,
+                    transaction_hash: response.metadata.transaction_hash,
+                },
+                ipfsHash: response.metadata.ipfs_cid,
+                transactionHash: response.metadata.transaction_hash,
             };
-            console.log('Created assistant message:', assistantMessage);
-            setMessages(prev => [...prev, assistantMessage]);
 
-            if (!activeSessionId) {
+            setMessages(prev => [...prev, assistantMessage]);
+            
+            // Update active session if needed
+            if (response.session_id && response.session_id !== activeSessionId) {
                 setActiveSessionId(response.session_id);
-                const updatedSessions = await getSessions();
-                setSessions(updatedSessions);
+                // Fetch updated sessions list
+                const sessions = await getSessions();
+                setSessions(sessions);
             }
-        } catch (err) {
-            console.error('Error submitting prompt:', err);
-            setError(err instanceof Error ? err.message : 'Failed to get response');
+        } catch (error) {
+            console.error('Error submitting prompt:', error);
+            toast({
+                title: "Error",
+                description: "Failed to submit prompt. Please try again.",
+                status: "error",
+                duration: 3000,
+                isClosable: true,
+            });
         } finally {
-            setLoading(false);
+            setIsThinking(false);
         }
     };
 
@@ -380,8 +437,8 @@ export default function Chat() {
                             {messages.map((message, index) => (
                                 <ChatMessageComponent key={index} message={message} />
                             ))}
-                            {isLoading && (
-                                <Box p={4} borderRadius="lg" bg={inputBgColor} maxW="80%" alignSelf="flex-start">
+                            {isThinking && (
+                                <Box p={4} borderRadius="lg" bg={messageBgColor} maxW="80%" alignSelf="flex-start">
                                     <HStack>
                                         <Spinner size="sm" />
                                         <Text>Thinking...</Text>
@@ -424,7 +481,7 @@ export default function Chat() {
                                 <Button
                                     type="submit"
                                     colorScheme="blue"
-                                    isLoading={isLoading}
+                                    isLoading={isThinking}
                                     isDisabled={!input.trim()}
                                     px={6}
                                 >
