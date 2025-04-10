@@ -147,8 +147,8 @@ class LLMService:
     def _format_prompt(self, prompt: str, session_id: Optional[str] = None) -> str:
         """Format the prompt with system message and conversation history."""
         try:
-            # Start with system message
-            formatted_prompt = "You are a helpful AI assistant. Answer questions accurately and concisely.\n\n"
+            # Start with system message from model config
+            formatted_prompt = f"{self.config.system_prompt}\n\n"
             
             # Add conversation history if session_id is provided
             if session_id:
@@ -265,7 +265,7 @@ class LLMService:
                 "response": response,
                 "model_name": self.current_model_name,
                 "model_id": self.config.model_id,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.utcnow().isoformat()
             }
             
             # Convert to JSON and encode as bytes
