@@ -43,7 +43,7 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
             response = Response()
             response.headers["Access-Control-Allow-Origin"] = "http://localhost:5173"
             response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-User-Address"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-User-Address, X-Source"
             response.headers["Access-Control-Allow-Credentials"] = "false"
             response.headers["Access-Control-Max-Age"] = "3600"
             return response
@@ -52,7 +52,7 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         response.headers["Access-Control-Allow-Origin"] = "http://localhost:5173"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-User-Address"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-User-Address, X-Source"
         response.headers["Access-Control-Allow-Credentials"] = "false"
         return response
 
