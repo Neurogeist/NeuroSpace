@@ -265,40 +265,24 @@ async def get_available_models():
         logger.error(f"Error getting available models: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/sessions/{session_id}", response_model=SessionResponse)
+@app.get("/sessions/{session_id}")
 async def get_session(session_id: str):
     try:
         messages = chat_session_service.get_session_messages(session_id)
         if not messages:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        # Ensure metadata is fully refreshed before converting to dict
-        for m in messages:
-            m.metadata = {
-                **(m.metadata or {}),
-                "model": m.model_name,
-                "model_id": m.model_id,
-                "ipfsHash": m.ipfs_cid,
-                "transactionHash": m.transaction_hash,
-                "temperature": m.metadata.get("temperature", 0.7),
-                "max_tokens": m.metadata.get("max_tokens", 512),
-                "top_p": m.metadata.get("top_p", 0.9),
-                "do_sample": m.metadata.get("do_sample", True),
-                "num_beams": m.metadata.get("num_beams", 1),
-                "early_stopping": m.metadata.get("early_stopping", False)
-            }
+        messages_dict_list = [message.dict(by_alias=True, exclude_none=False) for message in messages]
 
         return {
             "session_id": session_id,
-            "messages": [m.dict(by_alias=True, exclude_none=False) for m in messages],
+            "messages": messages_dict_list,
             "created_at": messages[0].timestamp if messages else datetime.utcnow(),
             "updated_at": messages[-1].timestamp if messages else datetime.utcnow()
         }
     except Exception as e:
         logger.error(f"Error retrieving session: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
 
 @app.get("/sessions", response_model=List[SessionResponse])
 async def get_all_sessions():

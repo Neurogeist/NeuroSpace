@@ -86,40 +86,26 @@ class SessionResponse(BaseModel):
     messages: List[ChatMessage] = Field(..., description="List of messages in the session")
     created_at: datetime = Field(..., description="When the session was created")
     updated_at: datetime = Field(..., description="When the session was last updated")
-    
+
     class Config:
         allow_population_by_field_name = True
         json_encoders = {
             datetime: lambda dt: dt.isoformat()
         }
         protected_namespaces = ()
-        
+
     @classmethod
     def from_chat_session(cls, session: ChatSession) -> "SessionResponse":
         """Create a SessionResponse from a ChatSession."""
-        # Convert messages to dict with aliases
         messages = []
         for msg in session.messages:
             # Convert message to dict with aliases
             msg_dict = msg.dict(by_alias=True)
-            
-            # Include verification data if it exists
-            if msg.verification_hash or msg.signature:
-                msg_dict.update({
-                    "model": msg.model_name,
-                    "model_id": msg.model_id,
-                    "timestamp": msg.timestamp.isoformat(),
-                    "verification_hash": msg.verification_hash,
-                    "signature": msg.signature,
-                    "ipfs_cid": msg.ipfs_cid,
-                    "transaction_hash": msg.transaction_hash
-                })
-            
             messages.append(msg_dict)
-        
+
         return cls(
             session_id=session.session_id,
             messages=messages,
             created_at=session.created_at,
             updated_at=session.updated_at
-        ) 
+        )
