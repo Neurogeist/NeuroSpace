@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 from typing import Dict, Any, List, Optional
 from .models.prompt import PromptRequest, PromptResponse, SessionResponse
@@ -213,7 +213,7 @@ async def submit_prompt(prompt: PromptRequest, background_tasks: BackgroundTasks
         
         # Add messages to chat session
         metadata = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "model_name": prompt.model_name,
             "model_id": model_config.model_id,
             "temperature": prompt.temperature,
@@ -223,6 +223,9 @@ async def submit_prompt(prompt: PromptRequest, background_tasks: BackgroundTasks
             "verification_hash": verification_hash,
             "signature": signature
         }
+
+        logger.info(f"Metadata timestamp: {metadata['timestamp']}")
+
         
         await chat_session_service.add_message(
             session_id=session_id,
@@ -262,16 +265,21 @@ async def get_available_models():
         logger.error(f"Error getting available models: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/sessions/{session_id}", response_model=SessionResponse)
+@app.get("/sessions/{session_id}")
 async def get_session(session_id: str):
-    """Get a chat session by ID."""
     try:
-        session = chat_session_service.get_session(session_id)
-        if not session:
+        messages = chat_session_service.get_session_messages(session_id)
+        if not messages:
             raise HTTPException(status_code=404, detail="Session not found")
-        
-        return SessionResponse.from_chat_session(session)
-        
+
+        messages_dict_list = [message.dict(by_alias=True, exclude_none=False) for message in messages]
+
+        return {
+            "session_id": session_id,
+            "messages": messages_dict_list,
+            "created_at": messages[0].timestamp if messages else datetime.utcnow(),
+            "updated_at": messages[-1].timestamp if messages else datetime.utcnow()
+        }
     except Exception as e:
         logger.error(f"Error retrieving session: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

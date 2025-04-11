@@ -1,6 +1,6 @@
 from typing import Dict, List, Optional, Any
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 import logging
 
@@ -45,27 +45,32 @@ class ChatMessage(BaseModel):
         }
 
     def dict(self, *args, **kwargs):
-        """Override dict to ensure aliases are properly handled and only show links for assistant messages."""
-        d = super().dict(*args, **kwargs)
-        
-        # Only include links for assistant messages
+        """Override dict to ensure aliases are properly handled and always include metadata."""
+        data = super().dict(*args, **kwargs)
+
+        # Convert timestamp to ISO string
+        if isinstance(data.get('timestamp'), datetime):
+            data['timestamp'] = data['timestamp'].isoformat().replace("+00:00", "Z")
+
+        data["metadata"] = self.metadata
+
         if self.role == "assistant":
-            if "ipfs_cid" in d:
-                d["ipfsHash"] = d.pop("ipfs_cid")
-            if "transaction_hash" in d:
-                d["transactionHash"] = d.pop("transaction_hash")
-            if "model_id" in d:
-                d["modelId"] = d.pop("model_id")
+            if "ipfs_cid" in data:
+                data["ipfsHash"] = data.pop("ipfs_cid")
+            if "transaction_hash" in data:
+                data["transactionHash"] = data.pop("transaction_hash")
+            if "model_id" in data:
+                data["modelId"] = data.pop("model_id")
         else:
-            # Remove links for user messages
-            d.pop("ipfs_cid", None)
-            d.pop("transaction_hash", None)
-            d.pop("model_id", None)
-            d.pop("ipfsHash", None)
-            d.pop("transactionHash", None)
-            d.pop("modelId", None)
-        
-        return d
+            data.pop("ipfsHash", None)
+            data.pop("transactionHash", None)
+            data.pop("modelId", None)
+            data.pop("ipfs_cid", None)
+            data.pop("transaction_hash", None)
+            data.pop("model_id", None)
+
+        return data
+
 
 class ChatSession:
     """Represents a chat session with its messages."""
@@ -124,22 +129,18 @@ class ChatSessionService:
     ) -> None:
         """Add a message to a chat session."""
         try:
-            # Get the session
             session = self.get_session(session_id)
             if not session:
                 raise ValueError(f"Session {session_id} not found")
-            
-            # Create the message with verification info
+
             message_metadata = metadata or {}
-            
-            # Extract transaction hash from metadata
+
             tx_hash = None
             if isinstance(metadata.get("transaction_hash"), dict):
                 tx_hash = metadata["transaction_hash"].get("transaction_hash")
             else:
                 tx_hash = metadata.get("transaction_hash")
-            
-            # Ensure verification info is included if it exists
+
             if metadata and (metadata.get("verification_hash") or metadata.get("signature")):
                 message_metadata.update({
                     "verification_hash": metadata.get("verification_hash"),
@@ -147,12 +148,20 @@ class ChatSessionService:
                     "ipfs_cid": metadata.get("ipfs_cid"),
                     "transaction_hash": tx_hash
                 })
-            
-            # Create the message
+
+            timestamp = metadata.get("timestamp")
+            if isinstance(timestamp, str):
+                timestamp = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            elif isinstance(timestamp, datetime):
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(tzinfo=timezone.utc)
+            else:
+                timestamp = datetime.now(timezone.utc)
+
             message = ChatMessage(
                 role=role,
                 content=content,
-                timestamp=datetime.utcnow(),
+                timestamp=timestamp,
                 model_name=model_name,
                 model_id=model_id,
                 verification_hash=message_metadata.get("verification_hash"),
@@ -161,41 +170,41 @@ class ChatSessionService:
                 transaction_hash=message_metadata.get("transaction_hash"),
                 metadata=message_metadata
             )
-            
-            # Add the message to the session
+
             session.messages.append(message)
             session.updated_at = datetime.utcnow()
-            
-            # Save the session
             self.sessions[session_id] = session
-            
+
         except Exception as e:
             logger.error(f"Error adding message to session {session_id}: {str(e)}")
             raise
 
     def get_session_messages(self, session_id: str) -> Optional[List[ChatMessage]]:
-        """Get all messages in a session."""
+        """Get all messages in a session, ensuring metadata is complete."""
         session = self.get_session(session_id)
         if session:
-            # Ensure all messages have metadata
+            logged_messages = []
             for message in session.messages:
-                # Always ensure metadata is refreshed and consistent
-                message.metadata = {
+                if message.metadata is None:
+                    message.metadata = {}
+                message.metadata.update({
                     "model": message.model_name,
                     "model_id": message.model_id,
                     "ipfsHash": message.ipfs_cid,
                     "transactionHash": message.transaction_hash,
-                    "temperature": message.metadata.get("temperature", 0.7) if message.metadata else 0.7,
-                    "max_tokens": message.metadata.get("max_tokens", 512) if message.metadata else 512,
-                    "top_p": message.metadata.get("top_p", 0.9) if message.metadata else 0.9,
-                    "do_sample": message.metadata.get("do_sample", True) if message.metadata else True,
-                    "num_beams": message.metadata.get("num_beams", 1) if message.metadata else 1,
-                    "early_stopping": message.metadata.get("early_stopping", False) if message.metadata else False
-                }
-            return session.get_messages()
+                    "temperature": message.metadata.get("temperature", 0.7),
+                    "max_tokens": message.metadata.get("max_tokens", 512),
+                    "top_p": message.metadata.get("top_p", 0.9),
+                    "do_sample": message.metadata.get("do_sample", True),
+                    "num_beams": message.metadata.get("num_beams", 1),
+                    "early_stopping": message.metadata.get("early_stopping", False),
+                    "timestamp": message.timestamp.isoformat().replace("+00:00", "Z")
+                })
+                logged_messages.append(message)
+            return logged_messages
         return None
 
     def format_session_history(self, session_id: str) -> Optional[str]:
         """Format the chat history of a session as a string."""
         session = self.get_session(session_id)
-        return session.format_chat_history() if session else None 
+        return session.format_chat_history() if session else None
