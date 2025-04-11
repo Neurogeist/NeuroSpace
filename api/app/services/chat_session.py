@@ -19,30 +19,30 @@ class ChatMessage(BaseModel):
     signature: Optional[str] = Field(None, description="The digital signature of the verification hash")
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    class Config:
-        allow_population_by_field_name = True
-        json_encoders = {
+    model_config = {
+        'populate_by_name': True,
+        'json_encoders': {
             datetime: lambda dt: dt.isoformat()
-        }
-        alias_generator = lambda x: x.replace("_", "") if x.endswith(("_cid", "_hash", "_id")) else x
-        populate_by_name = True
-        schema_extra = {
-            "example": {
-                "role": "assistant",
-                "content": "Hello! How can I help you today?",
-                "model_name": "mixtral-remote",
-                "model_id": "mistralai/Mixtral-8x7B-Instruct-v0.1",
-                "metadata": {
-                    "timestamp": "2024-03-14T12:00:00",
-                    "ipfs_cid": "QmXyZ...",
-                    "transaction_hash": "0x123...",
-                    "verification_hash": "abc123...",
-                    "signature": "0x456...",
-                    "temperature": 0.7,
-                    "max_tokens": 1000
+        },
+        'protected_namespaces': (),
+        'json_schema_extra': {
+            'example': {
+                'role': 'assistant',
+                'content': 'Hello! How can I help you today?',
+                'model_name': 'mixtral-remote',
+                'model_id': 'mistralai/Mixtral-8x7B-Instruct-v0.1',
+                'metadata': {
+                    'timestamp': '2024-03-14T12:00:00',
+                    'ipfs_cid': 'QmXyZ...',
+                    'transaction_hash': '0x123...',
+                    'verification_hash': 'abc123...',
+                    'signature': '0x456...',
+                    'temperature': 0.7,
+                    'max_tokens': 1000
                 }
             }
         }
+    }
 
     def dict(self, *args, **kwargs):
         """Override dict to ensure aliases are properly handled and always include metadata."""
