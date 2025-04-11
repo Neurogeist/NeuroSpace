@@ -103,6 +103,8 @@ export default function Chat() {
                         transaction_hash: msg.metadata?.transaction_hash || msg.transactionHash
                     }
                 }));
+                console.log("Loaded session:", session);
+                console.log("First message metadata:", session.messages[0]?.metadata);
                 setMessages(messages);
             } catch (error) {
                 console.error('Error loading session:', error);

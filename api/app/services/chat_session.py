@@ -1,6 +1,6 @@
 from typing import Dict, List, Optional, Any
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 import logging
 
@@ -45,9 +45,16 @@ class ChatMessage(BaseModel):
         }
 
     def dict(self, *args, **kwargs):
-        """Override dict to ensure aliases are properly handled and only show links for assistant messages."""
+        """Override dict to ensure aliases are properly handled and always include metadata."""
         d = super().dict(*args, **kwargs)
-        
+
+        # Convert timestamp to ISO string
+        if isinstance(d.get('timestamp'), datetime):
+            d['timestamp'] = d['timestamp'].isoformat().replace("+00:00", "Z")
+
+        # Always include metadata
+        d["metadata"] = self.metadata  # <-- ADD THIS
+
         # Only include links for assistant messages
         if self.role == "assistant":
             if "ipfs_cid" in d:
@@ -57,15 +64,15 @@ class ChatMessage(BaseModel):
             if "model_id" in d:
                 d["modelId"] = d.pop("model_id")
         else:
-            # Remove links for user messages
             d.pop("ipfs_cid", None)
             d.pop("transaction_hash", None)
             d.pop("model_id", None)
             d.pop("ipfsHash", None)
             d.pop("transactionHash", None)
             d.pop("modelId", None)
-        
+
         return d
+
 
 class ChatSession:
     """Represents a chat session with its messages."""
@@ -147,12 +154,25 @@ class ChatSessionService:
                     "ipfs_cid": metadata.get("ipfs_cid"),
                     "transaction_hash": tx_hash
                 })
+
+            timestamp = metadata.get("timestamp")
+            if isinstance(timestamp, str):
+                timestamp = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))  # handle frontend UTC strings
+            elif isinstance(timestamp, datetime):
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(tzinfo=timezone.utc)
+            else:
+                timestamp = datetime.now(timezone.utc)
+
+            logger.info(f"Creating message for {role}, raw timestamp: {timestamp}")
+
+            message_metadata["timestamp"] = timestamp.isoformat().replace("+00:00", "Z")
             
             # Create the message
             message = ChatMessage(
                 role=role,
                 content=content,
-                timestamp=datetime.utcnow(),
+                timestamp=timestamp,
                 model_name=model_name,
                 model_id=model_id,
                 verification_hash=message_metadata.get("verification_hash"),
@@ -174,13 +194,13 @@ class ChatSessionService:
             raise
 
     def get_session_messages(self, session_id: str) -> Optional[List[ChatMessage]]:
-        """Get all messages in a session."""
+        """Get all messages in a session, ensuring metadata is complete."""
         session = self.get_session(session_id)
         if session:
-            # Ensure all messages have metadata
             for message in session.messages:
-                # Always ensure metadata is refreshed and consistent
+                # Inject default metadata if it's missing or incomplete
                 message.metadata = {
+                    **(message.metadata or {}),
                     "model": message.model_name,
                     "model_id": message.model_id,
                     "ipfsHash": message.ipfs_cid,
@@ -190,7 +210,8 @@ class ChatSessionService:
                     "top_p": message.metadata.get("top_p", 0.9) if message.metadata else 0.9,
                     "do_sample": message.metadata.get("do_sample", True) if message.metadata else True,
                     "num_beams": message.metadata.get("num_beams", 1) if message.metadata else 1,
-                    "early_stopping": message.metadata.get("early_stopping", False) if message.metadata else False
+                    "early_stopping": message.metadata.get("early_stopping", False) if message.metadata else False,
+                    "timestamp": message.timestamp.isoformat().replace("+00:00", "Z")
                 }
             return session.get_messages()
         return None
