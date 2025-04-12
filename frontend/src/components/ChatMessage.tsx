@@ -70,59 +70,67 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
     const linkColor = useColorModeValue('blue.500', 'blue.300');
 
     useEffect(() => {
+        if (message.role !== 'assistant') return;
+    
+        const metadata = message.metadata;
+        if (!metadata?.verification_hash || !metadata?.signature) return;
+    
+        const key = `verification_${metadata.verification_hash}`;
+    
+        const storedResult = sessionStorage.getItem(key);
+        if (storedResult) {
+            setVerificationResult(JSON.parse(storedResult));
+            return;
+        }
+    
+        let isMounted = true;
+    
         const verifySignature = async () => {
-            if (
-                message.role === 'assistant' && 
-                message.metadata?.verification_hash && 
-                message.metadata?.signature
-            ) {
-                // Check session storage first
-                const storedResult = sessionStorage.getItem(`verification_${message.metadata.verification_hash}`);
-                if (storedResult) {
-                    setVerificationResult(JSON.parse(storedResult));
-                    return;
-                }
+            try {
+                setIsVerifying(true);
+                setVerificationError(null);
+    
+                console.log('Verifying message:', {
+                    verification_hash: metadata.verification_hash,
+                    signature: metadata.signature,
+                    messageId: message.timestamp
+                });
 
-                try {
-                    setIsVerifying(true);
-                    setVerificationError(null);
-                    console.log('Verifying message:', {
-                        verification_hash: message.metadata.verification_hash,
-                        signature: message.metadata.signature,
-                        messageId: message.timestamp
-                    });
-                    
-                    const result = await verifyMessage(
-                        message.metadata.verification_hash,
-                        message.metadata.signature
-                    );
-                    
-                    console.log('Verification result:', result);
-                    setVerificationResult(result);
-                    // Store result in session storage
-                    sessionStorage.setItem(`verification_${message.metadata.verification_hash}`, JSON.stringify(result));
-                } catch (error) {
+                const result = await verifyMessage(
+                    metadata.verification_hash!,
+                    metadata.signature!,
+                    undefined,
+                    'ChatMessage'
+                  );                
+    
+                if (!isMounted) return;
+    
+                console.log('Verification result:', result);
+                setVerificationResult(result);
+                sessionStorage.setItem(key, JSON.stringify(result));
+            } catch (error) {
+                if (isMounted) {
                     console.error('Error verifying message:', error);
                     setVerificationError('Failed to verify message');
-                } finally {
-                    setIsVerifying(false);
                 }
+            } finally {
+                if (isMounted) setIsVerifying(false);
             }
         };
-
-        // Try verification immediately
+    
         verifySignature();
-
-        // If verification hasn't succeeded after 2 seconds, try again
-        const timeoutId = setTimeout(() => {
-            if (!verificationResult && !verificationError) {
-                verifySignature();
-            }
-        }, 2000);
-
-        return () => clearTimeout(timeoutId);
-    }, [message]);
-
+    
+        return () => {
+            isMounted = false;
+        };
+    }, [
+        message.metadata?.verification_hash,
+        message.metadata?.signature,
+        message.role,
+        message.timestamp
+    ]);
+    
+    
     const renderMetadata = (message: ChatMessage) => {
         if (!message.metadata) return null;
         

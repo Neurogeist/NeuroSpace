@@ -94,9 +94,13 @@ export default function VerificationBadge({
         }
     };
 
+    /*
+
     useEffect(() => {
         verifyHash();
     }, [verification_hash, signature]);
+
+    */
 
     const handleCopy = (type: 'hash' | 'signature') => {
         if (type === 'hash') {

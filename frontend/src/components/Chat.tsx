@@ -39,10 +39,19 @@ import { useApp } from '../context/AppContext';
 
 export default function Chat() {
     const { models: availableModels, sessions: availableSessions, isLoading, error, refreshSessions } = useApp();
-    const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
-    const [selectedModel, setSelectedModel] = useState<string>("mixtral-remote");
+    const [sessions, setSessions] = useState<ChatSession[]>([]);
+    const [activeSessionId, setActiveSessionId] = useState<string | null>(() => {
+        // Try to get the active session from localStorage on initial load
+        const savedSessionId = localStorage.getItem('activeSessionId');
+        return savedSessionId || null;
+    });
+    const [selectedModel, setSelectedModel] = useState<string>(() => {
+        // Try to get the selected model from localStorage on initial load
+        const savedModel = localStorage.getItem('selectedModel');
+        return savedModel || 'mixtral-remote';
+    });
     const [isThinking, setIsThinking] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -118,6 +127,18 @@ export default function Chat() {
 
         loadSession();
     }, [activeSessionId]);
+
+    useEffect(() => {
+        if (activeSessionId) {
+            localStorage.setItem('activeSessionId', activeSessionId);
+        } else {
+            localStorage.removeItem('activeSessionId');
+        }
+    }, [activeSessionId]);
+
+    useEffect(() => {
+        localStorage.setItem('selectedModel', selectedModel);
+    }, [selectedModel]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();

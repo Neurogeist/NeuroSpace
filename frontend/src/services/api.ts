@@ -158,20 +158,33 @@ export const getSession = async (sessionId: string): Promise<ChatSession> => {
   }
 };
 
+const verifyCache = new Map<string, Promise<VerificationResponse>>();
+
 export const verifyMessage = async (
-    verification_hash: string,
-    signature: string,
-    expected_address?: string
+  verification_hash: string,
+  signature: string,
+  expected_address?: string,
+  source: string = 'default'
 ): Promise<VerificationResponse> => {
-    try {
-        const response = await axios.post(`${API_BASE_URL}/verify`, {
-            verification_hash,
-            signature,
-            expected_address
-        });
-        return response.data;
-    } catch (error) {
-        console.error('Error verifying message:', error);
-        throw error;
+  const cacheKey = `${verification_hash}_${signature}`;
+
+  if (verifyCache.has(cacheKey)) {
+    console.log(`[verifyMessage] Returning cached promise from: ${source}`);
+    return verifyCache.get(cacheKey)!;
+  }
+
+  console.log(`[verifyMessage] Sending request from: ${source}, Hash: ${verification_hash}`);
+
+  const request = axios.post(`${API_BASE_URL}/verify`, {
+    verification_hash,
+    signature,
+    expected_address
+  }, {
+    headers: {
+      'X-Source': source
     }
-}; 
+  }).then(res => res.data);
+
+  verifyCache.set(cacheKey, request);
+  return request;
+};
