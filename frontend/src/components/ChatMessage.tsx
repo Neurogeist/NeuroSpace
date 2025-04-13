@@ -49,7 +49,11 @@ const MarkdownComponents: Components = {
         );
     },
     ul: ({ children }) => <Box as="ul" pl={4} mb={2}>{children}</Box>,
-    ol: ({ children }) => <Box as="ol" pl={4} mb={2}>{children}</Box>,
+    ol: ({ children }) => (
+        <Box as="ol" pl={4} mb={2} style={{ listStylePosition: 'inside' }}>
+          {children}
+        </Box>
+    ),      
     li: ({ children }) => <Box as="li" mb={1}>{children}</Box>,
     a: ({ href, children }) => (
         <Link href={href} color="blue.500" isExternal>
@@ -151,71 +155,74 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
 
     return (
         <Box
-            p={4}
-            borderRadius="lg"
-            bg={message.role === 'user' ? userMessageBgColor : messageBgColor}
-            maxW="80%"
-            alignSelf={message.role === 'user' ? 'flex-end' : 'flex-start'}
-            mb={4}
+          p={4}
+          borderRadius="lg"
+          bg={message.role === 'user' ? userMessageBgColor : messageBgColor}
+          maxW="80%"
+          alignSelf={message.role === 'user' ? 'flex-end' : 'flex-start'}
+          mb={4}
         >
-            <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeRaw]}
-                components={MarkdownComponents}
-            >
-                {message.content}
-            </ReactMarkdown>
-            
-            {message.role === 'assistant' && message.metadata?.verification_hash && (
-                <VerificationStatus
-                    verificationResult={verificationResult}
-                    isLoading={isVerifying}
-                    error={verificationError || undefined}
-                />
-            )}
-            
-            <HStack spacing={4} mt={2} fontSize="xs" color={timestampColor}>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            rehypePlugins={[rehypeRaw]}
+            components={MarkdownComponents}
+          >
+            {message.content}
+          </ReactMarkdown>
+      
+          {message.role === 'assistant' && message.metadata?.verification_hash && (
+            <VerificationStatus
+              verificationResult={verificationResult}
+              isLoading={isVerifying}
+              error={verificationError || undefined}
+            />
+          )}
+      
+          <HStack spacing={4} mt={2} fontSize="xs" color={timestampColor}>
             <Text>
-                {new Date(message.timestamp).toLocaleTimeString('en-US', {
-                    timeZone: 'UTC',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    hour12: false
-                })} UTC
+              {new Date(message.timestamp).toLocaleTimeString('en-US', {
+                timeZone: 'UTC',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+              })} UTC
             </Text>
-                {ipfsHash && (
-                    <Tooltip label="View on IPFS">
-                        <Link
-                            href={`https://ipfs.io/ipfs/${ipfsHash}`}
-                            isExternal
-                            color={linkColor}
-                            display="flex"
-                            alignItems="center"
-                            gap={1}
-                        >
-                            <FiHash />
-                            {formatHash(ipfsHash)}
-                        </Link>
-                    </Tooltip>
-                )}
-                {transactionHash && (
-                    <Tooltip label="View on BaseScan">
-                        <Link
-                            href={`https://sepolia.basescan.org/tx/${transactionHash}`}
-                            isExternal
-                            color={linkColor}
-                            display="flex"
-                            alignItems="center"
-                            gap={1}
-                        >
-                            <FiLink />
-                            {formatHash(transactionHash)}
-                        </Link>
-                    </Tooltip>
-                )}
-            </HStack>
-            {message.role === 'assistant' && renderMetadata(message)}
+      
+            {message.role === 'assistant' && ipfsHash && (
+              <Tooltip label="View on IPFS">
+                <Link
+                  href={`https://ipfs.io/ipfs/${ipfsHash}`}
+                  isExternal
+                  color={linkColor}
+                  display="flex"
+                  alignItems="center"
+                  gap={1}
+                >
+                  <FiHash />
+                  {formatHash(ipfsHash)}
+                </Link>
+              </Tooltip>
+            )}
+      
+            {message.role === 'assistant' && transactionHash && (
+              <Tooltip label="View on BaseScan">
+                <Link
+                  href={`https://sepolia.basescan.org/tx/${transactionHash}`}
+                  isExternal
+                  color={linkColor}
+                  display="flex"
+                  alignItems="center"
+                  gap={1}
+                >
+                  <FiLink />
+                  {formatHash(transactionHash)}
+                </Link>
+              </Tooltip>
+            )}
+          </HStack>
+      
+          {message.role === 'assistant' && renderMetadata(message)}
         </Box>
-    );
+      ); 
 } 

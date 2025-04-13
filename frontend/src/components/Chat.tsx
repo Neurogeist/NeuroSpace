@@ -41,7 +41,6 @@ export default function Chat() {
     const { models: availableModels, sessions: availableSessions, isLoading, error, refreshSessions } = useApp();
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
-    const [sessions, setSessions] = useState<ChatSession[]>([]);
     const [activeSessionId, setActiveSessionId] = useState<string | null>(() => {
         // Try to get the active session from localStorage on initial load
         const savedSessionId = localStorage.getItem('activeSessionId');
@@ -88,10 +87,16 @@ export default function Chat() {
     }, [input]);
 
     useEffect(() => {
+        // This effect now runs *only* when availableSessions changes.
+        // If, at the time the sessions list updates, there's no active session,
+        // it selects the first one as a default.
+        // It will NOT run when handleNewChat sets activeSessionId to null.
         if (availableSessions.length > 0 && !activeSessionId) {
-            setActiveSessionId(availableSessions[0].id);
+             console.log("Setting default session because availableSessions updated and no active session found.");
+            setActiveSessionId(availableSessions[0].session_id);
         }
-    }, [availableSessions]);
+        // Remove activeSessionId from the dependency array
+    }, [availableSessions]); // <-- Corrected dependency
 
     useEffect(() => {
         const loadSession = async () => {
@@ -196,12 +201,15 @@ export default function Chat() {
 
             setMessages(prev => [...prev, assistantMessage]);
             
+            // Always refresh sessions after a successful response
+            await refreshSessions();
+            
             // Update active session if needed
-            if (response.session_id && response.session_id !== activeSessionId) {
+            if (response.session_id) {
                 setActiveSessionId(response.session_id);
-                // Refresh sessions list
-                await refreshSessions();
+                localStorage.setItem('activeSessionId', response.session_id);
             }
+            
         } catch (error) {
             console.error('Error submitting prompt:', error);
             toast({
@@ -219,6 +227,7 @@ export default function Chat() {
     const handleNewChat = () => {
         setMessages([]);
         setActiveSessionId(null);
+        localStorage.removeItem('activeSessionId');
     };
 
     const handleSelectSession = async (sessionId: string) => {
@@ -292,7 +301,7 @@ export default function Chat() {
                     zIndex={1}
                 >
                     <Sidebar
-                        sessions={availableSessions}
+                    sessions={availableSessions}
                         activeSessionId={activeSessionId}
                         onNewChat={handleNewChat}
                         onSelectSession={handleSelectSession}
