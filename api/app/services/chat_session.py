@@ -29,7 +29,7 @@ class ChatMessage(BaseModel):
             'example': {
                 'role': 'assistant',
                 'content': 'Hello! How can I help you today?',
-                'model_name': 'mixtral-remote',
+                'model_name': 'mixtral-8x7b-instruct',
                 'model_id': 'mistralai/Mixtral-8x7B-Instruct-v0.1',
                 'metadata': {
                     'timestamp': '2024-03-14T12:00:00',

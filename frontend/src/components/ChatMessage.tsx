@@ -180,15 +180,13 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
       
           <HStack spacing={4} mt={2} fontSize="xs" color={timestampColor}>
             <Text>
-              {new Date(message.timestamp).toLocaleTimeString('en-US', {
-                timeZone: 'UTC',
+              {new Date(message.timestamp).toLocaleTimeString([], {
                 hour: '2-digit',
                 minute: '2-digit',
                 second: '2-digit',
-                hour12: false
-              })} UTC
+                hour12: true
+              })}
             </Text>
-      
             {message.role === 'assistant' && ipfsHash && (
               <Tooltip label="View on IPFS">
                 <Link

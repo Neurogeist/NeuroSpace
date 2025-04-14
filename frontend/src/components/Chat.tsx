@@ -49,7 +49,7 @@ export default function Chat() {
     const [selectedModel, setSelectedModel] = useState<string>(() => {
         // Try to get the selected model from localStorage on initial load
         const savedModel = localStorage.getItem('selectedModel');
-        return savedModel || 'mixtral-remote';
+        return savedModel || 'mixtral-8x7b-instruct';
     });
     const [isThinking, setIsThinking] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -255,7 +255,7 @@ export default function Chat() {
     };
 
     const groupedModels = Object.entries(availableModels).reduce((acc, [name, id]) => {
-        const provider = name.includes('remote') ? 'Remote' : 'Local';
+        const provider = name.includes('local') ? 'Local' : 'Remote';
         if (!acc[provider]) {
             acc[provider] = [];
         }
