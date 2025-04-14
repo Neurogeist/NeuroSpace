@@ -55,6 +55,18 @@ class Settings(BaseSettings):
 
     CONTRACT_ADDRESS: str = Field(..., env="CONTRACT_ADDRESS")
     
+    # Payment Contract Configuration
+    PAYMENT_CONTRACT_ADDRESS: str
+    REACT_APP_PAYMENT_CONTRACT_ADDRESS: str
+    
+    # Model Configuration
+    DEFAULT_MODEL: str = "mixtral-remote"
+    DEFAULT_TEMPERATURE: float = 0.8
+    DEFAULT_MAX_TOKENS: int = 100
+    
+    # Database Configuration (optional for in-memory storage)
+    DATABASE_URL: Optional[str] = None
+    
     model_config = ConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -92,13 +92,14 @@ export const getAvailableModels = async (): Promise<{ [key: string]: string }> =
 export const submitPrompt = async (
     prompt: string,
     model: string,
+    userAddress: string,
     sessionId?: string
 ): Promise<PromptResponse> => {
     try {
-        console.log('Submitting prompt:', { prompt, model, sessionId });
-        const response = await axios.post<PromptResponse>(`${API_BASE_URL}/prompt`, {
+        const response = await axios.post(`${API_BASE_URL}/submit_prompt`, {
             prompt,
-            model_name: model,
+            model,
+            user_address: userAddress,
             session_id: sessionId
         });
         console.log('Prompt response:', response.data);

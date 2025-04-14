@@ -22,6 +22,7 @@ import ipaddress
 from fastapi import BackgroundTasks
 from .services.model_registry import ModelRegistry
 from pydantic import BaseModel
+from .services.payment import PaymentService
 
 # Configure logging
 logging.basicConfig(
@@ -66,6 +67,7 @@ llm_service = LLMService(chat_session_service)
 blockchain_service = BlockchainService()
 ipfs_service = IPFSService()
 model_registry = ModelRegistry()
+payment_service = PaymentService()
 
 # Request tracking
 request_stats: Dict[str, Any] = {
@@ -162,93 +164,121 @@ async def health_check():
         logger.error(f"Health check failed: {str(e)}")
         raise HTTPException(status_code=500, detail="Service unhealthy")
 
-@app.post("/prompt")
-async def submit_prompt(prompt: PromptRequest, background_tasks: BackgroundTasks):
+class PromptRequest(BaseModel):
+    prompt: str
+    model: str
+    user_address: str
+    session_id: Optional[str] = None
+
+@app.post("/submit_prompt")
+async def submit_prompt(request: PromptRequest):
     """Submit a prompt and get a response."""
     try:
+        # Verify payment before processing
+        if not payment_service.verify_payment(request.session_id or "new", request.user_address):
+            raise HTTPException(status_code=402, detail="Payment required")
+        
         # Get the active session or create a new one
-        session_id = prompt.session_id or str(uuid.uuid4())
+        session_id = request.session_id or str(uuid.uuid4())
         if not chat_session_service.get_session(session_id):
             chat_session_service.create_session(session_id)
         
         # Get model details from registry
-        model_config = model_registry.get_model_config(prompt.model_name)
+        model_config = model_registry.get_model_config(request.model)
         if not model_config:
-            raise HTTPException(status_code=400, detail=f"Model {prompt.model_name} not found")
+            raise HTTPException(status_code=400, detail=f"Model {request.model} not found")
         
         # Generate response using LLM
-        response = await llm_service.generate_response(
-            model_id=prompt.model_name,
-            prompt=prompt.prompt,
-            system_prompt=prompt.system_prompt,
-            temperature=prompt.temperature,
-            max_tokens=prompt.max_tokens,
+        llm_response = await llm_service.generate_response(
+            model_id=request.model,
+            prompt=request.prompt,
+            system_prompt=None,
+            temperature=0.8,
+            max_tokens=100,
             session_id=session_id
         )
         
-        # Clean the response
-        cleaned_response = response["response"]  # The response is already cleaned in generate_response
+        # Extract the response text
+        response = llm_response.get('response', '') if isinstance(llm_response, dict) else llm_response
         
         # Create verification hash
-        verification_hash = llm_service.create_verification_hash(prompt.prompt, cleaned_response)
+        verification_hash = llm_service.create_verification_hash(request.prompt, response)
         
         # Sign the verification hash
         signature = blockchain_service.sign_message(verification_hash)
         
+        # Store hash on blockchain
+        blockchain_result = await blockchain_service.submit_to_blockchain(verification_hash)
+        transaction_hash = blockchain_result.get('transaction_hash')
+        
         # Upload to IPFS
         ipfs_data = {
-            "prompt": prompt.prompt,
-            "response": cleaned_response,
-            "model_name": prompt.model_name,
+            "prompt": request.prompt,
+            "response": response,
+            "model_name": request.model,
             "model_id": model_config.model_id,
             "timestamp": datetime.utcnow().isoformat(),
             "verification_hash": verification_hash,
-            "signature": signature
+            "signature": signature,
+            "transaction_hash": transaction_hash
         }
         ipfs_cid = await ipfs_service.upload_json(ipfs_data)
         
-        # Submit to blockchain
-        blockchain_result = await blockchain_service.submit_to_blockchain(verification_hash)
-        transaction_hash = blockchain_result['transaction_hash']  # Extract just the hash string
-        
-        # Add messages to chat session
-        metadata = {
-            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-            "model_name": prompt.model_name,
-            "model_id": model_config.model_id,
-            "temperature": prompt.temperature,
-            "max_tokens": prompt.max_tokens,
-            "ipfs_cid": ipfs_cid,
-            "transaction_hash": transaction_hash,  # Use the extracted hash string
-            "verification_hash": verification_hash,
-            "signature": signature
-        }
-
-        logger.info(f"Metadata timestamp: {metadata['timestamp']}")
-
-        
+        # Store in chat session
         await chat_session_service.add_message(
             session_id=session_id,
             role="user",
-            content=prompt.prompt,
-            model_name=prompt.model_name,
+            content=request.prompt,
+            model_name=request.model,
             model_id=model_config.model_id,
-            metadata=metadata
+            metadata={
+                "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "model_name": request.model,
+                "model_id": model_config.model_id,
+                "temperature": 0.8,
+                "max_tokens": 100,
+                "ipfs_cid": ipfs_cid,
+                "verification_hash": verification_hash,
+                "signature": signature,
+                "transaction_hash": transaction_hash
+            }
         )
         
         await chat_session_service.add_message(
             session_id=session_id,
             role="assistant",
-            content=cleaned_response,
-            model_name=prompt.model_name,
+            content=response,
+            model_name=request.model,
             model_id=model_config.model_id,
-            metadata=metadata
+            metadata={
+                "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "model_name": request.model,
+                "model_id": model_config.model_id,
+                "temperature": 0.8,
+                "max_tokens": 100,
+                "ipfs_cid": ipfs_cid,
+                "verification_hash": verification_hash,
+                "signature": signature,
+                "transaction_hash": transaction_hash
+            }
         )
         
         return {
-            "response": cleaned_response,
+            "response": response,
             "session_id": session_id,
-            "metadata": metadata
+            "model_id": model_config.model_id,
+            "metadata": {
+                "temperature": 0.8,
+                "max_tokens": 100,
+                "top_p": 0.7,
+                "do_sample": True,
+                "num_beams": 1,
+                "early_stopping": True,
+                "verification_hash": verification_hash,
+                "signature": signature,
+                "ipfs_cid": ipfs_cid,
+                "transaction_hash": transaction_hash
+            }
         }
         
     except Exception as e:

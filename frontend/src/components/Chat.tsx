@@ -36,6 +36,7 @@ import { submitPrompt, getAvailableModels, getSessions, getSession } from '../se
 import Sidebar from './Sidebar';
 import ChatMessageComponent from './ChatMessage';
 import { useApp } from '../context/AppContext';
+import { connectWallet, payForMessage } from '../services/blockchain';
 
 export default function Chat() {
     const { models: availableModels, sessions: availableSessions, isLoading, error, refreshSessions } = useApp();
@@ -52,6 +53,7 @@ export default function Chat() {
         return savedModel || 'mixtral-8x7b-instruct';
     });
     const [isThinking, setIsThinking] = useState(false);
+    const [userAddress, setUserAddress] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const { isOpen: isSidebarOpen, onToggle: toggleSidebar } = useDisclosure({ defaultIsOpen: true });
@@ -145,9 +147,42 @@ export default function Chat() {
         localStorage.setItem('selectedModel', selectedModel);
     }, [selectedModel]);
 
+    const handleConnectWallet = async () => {
+        try {
+            const address = await connectWallet();
+            setUserAddress(address);
+            toast({
+                title: 'Wallet Connected',
+                description: `Connected to ${address.slice(0, 6)}...${address.slice(-4)}`,
+                status: 'success',
+                duration: 3000,
+                isClosable: true,
+            });
+        } catch (error) {
+            toast({
+                title: 'Error',
+                description: 'Failed to connect wallet',
+                status: 'error',
+                duration: 3000,
+                isClosable: true,
+            });
+        }
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!input.trim() || isThinking) return;
+
+        if (!userAddress) {
+            toast({
+                title: 'Error',
+                description: 'Please connect your wallet first',
+                status: 'error',
+                duration: 3000,
+                isClosable: true,
+            });
+            return;
+        }
 
         // Ensure a model is selected
         if (!selectedModel) {
@@ -174,7 +209,15 @@ export default function Chat() {
         setIsThinking(true);
 
         try {
-            const response = await submitPrompt(input, selectedModel, activeSessionId || undefined);
+            // Make payment first
+            await payForMessage(activeSessionId || 'new');
+            
+            const response = await submitPrompt(
+                input,
+                selectedModel,
+                userAddress,
+                activeSessionId || undefined
+            );
             console.log('Prompt response:', response);
 
             const assistantMessage: ChatMessage = {
@@ -205,7 +248,7 @@ export default function Chat() {
             await refreshSessions();
             
             // Update active session if needed
-            if (response.session_id) {
+            if (!activeSessionId && response.session_id) {
                 setActiveSessionId(response.session_id);
                 localStorage.setItem('activeSessionId', response.session_id);
             }
@@ -369,43 +412,49 @@ export default function Chat() {
 
                 <Box p={4} borderTop="1px" borderColor={borderColor} bg={inputBgColor}>
                     <Container maxW={maxMessageWidth}>
-                        <form onSubmit={handleSubmit}>
-                            <HStack>
-                                <FormControl>
-                                    <Textarea
-                                        ref={inputRef}
-                                        value={input}
-                                        onChange={(e) => setInput(e.target.value)}
-                                        placeholder="Type your message..."
-                                        size="md"
-                                        resize="none"
-                                        minH="40px"
-                                        maxH="150px"
-                                        overflowY="auto"
-                                        bg={inputBgColor}
-                                        borderColor={inputBorderColor}
-                                        color={inputTextColor}
-                                        _hover={{ borderColor: buttonBgColor }}
-                                        _focus={{ borderColor: buttonBgColor, boxShadow: 'none' }}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter' && !e.shiftKey) {
-                                                e.preventDefault();
-                                                handleSubmit(e);
-                                            }
-                                        }}
-                                    />
-                                </FormControl>
-                                <Button
-                                    type="submit"
-                                    colorScheme="blue"
-                                    isLoading={isThinking}
-                                    isDisabled={!input.trim()}
-                                    px={6}
-                                >
-                                    Send
-                                </Button>
-                            </HStack>
-                        </form>
+                        {!userAddress ? (
+                            <Button onClick={handleConnectWallet} colorScheme="blue">
+                                Connect Wallet
+                            </Button>
+                        ) : (
+                            <form onSubmit={handleSubmit}>
+                                <HStack>
+                                    <FormControl>
+                                        <Textarea
+                                            ref={inputRef}
+                                            value={input}
+                                            onChange={(e) => setInput(e.target.value)}
+                                            placeholder="Type your message..."
+                                            size="md"
+                                            resize="none"
+                                            minH="40px"
+                                            maxH="150px"
+                                            overflowY="auto"
+                                            bg={inputBgColor}
+                                            borderColor={inputBorderColor}
+                                            color={inputTextColor}
+                                            _hover={{ borderColor: buttonBgColor }}
+                                            _focus={{ borderColor: buttonBgColor, boxShadow: 'none' }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' && !e.shiftKey) {
+                                                    e.preventDefault();
+                                                    handleSubmit(e);
+                                                }
+                                            }}
+                                        />
+                                    </FormControl>
+                                    <Button
+                                        type="submit"
+                                        colorScheme="blue"
+                                        isLoading={isThinking}
+                                        isDisabled={!input.trim()}
+                                        px={6}
+                                    >
+                                        Send (0.001 ETH)
+                                    </Button>
+                                </HStack>
+                            </form>
+                        )}
                     </Container>
                 </Box>
             </Flex>
