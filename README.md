@@ -6,7 +6,7 @@ A decentralized system for submitting prompts and generating responses using loc
 
 - Submit prompts and receive AI-generated responses
 - Store prompts and responses on IPFS
-- Record transaction hashes on Base Goerli
+- Record transaction hashes on Base Sepolia
 - Local LLM inference using TinyLlama
 - FastAPI backend with async support
 - Rate limiting and request tracking
@@ -18,15 +18,18 @@ A decentralized system for submitting prompts and generating responses using loc
 - Real-time chat interface
 - Blockchain transaction tracking
 - IPFS content verification
+- MetaMask integration for payments
 
 ## Prerequisites
 
 - Python 3.10+
 - Node.js 18+
 - CUDA-capable GPU (optional, for faster inference)
-- Base Goerli testnet ETH
+- Base Sepolia testnet ETH
 - IPFS node (local or remote)
-- Base Goerli testnet ETH
+- MetaMask wallet with Base Sepolia network configured
+- Hardhat for smart contract development
+- Git for version control
 
 ## Installation
 
@@ -44,36 +47,88 @@ python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
-3. Install dependencies:
+3. Install Python dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-4. Create a `.env` file with your credentials:
-```env
-# Base Chain Configuration
-BASE_RPC_URL=https://goerli.base.org
-PRIVATE_KEY=your_private_key_here
-
-# IPFS Configuration
-IPFS_API_URL=http://localhost:5001/api/v0  # Local IPFS node
-# Or use a remote IPFS node:
-# IPFS_API_URL=https://ipfs.infura.io:5001/api/v0
-
-# API Configuration
-API_HOST=0.0.0.0
-API_PORT=8000
-RATE_LIMIT_REQUESTS=100
-RATE_LIMIT_WINDOW=3600  # 1 hour in seconds
-
-# LLM Configuration
-LLM_MODEL_NAME=TinyLlama/TinyLlama-1.1B-Chat-v1.0
-LLM_MAX_LENGTH=100
-LLM_TEMPERATURE=0.3
-LLM_TOP_P=0.7
+4. Install Node.js dependencies for smart contracts:
+```bash
+cd contracts
+npm install
 ```
 
-5. Start IPFS node (if using local node):
+5. Create a `.env` file in the root directory:
+```bash
+cp .env.example .env
+```
+
+6. Update the `.env` file with your credentials (see `.env.example` for all required variables)
+
+### Smart Contract Setup
+
+1. Navigate to the contracts directory:
+```bash
+cd contracts
+```
+
+2. Create a `.env` file in the contracts directory:
+```env
+PRIVATE_KEY=your_private_key_here
+BASE_RPC_URL=https://sepolia.base.org
+```
+
+3. Compile the contracts:
+```bash
+npx hardhat compile
+```
+
+4. Deploy the contracts to Base Sepolia:
+
+   a. Deploy the Verification contract:
+   ```bash
+   npx hardhat run scripts/deploy_verification.ts --network baseSepolia
+   ```
+   Copy the deployed Verification contract address and update it in:
+   - Backend `.env` file: `CONTRACT_ADDRESS`
+
+   b. Deploy the Payment contract:
+   ```bash
+   npx hardhat run scripts/deploy_payment.ts --network baseSepolia
+   ```
+   Copy the deployed Payment contract address and update it in:
+   - Backend `.env` file: `PAYMENT_CONTRACT_ADDRESS`
+   - Frontend `.env` file: `VITE_PAYMENT_CONTRACT_ADDRESS`
+
+5. Verify the contracts on Base Sepolia:
+```bash
+# Verify Verification contract
+npx hardhat verify --network baseSepolia <verification_contract_address>
+
+# Verify Payment contract
+npx hardhat verify --network baseSepolia <payment_contract_address>
+```
+
+### IPFS Setup
+
+1. Install IPFS:
+```bash
+# Using Homebrew (macOS)
+brew install ipfs
+
+# Using apt (Ubuntu/Debian)
+sudo apt install ipfs
+
+# Using Chocolatey (Windows)
+choco install ipfs
+```
+
+2. Initialize IPFS:
+```bash
+ipfs init
+```
+
+3. Start the IPFS daemon:
 ```bash
 ipfs daemon
 ```
@@ -85,60 +140,75 @@ ipfs daemon
 cd frontend
 ```
 
-2. Install dependencies:
+2. Create a `.env` file:
+```bash
+cp .env.example .env
+```
+
+3. Update the `.env` file with your contract address:
+```env
+VITE_API_BASE_URL=http://localhost:8000
+VITE_PAYMENT_CONTRACT_ADDRESS=your_payment_contract_address_here
+```
+
+4. Install dependencies:
 ```bash
 npm install
 ```
 
-3. Start the development server:
+5. Start the development server:
 ```bash
 npm run dev
 ```
 
 The frontend will be available at `http://localhost:5173`
 
-## Usage
+## MetaMask Setup
 
-### Backend API
+1. Install MetaMask browser extension if you haven't already
+2. Add Base Sepolia network to MetaMask:
+   - Network Name: Base Sepolia
+   - RPC URL: https://sepolia.base.org
+   - Chain ID: 84532
+   - Currency Symbol: ETH
+   - Block Explorer URL: https://sepolia.basescan.org
+3. Get test ETH from the Base Sepolia faucet:
+   - Visit https://sepoliafaucet.com/
+   - Enter your wallet address
+   - Request test ETH
+4. Connect your wallet in the NeuroChain interface
 
-1. Start the API server:
+## Running the Application
+
+1. Start the IPFS daemon (if using local node):
 ```bash
+ipfs daemon
+```
+
+2. Start the backend server:
+```bash
+cd NeuroChain
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 uvicorn api.app.main:app --reload
 ```
 
-2. Submit a prompt:
+3. Start the frontend development server:
 ```bash
-curl -X POST http://127.0.0.1:8000/prompts \
-  -H "Content-Type: application/json" \
-  -H "X-User-Address: 0x1234567890123456789012345678901234567890" \
-  -d '{
-    "prompt": "What is the capital of France?"
-  }'
+cd frontend
+npm run dev
 ```
 
-3. Check API health:
-```bash
-curl http://127.0.0.1:8000/health
-```
-
-### Frontend Interface
-
-1. Open your browser and navigate to `http://localhost:5173`
-2. Enter your prompt in the chat interface
-3. View the response, IPFS hash, and blockchain transaction details
-4. Use the clear button to reset the chat history
+4. Open your browser and navigate to `http://localhost:5173`
 
 ## API Endpoints
 
 - `GET /health` - Health check endpoint
-- `POST /prompts` - Submit a new prompt
-  - Required headers: `X-User-Address`
-  - Response includes:
-    - Generated response
-    - IPFS CID
-    - Blockchain transaction signature
-    - Timestamp
-    - User address
+- `GET /models` - Get available models
+- `GET /sessions` - Get chat sessions
+- `GET /sessions/{session_id}` - Get specific session
+- `POST /submit_prompt` - Submit a new prompt
+  - Required fields: prompt, model, user_address
+  - Optional fields: session_id
 
 ## Development
 
@@ -153,6 +223,19 @@ curl http://127.0.0.1:8000/health
 - Run tests: `npm test`
 - Build for production: `npm run build`
 - Preview production build: `npm run preview`
+
+### Smart Contracts
+
+- Compile contracts: `npx hardhat compile`
+- Run tests: `npx hardhat test`
+- Deploy to Base Sepolia: 
+  ```bash
+  # Deploy Verification contract
+  npx hardhat run scripts/deploy_verification.ts --network baseSepolia
+  
+  # Deploy Payment contract
+  npx hardhat run scripts/deploy_payment.ts --network baseSepolia
+  ```
 
 ## Contributing
 

@@ -33,9 +33,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       const sessionsData = await getSessions();
       setSessions(sessionsData);
+      
+      // Check if active session exists in the loaded sessions
+      const activeSessionId = localStorage.getItem('activeSessionId');
+      if (activeSessionId) {
+        const sessionExists = sessionsData.some(session => session.session_id === activeSessionId);
+        if (!sessionExists) {
+          // Clear localStorage if the active session doesn't exist
+          localStorage.removeItem('activeSessionId');
+          localStorage.removeItem('selectedModel');
+        }
+      }
     } catch (err) {
       console.error('Error loading sessions:', err);
       setError(err instanceof Error ? err.message : 'Failed to load sessions');
+      // Clear localStorage on error
+      localStorage.removeItem('activeSessionId');
+      localStorage.removeItem('selectedModel');
     }
   };
 
@@ -49,6 +63,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       console.error('Error loading initial data:', err);
       setError(err instanceof Error ? err.message : 'Failed to load data');
+      // Clear localStorage on error
+      localStorage.removeItem('activeSessionId');
+      localStorage.removeItem('selectedModel');
     } finally {
       setIsLoading(false);
     }

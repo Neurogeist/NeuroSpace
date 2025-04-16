@@ -19,7 +19,7 @@ class LLMService:
         self.registry = ModelRegistry()
         
         # Default model name
-        self.default_model = "mixtral-remote"
+        self.default_model = "mixtral-8x7b-instruct"
         
         # Current model and tokenizer
         self.current_model_name = self.default_model
@@ -127,6 +127,8 @@ class LLMService:
                         raise Exception("No fallback local model available")
                 else:
                     raise
+
+            logger.info(f"Response: {response}")
             
             # Clean the response
             cleaned_response = self._clean_response(response, formatted_prompt)

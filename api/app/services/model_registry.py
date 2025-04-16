@@ -35,7 +35,7 @@ class ModelRegistry:
         
         # Define available models with their configurations
         self.models = {
-            "mixtral-remote": ModelConfig(
+            "mixtral-8x7b-instruct": ModelConfig(
                 model_id="mistralai/Mixtral-8x7B-Instruct-v0.1",
                 provider="together",
                 api_key_env="TOGETHER_API_KEY",
@@ -47,8 +47,8 @@ class ModelRegistry:
                 num_beams=1,
                 early_stopping=False
             ),
-            "llama2-remote": ModelConfig(
-                model_id="meta-llama/Llama-2-70b-chat-hf",
+            "gemma-2-27b-it": ModelConfig(
+                model_id="google/gemma-2-27b-it",
                 provider="together",
                 api_key_env="TOGETHER_API_KEY",
                 system_prompt="You are a helpful AI assistant. Format your responses using markdown for better readability. Use code blocks for code examples, bold for emphasis, and lists for structured information. Answer questions accurately and concisely.",
@@ -59,19 +59,8 @@ class ModelRegistry:
                 num_beams=1,
                 early_stopping=False
             ),
-            "tinyllama": ModelConfig(
+            "tinyllama-local": ModelConfig(
                 model_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-                provider="local",
-                system_prompt="You are a helpful AI assistant. Format your responses using markdown for better readability. Use code blocks for code examples, bold for emphasis, and lists for structured information. Answer questions accurately and concisely.",
-                max_new_tokens=512,
-                temperature=0.7,
-                top_p=0.9,
-                do_sample=True,
-                num_beams=1,
-                early_stopping=False
-            ),
-            "phi": ModelConfig(
-                model_id="microsoft/phi-2",
                 provider="local",
                 system_prompt="You are a helpful AI assistant. Format your responses using markdown for better readability. Use code blocks for code examples, bold for emphasis, and lists for structured information. Answer questions accurately and concisely.",
                 max_new_tokens=512,
