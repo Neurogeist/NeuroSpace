@@ -450,7 +450,7 @@ export default function Chat() {
                                         isDisabled={!input.trim()}
                                         px={6}
                                     >
-                                        Send (0.001 ETH)
+                                        Send (0.0001 ETH)
                                     </Button>
                                 </HStack>
                             </form>

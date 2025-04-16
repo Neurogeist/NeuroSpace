@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 contract ChatPayment {
     event PaymentReceived(address indexed sender, uint256 amount, string sessionId);
     
-    uint256 public constant PRICE_PER_MESSAGE = 0.001 ether;
+    uint256 public constant PRICE_PER_MESSAGE = 0.0001 ether;
     address public owner;
     
     constructor() {

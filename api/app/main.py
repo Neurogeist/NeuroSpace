@@ -306,7 +306,13 @@ async def get_session(session_id: str):
     try:
         messages = chat_session_service.get_session_messages(session_id)
         if not messages:
-            raise HTTPException(status_code=404, detail="Session not found")
+            # Return an empty session instead of raising an error
+            return {
+                "session_id": session_id,
+                "messages": [],
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            }
 
         messages_dict_list = [message.dict(by_alias=True, exclude_none=False) for message in messages]
 
@@ -318,7 +324,13 @@ async def get_session(session_id: str):
         }
     except Exception as e:
         logger.error(f"Error retrieving session: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Return an empty session instead of raising an error
+        return {
+            "session_id": session_id,
+            "messages": [],
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        }
 
 @app.get("/sessions", response_model=List[SessionResponse])
 async def get_all_sessions():
