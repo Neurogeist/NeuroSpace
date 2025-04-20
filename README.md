@@ -87,7 +87,7 @@ npx hardhat compile
 
    a. Deploy the Verification contract:
    ```bash
-   npx hardhat run scripts/deploy_verification.ts --network baseSepolia
+   npx hardhat run scripts/deploy.js --network baseSepolia
    ```
    Copy the deployed Verification contract address and update it in:
    - Backend `.env` file: `CONTRACT_ADDRESS`
@@ -147,7 +147,6 @@ cp .env.example .env
 
 3. Update the `.env` file with your contract address:
 ```env
-VITE_API_BASE_URL=http://localhost:8000
 VITE_PAYMENT_CONTRACT_ADDRESS=your_payment_contract_address_here
 ```
 

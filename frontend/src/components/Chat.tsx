@@ -208,9 +208,13 @@ export default function Chat() {
         // Show thinking indicator
         setIsThinking(true);
 
+        console.log("🔍 activeSessionId before payForMessage:", activeSessionId);
+        console.log("🧵 Length of sessionId:", activeSessionId?.length);
+
         try {
             // Make payment first
-            await payForMessage(activeSessionId || 'new');
+            const safeSessionId = (activeSessionId && activeSessionId.length < 100) ? activeSessionId : 'new';
+            await payForMessage(safeSessionId);
             
             const response = await submitPrompt(
                 input,
@@ -219,6 +223,8 @@ export default function Chat() {
                 activeSessionId || undefined
             );
             console.log('Prompt response:', response);
+            console.log("🧪 Backend response.session_id:", response.session_id);
+
 
             const assistantMessage: ChatMessage = {
                 content: response.response,
@@ -450,7 +456,7 @@ export default function Chat() {
                                         isDisabled={!input.trim()}
                                         px={6}
                                     >
-                                        Send (0.0001 ETH)
+                                        Send (0.00001 ETH)
                                     </Button>
                                 </HStack>
                             </form>
