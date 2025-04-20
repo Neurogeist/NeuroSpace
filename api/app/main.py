@@ -187,7 +187,7 @@ async def submit_prompt(request: PromptRequest):
         # Get the active session or create a new one
         session_id = request.session_id or str(uuid.uuid4())
         if not chat_session_service.get_session(session_id):
-            chat_session_service.create_session(session_id)
+            chat_session_service.create_session(session_id, wallet_address=request.user_address)
         
         # Get model details from registry
         model_config = model_registry.get_model_config(request.model)

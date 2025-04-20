@@ -110,9 +110,13 @@ export const submitPrompt = async (
     }
 };
 
-export const getSessions = async (): Promise<ChatSession[]> => {
+export const getSessions = async (userAddress: string): Promise<ChatSession[]> => {
   try {
-    const response = await axios.get(`${API_BASE_URL}/sessions`);
+    const response = await axios.get(`${API_BASE_URL}/sessions`, {
+      params: {
+        wallet_address: userAddress
+      }
+    });
     return response.data;
   } catch (error) {
     if (axios.isAxiosError(error)) {
