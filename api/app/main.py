@@ -342,6 +342,16 @@ async def get_all_sessions():
         logger.error(f"Error retrieving sessions: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/sessions/{wallet_address}")
+async def get_sessions_by_wallet(wallet_address: str):
+    """Get all sessions for a specific wallet address."""
+    try:
+        sessions = chat_session_service.get_all_sessions(wallet_address=wallet_address)
+        return [SessionResponse.from_chat_session(session) for session in sessions]
+    except Exception as e:
+        logger.error(f"Error getting sessions for wallet {wallet_address}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     """Handle HTTP exceptions."""

@@ -175,10 +175,13 @@ class ChatSessionService:
             self._get_new_session()
             return None
 
-    def get_all_sessions(self) -> List[ChatSession]:
-        """Get all chat sessions."""
+    def get_all_sessions(self, wallet_address: Optional[str] = None) -> List[ChatSession]:
+        """Get all chat sessions, optionally filtered by wallet address."""
         try:
-            db_sessions = self.db.query(ChatSessionDB).all()
+            query = self.db.query(ChatSessionDB)
+            if wallet_address:
+                query = query.filter(ChatSessionDB.wallet_address == wallet_address)
+            db_sessions = query.all()
             sessions = []
 
             for db_session in db_sessions:
