@@ -39,7 +39,18 @@ import { useApp } from '../context/AppContext';
 import { connectWallet, payForMessage } from '../services/blockchain';
 
 export default function Chat() {
-    const { models: availableModels, sessions: availableSessions, isLoading, error, refreshSessions } = useApp();
+    const {
+        models: availableModels,
+        sessions: availableSessions,
+        // isLoading, // Remove generic loading if using specific ones
+        isLoadingModels, // Get specific loading state for models
+        isLoadingSessions, // Get specific loading state for sessions
+        error,
+        refreshSessions,
+        // refreshModels, // Destructure if you need it
+        userAddress,    // <<< ADD: Get userAddress from context
+        connectWallet   // <<< ADD: Get connectWallet function from context
+      } = useApp();
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
     const [activeSessionId, setActiveSessionId] = useState<string | null>(() => {
@@ -53,7 +64,6 @@ export default function Chat() {
         return savedModel || 'mixtral-8x7b-instruct';
     });
     const [isThinking, setIsThinking] = useState(false);
-    const [userAddress, setUserAddress] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const { isOpen: isSidebarOpen, onToggle: toggleSidebar } = useDisclosure({ defaultIsOpen: true });
@@ -147,27 +157,6 @@ export default function Chat() {
         localStorage.setItem('selectedModel', selectedModel);
     }, [selectedModel]);
 
-    const handleConnectWallet = async () => {
-        try {
-            const address = await connectWallet();
-            setUserAddress(address);
-            toast({
-                title: 'Wallet Connected',
-                description: `Connected to ${address.slice(0, 6)}...${address.slice(-4)}`,
-                status: 'success',
-                duration: 3000,
-                isClosable: true,
-            });
-        } catch (error) {
-            toast({
-                title: 'Error',
-                description: 'Failed to connect wallet',
-                status: 'error',
-                duration: 3000,
-                isClosable: true,
-            });
-        }
-    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -312,6 +301,8 @@ export default function Chat() {
         return acc;
     }, {} as { [key: string]: { name: string; id: string }[] });
 
+/*
+
     if (isLoading) {
         return (
             <Flex h="100vh" align="center" justify="center" bg={bgColor}>
@@ -321,7 +312,7 @@ export default function Chat() {
                 </VStack>
             </Flex>
         );
-    }
+    }*/
 
     return (
         <Flex h="100vh" bg={bgColor} position="relative">
@@ -419,7 +410,7 @@ export default function Chat() {
                 <Box p={4} borderTop="1px" borderColor={borderColor} bg={inputBgColor}>
                     <Container maxW={maxMessageWidth}>
                         {!userAddress ? (
-                            <Button onClick={handleConnectWallet} colorScheme="blue">
+                            <Button onClick={connectWallet} colorScheme="blue">
                                 Connect Wallet
                             </Button>
                         ) : (

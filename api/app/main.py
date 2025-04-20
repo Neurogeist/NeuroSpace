@@ -301,56 +301,42 @@ async def get_available_models():
         logger.error(f"Error getting available models: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/sessions/{session_id}")
+@app.get("/sessions/{session_id}", response_model=SessionResponse)
 async def get_session(session_id: str):
     try:
         messages = chat_session_service.get_session_messages(session_id)
         if not messages:
-            # Return an empty session instead of raising an error
-            return {
-                "session_id": session_id,
-                "messages": [],
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow()
-            }
+            return SessionResponse(
+                session_id=session_id,
+                messages=[],
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
 
-        messages_dict_list = [message.dict(by_alias=True, exclude_none=False) for message in messages]
-
-        return {
-            "session_id": session_id,
-            "messages": messages_dict_list,
-            "created_at": messages[0].timestamp if messages else datetime.utcnow(),
-            "updated_at": messages[-1].timestamp if messages else datetime.utcnow()
-        }
+        return SessionResponse(
+            session_id=session_id,
+            messages=[message.dict(by_alias=True, exclude_none=False) for message in messages],
+            created_at=messages[0].timestamp,
+            updated_at=messages[-1].timestamp
+        )
     except Exception as e:
         logger.error(f"Error retrieving session: {str(e)}")
-        # Return an empty session instead of raising an error
-        return {
-            "session_id": session_id,
-            "messages": [],
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
-        }
+        raise HTTPException(status_code=500, detail="Error retrieving session")
+
 
 @app.get("/sessions", response_model=List[SessionResponse])
-async def get_all_sessions():
-    """Get all chat sessions."""
+async def get_sessions(wallet_address: Optional[str] = None):
+    """Get all chat sessions. Optionally filter by wallet address."""
     try:
-        sessions = chat_session_service.get_all_sessions()
+        if not wallet_address:
+            raise HTTPException(status_code=400, detail="wallet_address query parameter is required")
+        
+        sessions = chat_session_service.get_all_sessions(wallet_address=wallet_address)
         return [SessionResponse.from_chat_session(session) for session in sessions]
     except Exception as e:
         logger.error(f"Error retrieving sessions: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/sessions/{wallet_address}")
-async def get_sessions_by_wallet(wallet_address: str):
-    """Get all sessions for a specific wallet address."""
-    try:
-        sessions = chat_session_service.get_all_sessions(wallet_address=wallet_address)
-        return [SessionResponse.from_chat_session(session) for session in sessions]
-    except Exception as e:
-        logger.error(f"Error getting sessions for wallet {wallet_address}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):

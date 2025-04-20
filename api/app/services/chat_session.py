@@ -130,23 +130,19 @@ class ChatSessionService:
         except Exception as e:
             logger.error(f"Error creating session: {str(e)}")
             self.db.rollback()
-            # Get a new session after rollback
             self._get_new_session()
             raise
 
     def get_session(self, session_id: str) -> Optional[ChatSession]:
-        """Get a chat session by ID."""
         try:
             db_session = self.db.query(ChatSessionDB).filter(ChatSessionDB.id == uuid.UUID(session_id)).first()
             if not db_session:
                 return None
 
-            # Create ChatSession object
             session = ChatSession(session_id)
             session.created_at = db_session.created_at
             session.updated_at = db_session.updated_at
 
-            # Load messages
             db_messages = self.db.query(ChatMessageDB).filter(
                 ChatMessageDB.session_id == uuid.UUID(session_id)
             ).order_by(ChatMessageDB.timestamp).all()
@@ -171,12 +167,10 @@ class ChatSessionService:
         except Exception as e:
             logger.error(f"Error getting session: {str(e)}")
             self.db.rollback()
-            # Get a new session after rollback
             self._get_new_session()
             return None
 
     def get_all_sessions(self, wallet_address: Optional[str] = None) -> List[ChatSession]:
-        """Get all chat sessions, optionally filtered by wallet address."""
         try:
             query = self.db.query(ChatSessionDB)
             if wallet_address:
@@ -194,7 +188,6 @@ class ChatSessionService:
         except Exception as e:
             logger.error(f"Error getting all sessions: {str(e)}")
             self.db.rollback()
-            # Get a new session after rollback
             self._get_new_session()
             return []
 
@@ -207,9 +200,7 @@ class ChatSessionService:
         model_id: str,
         metadata: Optional[Dict[str, Any]] = None
     ) -> None:
-        """Add a message to a chat session."""
         try:
-            # Verify session exists
             db_session = self.db.query(ChatSessionDB).filter(
                 ChatSessionDB.id == uuid.UUID(session_id)
             ).first()
@@ -241,7 +232,6 @@ class ChatSessionService:
             else:
                 timestamp = datetime.now(timezone.utc)
 
-            # Create message in database
             db_message = ChatMessageDB(
                 session_id=uuid.UUID(session_id),
                 role=role,
@@ -262,12 +252,10 @@ class ChatSessionService:
         except Exception as e:
             logger.error(f"Error adding message to session {session_id}: {str(e)}")
             self.db.rollback()
-            # Get a new session after rollback
             self._get_new_session()
             raise
 
     def get_session_messages(self, session_id: str) -> Optional[List[ChatMessage]]:
-        """Get all messages in a session, ensuring metadata is complete."""
         try:
             db_messages = self.db.query(ChatMessageDB).filter(
                 ChatMessageDB.session_id == uuid.UUID(session_id)
@@ -310,11 +298,9 @@ class ChatSessionService:
         except Exception as e:
             logger.error(f"Error getting session messages: {str(e)}")
             self.db.rollback()
-            # Get a new session after rollback
             self._get_new_session()
             return None
 
     def format_session_history(self, session_id: str) -> Optional[str]:
-        """Format the chat history of a session as a string."""
         session = self.get_session(session_id)
         return session.format_chat_history() if session else None
