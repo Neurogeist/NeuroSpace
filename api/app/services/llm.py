@@ -9,6 +9,7 @@ from ..core.config import get_settings
 from .model_registry import ModelRegistry
 from .llm_remote import RemoteLLMClient
 from .chat_session import ChatSessionService
+import tiktoken  # Add this to your imports
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -79,6 +80,11 @@ class LLMService:
     ) -> Dict[str, str]:
         """Generate a response using the specified model."""
         try:
+            # Sanitize session_id length
+            if session_id and len(session_id) > 100:
+                logger.warning(f"⚠️ Received overly long session_id: {session_id[:80]}...")
+                session_id = None  # Treat as new session
+            
             # Get model config
             model_config = self.registry.get_model_config(model_id)
             if not model_config:
@@ -133,6 +139,8 @@ class LLMService:
             # Clean the response
             cleaned_response = self._clean_response(response, formatted_prompt)
             logger.info(f"Cleaned response: {cleaned_response}")
+
+            logger.info(f"Returning session_id: {session_id}")
             
             return {
                 "response": cleaned_response
@@ -145,33 +153,68 @@ class LLMService:
     def clear_cache(self):
         """Clear the response cache."""
         self.generate_response.cache_clear()
-    
+
     def _format_prompt(self, prompt: str, session_id: Optional[str] = None) -> str:
-        """Format the prompt with system message and conversation history."""
+        """Format the prompt with system message and conversation history, truncated to fit token budget."""
         try:
-            # Start with system message from model config
-            formatted_prompt = f"{self.config.system_prompt}\n\n"
+            # Configuration for token limits
+            context_window = 8192  # You can make this dynamic based on model
+            response_tokens = 512
+            available_tokens = context_window - response_tokens
+
+            encoding = tiktoken.get_encoding("cl100k_base")
+            system_prompt = self.config.system_prompt or ""
+            formatted_prompt = f"{system_prompt}\n\n"
+
+            messages = []
             
-            # Add conversation history if session_id is provided
+            # Add session messages
             if session_id:
                 logger.info(f"Getting session history for session {session_id}")
                 session = self.chat_session_service.get_session(session_id)
                 if session:
                     logger.info(f"Found session with {len(session.messages)} messages")
-                    for message in session.messages:
-                        formatted_prompt += f"{message.role.capitalize()}: {message.content}\n"
+                    messages.extend(session.messages)
                 else:
                     logger.warning(f"No session found for ID {session_id}")
-            
-            # Add current prompt
-            formatted_prompt += f"User: {prompt}\nAssistant:"
-            
-            logger.info(f"Formatted prompt: {formatted_prompt}")
+
+            # Add current prompt as the final message
+            messages.append(type('Msg', (), {"role": "user", "content": prompt}))
+
+            # Format messages and trim to token budget
+            token_count = self._count_tokens(system_prompt)
+            selected_messages = []
+
+            for msg in reversed(messages):  # Add recent messages first
+                formatted_msg = f"{msg.role.capitalize()}: {msg.content}\n"
+                msg_tokens = self._count_tokens(formatted_msg)
+                if token_count + msg_tokens <= available_tokens:
+                    selected_messages.insert(0, formatted_msg)
+                    token_count += msg_tokens
+                else:
+                    logger.info("Truncating older message to fit token budget")
+                    break
+
+            # Combine
+            for msg_str in selected_messages:
+                formatted_prompt += msg_str
+            formatted_prompt += "Assistant:"
+
+
+            logger.info(f"🧠 Selected {len(selected_messages)} messages out of {len(messages)} total")
+
+            logger.info(f"Final prompt token count: {token_count}")
             return formatted_prompt
-            
+
         except Exception as e:
             logger.error(f"Error formatting prompt: {str(e)}")
             raise
+
+    def _count_tokens(self, text: str) -> int:
+        """Utility to count tokens using tiktoken."""
+        encoding = tiktoken.get_encoding("cl100k_base")
+        return len(encoding.encode(text))
+
     
     def _clean_response(self, response: str, formatted_prompt: str) -> str:
         """Clean the model's response to only include the assistant's reply."""

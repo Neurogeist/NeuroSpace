@@ -73,7 +73,7 @@ export const payForMessage = async (sessionId: string): Promise<void> => {
     const contract = new ethers.Contract(PAYMENT_CONTRACT_ADDRESS!, PAYMENT_CONTRACT_ABI, signer);
 
     const tx = await contract.payForMessage(sessionId, {
-        value: ethers.parseEther('0.0001')
+        value: ethers.parseEther('0.00001')
     });
 
     await tx.wait();
