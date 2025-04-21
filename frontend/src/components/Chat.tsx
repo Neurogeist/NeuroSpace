@@ -227,7 +227,9 @@ export default function Chat() {
                 transactionHash: response.metadata.transaction_hash,
             };
 
+            // Update messages and turn off loading state in a single batch
             setMessages(prev => [...prev, assistantMessage]);
+            setIsThinking(false);
             
             // Always refresh sessions after a successful response
             await refreshSessions();
@@ -247,7 +249,6 @@ export default function Chat() {
                 duration: 3000,
                 isClosable: true,
             });
-        } finally {
             setIsThinking(false);
         }
     };
