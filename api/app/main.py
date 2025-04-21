@@ -43,7 +43,7 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
         if request.method == "OPTIONS":
             response = Response()
             response.headers["Access-Control-Allow-Origin"] = "http://localhost:5173"
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
             response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-User-Address, X-Source"
             response.headers["Access-Control-Allow-Credentials"] = "false"
             response.headers["Access-Control-Max-Age"] = "3600"
@@ -52,7 +52,7 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
         # Handle actual requests
         response = await call_next(request)
         response.headers["Access-Control-Allow-Origin"] = "http://localhost:5173"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-User-Address, X-Source"
         response.headers["Access-Control-Allow-Credentials"] = "false"
         return response
@@ -337,6 +337,15 @@ async def get_sessions(wallet_address: Optional[str] = None):
         logger.error(f"Error retrieving sessions: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/sessions/{session_id}")
+async def delete_session(session_id: str):
+    """Delete a chat session and all its messages."""
+    try:
+        chat_session_service.delete_session(session_id)
+        return Response(status_code=204)
+    except Exception as e:
+        logger.error(f"Error deleting session: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):

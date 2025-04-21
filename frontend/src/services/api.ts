@@ -189,3 +189,16 @@ export const verifyMessage = async (
   verifyCache.set(cacheKey, request);
   return request;
 };
+
+export async function deleteSession(sessionId: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}`, {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to delete session');
+    }
+}

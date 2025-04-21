@@ -304,3 +304,23 @@ class ChatSessionService:
     def format_session_history(self, session_id: str) -> Optional[str]:
         session = self.get_session(session_id)
         return session.format_chat_history() if session else None
+
+    def delete_session(self, session_id: str) -> None:
+        """Delete a chat session and all its messages."""
+        try:
+            # First delete all messages in the session
+            self.db.query(ChatMessageDB).filter(
+                ChatMessageDB.session_id == uuid.UUID(session_id)
+            ).delete()
+
+            # Then delete the session itself
+            self.db.query(ChatSessionDB).filter(
+                ChatSessionDB.id == uuid.UUID(session_id)
+            ).delete()
+
+            self.db.commit()
+        except Exception as e:
+            logger.error(f"Error deleting session {session_id}: {str(e)}")
+            self.db.rollback()
+            self._get_new_session()
+            raise
