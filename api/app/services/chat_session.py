@@ -265,11 +265,15 @@ class ChatSessionService:
             for db_msg in db_messages:
                 if db_msg.message_metadata is None:
                     db_msg.message_metadata = {}
+                
+                # Update metadata with all fields
                 db_msg.message_metadata.update({
                     "model": db_msg.model_name,
                     "model_id": db_msg.model_id,
-                    "ipfsHash": db_msg.ipfs_cid,
-                    "transactionHash": db_msg.transaction_hash,
+                    "ipfs_cid": db_msg.ipfs_cid,
+                    "transaction_hash": db_msg.transaction_hash,
+                    "verification_hash": db_msg.verification_hash,
+                    "signature": db_msg.signature,
                     "temperature": db_msg.message_metadata.get("temperature", 0.7),
                     "max_tokens": db_msg.message_metadata.get("max_tokens", 512),
                     "top_p": db_msg.message_metadata.get("top_p", 0.9),
@@ -283,12 +287,8 @@ class ChatSessionService:
                     role=db_msg.role,
                     content=db_msg.content,
                     timestamp=db_msg.timestamp,
-                    model_name=db_msg.model_name,
-                    model_id=db_msg.model_id,
-                    ipfs_cid=db_msg.ipfs_cid,
-                    transaction_hash=db_msg.transaction_hash,
-                    verification_hash=db_msg.verification_hash,
-                    signature=db_msg.signature,
+                    model_name=db_msg.model_name or "unknown",
+                    model_id=db_msg.model_id or "unknown",
                     metadata=db_msg.message_metadata
                 )
                 messages.append(message)

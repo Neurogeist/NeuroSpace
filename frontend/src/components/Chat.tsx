@@ -119,17 +119,7 @@ export default function Chat() {
 
             try {
                 const session = await getSession(activeSessionId);
-                const messages = session.messages.map(msg => ({
-                    ...msg,
-                    metadata: {
-                        ...msg.metadata,
-                        verification_hash: msg.metadata?.verification_hash || msg.verification_hash,
-                        signature: msg.metadata?.signature || msg.signature,
-                        ipfs_cid: msg.metadata?.ipfs_cid || msg.ipfsHash,
-                        transaction_hash: msg.metadata?.transaction_hash || msg.transactionHash
-                    }
-                }));
-                setMessages(messages);
+                setMessages(session.messages);
             } catch (error) {
                 console.error('Error loading session:', error);
                 toast({
