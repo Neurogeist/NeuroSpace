@@ -23,6 +23,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [isLoadingModels, setIsLoadingModels] = useState(true);
   const [isLoadingSessions, setIsLoadingSessions] = useState(false); // Initially false, load sessions only when address is known
   const [error, setError] = useState<string | null>(null);
+  
+  useEffect(() => {
+    const tryAutoConnect = async () => {
+      if (!userAddress) {
+        try {
+          const address = await connectWalletService(); // Or use injected `window.ethereum` manually
+          setUserAddress(address);
+          console.log("🔁 Auto-connected wallet:", address);
+        } catch (err) {
+          console.warn("⚠️ Auto-connect failed or wallet not available");
+        }
+      }
+    };
+  
+    tryAutoConnect();
+  }, []);
+  
 
   // --- Wallet Connection ---
   const connectWallet = async (): Promise<string | null> => {
