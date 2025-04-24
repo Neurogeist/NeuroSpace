@@ -58,17 +58,6 @@ class ModelRegistry:
                 do_sample=True,
                 num_beams=1,
                 early_stopping=False
-            ),
-            "tinyllama-local": ModelConfig(
-                model_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-                provider="local",
-                system_prompt="You are a helpful AI assistant. Format your responses using markdown for better readability. Use code blocks for code examples, bold for emphasis, and lists for structured information. Answer questions accurately and concisely.",
-                max_new_tokens=512,
-                temperature=0.7,
-                top_p=0.9,
-                do_sample=True,
-                num_beams=1,
-                early_stopping=False
             )
         }
         

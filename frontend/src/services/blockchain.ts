@@ -7,6 +7,25 @@ declare global {
 }
 
 const PAYMENT_CONTRACT_ADDRESS = import.meta.env.VITE_PAYMENT_CONTRACT_ADDRESS;
+const ENVIRONMENT = import.meta.env.VITE_ENVIRONMENT || 'development';
+
+const NETWORK_CONFIG = {
+    development: {
+        chainId: '0x14a34', // Base Sepolia
+        chainName: 'Base Sepolia',
+        rpcUrl: 'https://sepolia.base.org',
+        blockExplorerUrl: 'https://sepolia.basescan.org'
+    },
+    production: {
+        chainId: '0x2105', // Base Mainnet
+        chainName: 'Base',
+        rpcUrl: 'https://mainnet.base.org',
+        blockExplorerUrl: 'https://basescan.org'
+    }
+};
+
+const currentNetwork = NETWORK_CONFIG[ENVIRONMENT as keyof typeof NETWORK_CONFIG];
+
 const PAYMENT_CONTRACT_ABI = [
     {
         "inputs": [
@@ -31,13 +50,13 @@ export const connectWallet = async (): Promise<string> => {
     // Request account access
     const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
     
-    // Check if we're on the correct network (Base Sepolia)
+    // Check if we're on the correct network
     const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-    if (chainId !== '0x14a34') { // Base Sepolia chain ID
+    if (chainId !== currentNetwork.chainId) {
         try {
             await window.ethereum.request({
                 method: 'wallet_switchEthereumChain',
-                params: [{ chainId: '0x14a34' }],
+                params: [{ chainId: currentNetwork.chainId }],
             });
         } catch (error: any) {
             if (error.code === 4902) {
@@ -45,15 +64,15 @@ export const connectWallet = async (): Promise<string> => {
                 await window.ethereum.request({
                     method: 'wallet_addEthereumChain',
                     params: [{
-                        chainId: '0x14a34',
-                        chainName: 'Base Sepolia',
+                        chainId: currentNetwork.chainId,
+                        chainName: currentNetwork.chainName,
                         nativeCurrency: {
                             name: 'ETH',
                             symbol: 'ETH',
                             decimals: 18
                         },
-                        rpcUrls: ['https://sepolia.base.org'],
-                        blockExplorerUrls: ['https://sepolia.basescan.org']
+                        rpcUrls: [currentNetwork.rpcUrl],
+                        blockExplorerUrls: [currentNetwork.blockExplorerUrl]
                     }],
                 });
             }
@@ -61,6 +80,20 @@ export const connectWallet = async (): Promise<string> => {
     }
 
     return accounts[0];
+};
+
+export const getNetworkInfo = () => {
+    return {
+        name: currentNetwork.chainName,
+        explorerUrl: currentNetwork.blockExplorerUrl,
+        isProduction: ENVIRONMENT === 'production'
+    };
+};
+
+export const getPaymentContract = async () => {
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    return new ethers.Contract(PAYMENT_CONTRACT_ADDRESS, PAYMENT_CONTRACT_ABI, signer);
 };
 
 export const payForMessage = async (sessionId: string): Promise<void> => {

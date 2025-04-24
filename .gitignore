@@ -36,6 +36,8 @@ db.sqlite3-journal
 instance/
 .webassets-cache
 .env
+.env.development
+.env.production
 .venv
 env/
 venv/

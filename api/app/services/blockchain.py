@@ -11,16 +11,15 @@ from eth_account.messages import encode_defunct
 
 logger = logging.getLogger(__name__)
 
-settings = get_settings()
-
 class BlockchainService:
     def __init__(self):
-        self.w3 = Web3(Web3.HTTPProvider(os.getenv('BASE_RPC_URL')))
-        self.private_key = os.getenv('PRIVATE_KEY')
+        self.settings = get_settings()
+        self.w3 = Web3(Web3.HTTPProvider(self.settings.BASE_RPC_URL))
+        self.private_key = self.settings.PRIVATE_KEY
         if not self.private_key:
             raise ValueError("PRIVATE_KEY environment variable is not set")
         self.account = Account.from_key(self.private_key)
-        self.contract_address = os.getenv('CONTRACT_ADDRESS')
+        self.contract_address = self.settings.CONTRACT_ADDRESS
         self.contract_abi = [
             {
                 "inputs": [
@@ -104,31 +103,21 @@ class BlockchainService:
                 "type": "event"
             }
         ]
+        
+        if not self.w3.is_connected():
+            raise Exception(f"Failed to connect to {self.settings.BLOCKCHAIN_NETWORK} RPC node")
+            
+        if not self.contract_address:
+            raise Exception("CONTRACT_ADDRESS not set in environment variables")
+            
         self.contract = self.w3.eth.contract(
             address=self.contract_address,
             abi=self.contract_abi
         )
         
-        # Debug logging
-        print(f"Private key length: {len(settings.PRIVATE_KEY)}")
-        print(f"Private key starts with 0x: {settings.PRIVATE_KEY.startswith('0x')}")
-        
-        # Handle private key format
-        private_key = settings.PRIVATE_KEY
-        if private_key.startswith('0x'):
-            private_key = private_key[2:]  # Remove '0x' prefix if present
-            print(f"Removed 0x prefix, new length: {len(private_key)}")
-            
-        # Validate private key length (should be 64 characters for 32 bytes)
-        if len(private_key) != 64:
-            raise ValueError(f"Invalid private key length. Expected 64 characters (32 bytes), got {len(private_key)}")
-            
-        try:
-            self.account = Account.from_key(private_key)
-            print(f"Successfully loaded account: {self.account.address}")
-        except Exception as e:
-            print(f"Error loading account: {str(e)}")
-            raise ValueError(f"Failed to load account from private key: {str(e)}")
+        logger.info(f"Connected to {self.settings.BLOCKCHAIN_NETWORK} network")
+        logger.info(f"Using contract address: {self.contract_address}")
+        logger.info(f"Account address: {self.account.address}")
         
     def hash_prompt(self, prompt: str, response: str, timestamp: str, user_address: Optional[str] = None) -> str:
         """Create a SHA-256 hash of the prompt and response data."""
@@ -136,11 +125,11 @@ class BlockchainService:
         return hashlib.sha256(data.encode()).hexdigest()
     
     async def submit_to_blockchain(self, prompt_hash: str) -> Dict[str, str]:
-        """Submit the hash to the Base chain."""
+        """Submit the hash to the blockchain."""
         try:
             # Get the current gas price
             gas_price = self.w3.eth.gas_price
-            print(f"Current gas price: {self.w3.from_wei(gas_price, 'gwei')} gwei")
+            logger.info(f"Current gas price: {self.w3.from_wei(gas_price, 'gwei')} gwei")
             
             # Convert hash to bytes32
             hash_bytes = Web3.to_bytes(hexstr=prompt_hash)
@@ -154,33 +143,33 @@ class BlockchainService:
                 'gas': 100000,  # Increased gas limit
                 'maxFeePerGas': gas_price * 2,  # Maximum fee per gas
                 'maxPriorityFeePerGas': gas_price,  # Priority fee per gas
-                'chainId': 84532,  # Base Sepolia chain ID
+                'chainId': self.settings.chain_id,
                 'data': self.contract.encodeABI(fn_name='storeHash', args=[hash_bytes])
             }
             
-            print(f"Sending transaction from {transaction['from']}")
-            print(f"Transaction data: {transaction['data']}")
+            logger.info(f"Sending transaction from {transaction['from']}")
+            logger.info(f"Transaction data: {transaction['data']}")
             
             # Sign and send the transaction
             signed_txn = self.w3.eth.account.sign_transaction(transaction, self.private_key)
             tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
-            print(f"Transaction sent with hash: {tx_hash.hex()}")
+            logger.info(f"Transaction sent with hash: {tx_hash.hex()}")
             
             # Wait for transaction receipt
             receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
-            print(f"Transaction receipt status: {receipt['status']}")
-            print(f"Transaction block number: {receipt['blockNumber']}")
-            print(f"View on Base Sepolia: https://sepolia.basescan.org/tx/{receipt['transactionHash'].hex()}")
+            logger.info(f"Transaction receipt status: {receipt['status']}")
+            logger.info(f"Transaction block number: {receipt['blockNumber']}")
+            logger.info(f"View on {self.settings.BLOCKCHAIN_NETWORK}: {self.settings.block_explorer_url}/tx/{receipt['transactionHash'].hex()}")
             
             # Get the event logs
-            logs = self.contract.events.HashStored().process_receipt(receipt)
-            if logs:
-                print(f"Hash stored event: {logs[0]['args']}")
-            
+            #logs = self.contract.events.HashStored().process_receipt(receipt)
+            #if not logs:
+            #    raise Exception("No HashStored event found in transaction receipt")
+                
             return {
                 'transaction_hash': receipt['transactionHash'].hex(),
-                'block_number': receipt['blockNumber'],
-                'status': receipt['status']
+                'block_number': str(receipt['blockNumber']),
+                'status': 'success' if receipt['status'] == 1 else 'failed'
             }
             
         except Exception as e:

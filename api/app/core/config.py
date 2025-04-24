@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "NeuroChain"
     
+    # Environment settings
+    ENVIRONMENT: str = Field(default="development", env="ENVIRONMENT")
+    
     # Model settings
     MODEL_REGISTRY_DEVICE: str = "auto"  # "auto", "cpu", "cuda", or "mps"
     MODEL_REGISTRY_MAX_MEMORY_CPU: str = "8GB"
@@ -25,15 +28,20 @@ class Settings(BaseSettings):
     REPLICATE_API_TOKEN: Optional[str] = None
     
     # Blockchain settings
-    BLOCKCHAIN_NETWORK: str = "base"
-    BLOCKCHAIN_RPC_URL: str = "https://mainnet.base.org"
+    BLOCKCHAIN_NETWORK: str = Field(default="base", env="BLOCKCHAIN_NETWORK")
+    BLOCKCHAIN_RPC_URL: str = Field(default="https://mainnet.base.org", env="BLOCKCHAIN_RPC_URL")
     BLOCKCHAIN_PRIVATE_KEY: Optional[str] = None
     
     # IPFS settings
-    IPFS_GATEWAY_URL: str = "https://ipfs.io"
-    IPFS_API_URL: str = "https://ipfs.infura.io:5001"
-    IPFS_PROJECT_ID: Optional[str] = None
-    IPFS_PROJECT_SECRET: Optional[str] = None
+    IPFS_PROVIDER: str = Field(default="local", env="IPFS_PROVIDER")  # "local" or "pinata"
+    IPFS_GATEWAY_URL: str = Field(default="https://ipfs.io", env="IPFS_GATEWAY_URL")
+    IPFS_API_URL: str = Field(default="http://localhost:5001/api/v0", env="IPFS_API_URL")
+    
+    # Pinata specific settings
+    PINATA_API_KEY: Optional[str] = Field(None, env="PINATA_API_KEY")
+    PINATA_API_SECRET: Optional[str] = Field(None, env="PINATA_API_SECRET")
+    PINATA_GATEWAY_URL: str = Field(default="https://gateway.pinata.cloud", env="PINATA_GATEWAY_URL")
+    PINATA_API_URL: str = Field(default="https://api.pinata.cloud", env="PINATA_API_URL")
     
     # Base Chain Configuration
     BASE_RPC_URL: str = Field(..., env="BASE_RPC_URL")
@@ -66,6 +74,36 @@ class Settings(BaseSettings):
     
     # Database Configuration (optional for in-memory storage)
     DATABASE_URL: Optional[str] = None
+    
+    @property
+    def is_production(self) -> bool:
+        """Check if the environment is production."""
+        return self.ENVIRONMENT.lower() == "production"
+    
+    @property
+    def is_development(self) -> bool:
+        """Check if the environment is development."""
+        return self.ENVIRONMENT.lower() == "development"
+    
+    @property
+    def chain_id(self) -> int:
+        """Get the chain ID based on the environment."""
+        return 8453 if self.is_production else 84532
+    
+    @property
+    def block_explorer_url(self) -> str:
+        """Get the block explorer URL based on the environment."""
+        return "https://basescan.org" if self.is_production else "https://sepolia.basescan.org"
+    
+    @property
+    def ipfs_gateway_url(self) -> str:
+        """Get the IPFS gateway URL based on the provider."""
+        return self.PINATA_GATEWAY_URL if self.IPFS_PROVIDER == "pinata" else self.IPFS_GATEWAY_URL
+    
+    @property
+    def ipfs_api_url(self) -> str:
+        """Get the IPFS API URL based on the provider."""
+        return self.PINATA_API_URL if self.IPFS_PROVIDER == "pinata" else self.IPFS_API_URL
     
     model_config = ConfigDict(
         env_file=".env",

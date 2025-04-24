@@ -141,7 +141,7 @@ class ChatSessionService:
 
             session = ChatSession(session_id)
             session.created_at = db_session.created_at
-            session.updated_at = db_session.updated_at
+            session.updated_at = db_session.updated_at or db_session.created_at
 
             db_messages = self.db.query(ChatMessageDB).filter(
                 ChatMessageDB.session_id == uuid.UUID(session_id)
@@ -206,6 +206,13 @@ class ChatSessionService:
             ).first()
             if not db_session:
                 raise ValueError(f"Session {session_id} not found")
+
+            # Update session title if it's the first message
+            if not db_session.title and role == "user":
+                # Use first 50 characters of the message as title
+                db_session.title = content[:50] + "..." if len(content) > 50 else content
+                db_session.updated_at = datetime.now(timezone.utc)
+                self.db.add(db_session)
 
             message_metadata = metadata or {}
 
