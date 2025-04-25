@@ -32,7 +32,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="NeuroChain API",
+    title="NeuroSpace API",
     description="API for decentralized prompt submission and AI-generated responses",
     version="1.0.0"
 )

@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     """Application settings."""
     # API settings
     API_V1_STR: str = "/api/v1"
-    PROJECT_NAME: str = "NeuroChain"
+    PROJECT_NAME: str = "NeuroSpace"
     
     # Environment settings
     ENVIRONMENT: str = Field(default="development", env="ENVIRONMENT")

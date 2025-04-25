@@ -345,7 +345,7 @@ export default function Chat() {
                     <Container maxW={maxMessageWidth}>
                         <HStack justify="space-between" align="center">
                             <Text fontSize="2xl" fontWeight="bold" color={textColor}>
-                                NeuroChain Chat
+                                NeuroSpace Chat
                             </Text>
                             <FormControl width="auto">
                                 <Select

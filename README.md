@@ -1,4 +1,4 @@
-# NeuroChain
+# NeuroSpace
 
 A decentralized system for submitting prompts and generating responses using local LLMs, with on-chain storage and IPFS integration.
 
@@ -37,8 +37,8 @@ A decentralized system for submitting prompts and generating responses using loc
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/NeuroChain.git
-cd NeuroChain
+git clone https://github.com/Neurogeist/NeuroSpace.git
+cd NeuroSpace
 ```
 
 2. Create and activate a virtual environment:
@@ -175,7 +175,7 @@ The frontend will be available at `http://localhost:5173`
    - Visit https://sepoliafaucet.com/
    - Enter your wallet address
    - Request test ETH
-4. Connect your wallet in the NeuroChain interface
+4. Connect your wallet in the NeuroSpace interface
 
 ## Running the Application
 
@@ -186,7 +186,7 @@ ipfs daemon
 
 2. Start the backend server:
 ```bash
-cd NeuroChain
+cd NeuroSpace
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 uvicorn api.app.main:app --reload
 ```
