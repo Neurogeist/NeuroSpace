@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["python310", "gcc", "postgresql_16.dev"]
+nixPkgs = ["python310Full", "gcc", "postgresql_16.dev"]
 
 [phases.build]
 cmds = ["pip install --no-cache-dir -r requirements.txt"]
