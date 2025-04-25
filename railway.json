@@ -1,8 +1,20 @@
 {
     "build": {
-      "builder": "NIXPACKS"
-    },
-    "deploy": {
-      "startCommand": "uvicorn api.app.main:app --host 0.0.0.0 --port $PORT"
+      "builder": "NIXPACKS",
+      "nixpacksPlan": {
+        "providers": ["python"],
+        "phases": {
+          "install": {
+            "cmds": [
+              "pip install --no-cache-dir -r requirements.txt"
+            ]
+          },
+          "start": {
+            "cmds": [
+              "uvicorn api.app.main:app --host 0.0.0.0 --port 8000"
+            ]
+          }
+        }
+      }
     }
   }
