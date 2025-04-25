@@ -3,8 +3,8 @@ nixPkgs = ["python310", "gcc", "postgresql_16.dev"]
 
 [phases.build]
 cmds = [
-  "pip install --no-cache-dir -r requirements.txt"
+  ". /opt/venv/bin/activate && pip install --no-cache-dir -r requirements.txt"
 ]
 
 [phases.start]
-cmd = "uvicorn api.app.main:app --host 0.0.0.0 --port 8000"
+cmd = ". /opt/venv/bin/activate && uvicorn api.app.main:app --host 0.0.0.0 --port 8000"
