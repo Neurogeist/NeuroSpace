@@ -5,13 +5,116 @@ from typing import Dict, Any, Optional
 from api.app.core.config import settings
 import logging
 import aiohttp
+from ..core.config import get_settings
+import os
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 class IPFSService:
+    """Service for interacting with IPFS."""
+    
     def __init__(self):
-        self.api_url = settings.IPFS_API_URL
-        logger.info(f"IPFS service initialized with API URL: {self.api_url}")
+        self.settings = get_settings()
+        self.provider = self.settings.IPFS_PROVIDER
+        self.api_url = self.settings.ipfs_api_url
+        self.gateway_url = self.settings.ipfs_gateway_url
+        
+        if self.provider == "pinata":
+            if not self.settings.PINATA_API_KEY or not self.settings.PINATA_API_SECRET:
+                raise ValueError("Pinata API key and secret are required when using Pinata provider")
+            self.headers = {
+                "pinata_api_key": self.settings.PINATA_API_KEY,
+                "pinata_secret_api_key": self.settings.PINATA_API_SECRET
+            }
+    
+    async def add_content(self, content: str) -> str:
+        """Add content to IPFS and return the CID."""
+        try:
+            if self.provider == "pinata":
+                return await self._add_to_pinata(content)
+            else:
+                return await self._add_to_local(content)
+        except Exception as e:
+            logger.error(f"Error adding content to IPFS: {str(e)}")
+            raise
+    
+    async def _add_to_pinata(self, content: str) -> str:
+        """Add content to Pinata."""
+        try:
+            # Create a temporary file
+            temp_file = Path("temp_content.txt")
+            temp_file.write_text(content)
+            
+            # Prepare the request
+            files = {
+                'file': ('content.txt', open(temp_file, 'rb'))
+            }
+            
+            # Make the request
+            response = requests.post(
+                f"{self.api_url}/pinning/pinFileToIPFS",
+                headers=self.headers,
+                files=files
+            )
+            
+            # Clean up the temporary file
+            temp_file.unlink()
+            
+            if response.status_code != 200:
+                raise Exception(f"Failed to pin file to IPFS: {response.text}")
+            
+            return response.json()["IpfsHash"]
+            
+        except Exception as e:
+            logger.error(f"Error adding content to Pinata: {str(e)}")
+            raise
+    
+    async def _add_to_local(self, content: str) -> str:
+        """Add content to local IPFS node."""
+        try:
+            # Create a temporary file
+            temp_file = Path("temp_content.txt")
+            temp_file.write_text(content)
+            
+            # Prepare the request
+            files = {
+                'file': ('content.txt', open(temp_file, 'rb'))
+            }
+            
+            # Make the request
+            response = requests.post(
+                f"{self.api_url}/add",
+                files=files
+            )
+            
+            # Clean up the temporary file
+            temp_file.unlink()
+            
+            if response.status_code != 200:
+                raise Exception(f"Failed to add file to IPFS: {response.text}")
+            
+            return response.json()["Hash"]
+            
+        except Exception as e:
+            logger.error(f"Error adding content to local IPFS: {str(e)}")
+            raise
+    
+    async def get_content(self, cid: str) -> str:
+        """Get content from IPFS by CID."""
+        try:
+            response = requests.get(f"{self.gateway_url}/ipfs/{cid}")
+            if response.status_code != 200:
+                raise Exception(f"Failed to get content from IPFS: {response.text}")
+            return response.text
+        except Exception as e:
+            logger.error(f"Error getting content from IPFS: {str(e)}")
+            raise
+    
+    def get_gateway_url(self, cid: str) -> str:
+        """Get the gateway URL for a CID."""
+        return f"{self.gateway_url}/ipfs/{cid}"
 
     async def upload_to_ipfs(self, prompt: str, response: str, metadata: Dict[str, Any]) -> str:
         """
@@ -77,20 +180,29 @@ class IPFSService:
             raise Exception(f"IPFS retrieval failed: {str(e)}")
 
     async def upload_json(self, data: Dict[str, Any]) -> str:
-        """Upload JSON data to IPFS."""
         try:
-            # Convert data to JSON string
             json_data = json.dumps(data)
-            
-            # Upload to IPFS
-            response = await self._make_request(
-                "add",
-                files={"file": ("data.json", json_data, "application/json")}
-            )
-            
-            # Return the hash
-            return response["Hash"]
-            
+
+            if self.provider == "pinata":
+                url = f"{self.api_url}/pinning/pinFileToIPFS"
+                form = aiohttp.FormData()
+                form.add_field("file", json_data, filename="data.json", content_type="application/json")
+
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(url, data=form, headers=self.headers) as resp:
+                        if resp.status != 200:
+                            raise Exception(f"Pinata upload failed: {await resp.text()}")
+                        response_data = await resp.json()
+                        logger.info(f"✅ Uploaded to Pinata: {response_data['IpfsHash']}")
+                        return response_data["IpfsHash"]
+
+            else:
+                # Fallback to local IPFS node
+                return await self._make_request(
+                    "add",
+                    files={"file": ("data.json", json_data, "application/json")}
+                )["Hash"]
+
         except Exception as e:
             logger.error(f"Error uploading JSON to IPFS: {str(e)}")
             raise Exception(f"Failed to upload JSON to IPFS: {str(e)}")

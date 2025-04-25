@@ -43,7 +43,7 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
         if request.method == "OPTIONS":
             response = Response()
             response.headers["Access-Control-Allow-Origin"] = "http://localhost:5173"
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
             response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-User-Address, X-Source"
             response.headers["Access-Control-Allow-Credentials"] = "false"
             response.headers["Access-Control-Max-Age"] = "3600"
@@ -52,7 +52,7 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
         # Handle actual requests
         response = await call_next(request)
         response.headers["Access-Control-Allow-Origin"] = "http://localhost:5173"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-User-Address, X-Source"
         response.headers["Access-Control-Allow-Credentials"] = "false"
         return response
@@ -187,7 +187,7 @@ async def submit_prompt(request: PromptRequest):
         # Get the active session or create a new one
         session_id = request.session_id or str(uuid.uuid4())
         if not chat_session_service.get_session(session_id):
-            chat_session_service.create_session(session_id)
+            chat_session_service.create_session(session_id, wallet_address=request.user_address)
         
         # Get model details from registry
         model_config = model_registry.get_model_config(request.model)
@@ -301,45 +301,50 @@ async def get_available_models():
         logger.error(f"Error getting available models: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/sessions/{session_id}")
+@app.get("/sessions/{session_id}", response_model=SessionResponse)
 async def get_session(session_id: str):
     try:
         messages = chat_session_service.get_session_messages(session_id)
         if not messages:
-            # Return an empty session instead of raising an error
-            return {
-                "session_id": session_id,
-                "messages": [],
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow()
-            }
+            return SessionResponse(
+                session_id=session_id,
+                messages=[],
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
 
-        messages_dict_list = [message.dict(by_alias=True, exclude_none=False) for message in messages]
-
-        return {
-            "session_id": session_id,
-            "messages": messages_dict_list,
-            "created_at": messages[0].timestamp if messages else datetime.utcnow(),
-            "updated_at": messages[-1].timestamp if messages else datetime.utcnow()
-        }
+        return SessionResponse(
+            session_id=session_id,
+            messages=[message.dict(by_alias=True, exclude_none=False) for message in messages],
+            created_at=messages[0].timestamp,
+            updated_at=messages[-1].timestamp
+        )
     except Exception as e:
         logger.error(f"Error retrieving session: {str(e)}")
-        # Return an empty session instead of raising an error
-        return {
-            "session_id": session_id,
-            "messages": [],
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
-        }
+        raise HTTPException(status_code=500, detail="Error retrieving session")
+
 
 @app.get("/sessions", response_model=List[SessionResponse])
-async def get_all_sessions():
-    """Get all chat sessions."""
+async def get_sessions(wallet_address: Optional[str] = None):
+    """Get all chat sessions. Optionally filter by wallet address."""
     try:
-        sessions = chat_session_service.get_all_sessions()
+        if not wallet_address:
+            raise HTTPException(status_code=400, detail="wallet_address query parameter is required")
+        
+        sessions = chat_session_service.get_all_sessions(wallet_address=wallet_address)
         return [SessionResponse.from_chat_session(session) for session in sessions]
     except Exception as e:
         logger.error(f"Error retrieving sessions: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/sessions/{session_id}")
+async def delete_session(session_id: str):
+    """Delete a chat session and all its messages."""
+    try:
+        chat_session_service.delete_session(session_id)
+        return Response(status_code=204)
+    except Exception as e:
+        logger.error(f"Error deleting session: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.exception_handler(HTTPException)

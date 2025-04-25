@@ -3,6 +3,9 @@ import uuid
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 import logging
+from sqlalchemy.orm import Session
+from ..models.chat import ChatSessionDB, ChatMessageDB
+from ..models.database import SessionLocal
 
 logger = logging.getLogger(__name__)
 
@@ -100,23 +103,93 @@ class ChatSession:
 class ChatSessionService:
     """Service for managing chat sessions."""
     def __init__(self):
-        self.sessions: Dict[str, ChatSession] = {}
+        self.db = SessionLocal()
 
-    def create_session(self, session_id: Optional[str] = None) -> str:
+    def _get_new_session(self):
+        """Get a new database session."""
+        self.db.close()
+        self.db = SessionLocal()
+        return self.db
+
+    def create_session(self, session_id: Optional[str] = None, wallet_address: Optional[str] = None) -> str:
         """Create a new chat session."""
-        if session_id is None:
-            session_id = str(uuid.uuid4())
-        if session_id not in self.sessions:
-            self.sessions[session_id] = ChatSession(session_id)
-        return session_id
+        try:
+            if session_id is None:
+                session_id = str(uuid.uuid4())
+            
+            # Create new session in database
+            db_session = ChatSessionDB(
+                id=uuid.UUID(session_id),
+                wallet_address=wallet_address or "unknown"
+            )
+            self.db.add(db_session)
+            self.db.commit()
+            
+            return session_id
+            
+        except Exception as e:
+            logger.error(f"Error creating session: {str(e)}")
+            self.db.rollback()
+            self._get_new_session()
+            raise
 
     def get_session(self, session_id: str) -> Optional[ChatSession]:
-        """Get a chat session by ID."""
-        return self.sessions.get(session_id)
+        try:
+            db_session = self.db.query(ChatSessionDB).filter(ChatSessionDB.id == uuid.UUID(session_id)).first()
+            if not db_session:
+                return None
 
-    def get_all_sessions(self) -> List[ChatSession]:
-        """Get all chat sessions."""
-        return list(self.sessions.values())
+            session = ChatSession(session_id)
+            session.created_at = db_session.created_at
+            session.updated_at = db_session.updated_at or db_session.created_at
+
+            db_messages = self.db.query(ChatMessageDB).filter(
+                ChatMessageDB.session_id == uuid.UUID(session_id)
+            ).order_by(ChatMessageDB.timestamp).all()
+
+            for db_msg in db_messages:
+                message = ChatMessage(
+                    role=db_msg.role,
+                    content=db_msg.content,
+                    timestamp=db_msg.timestamp,
+                    model_name=db_msg.model_name,
+                    model_id=db_msg.model_id,
+                    ipfs_cid=db_msg.ipfs_cid,
+                    transaction_hash=db_msg.transaction_hash,
+                    verification_hash=db_msg.verification_hash,
+                    signature=db_msg.signature,
+                    metadata=db_msg.message_metadata or {}
+                )
+                session.add_message(message)
+
+            return session
+
+        except Exception as e:
+            logger.error(f"Error getting session: {str(e)}")
+            self.db.rollback()
+            self._get_new_session()
+            return None
+
+    def get_all_sessions(self, wallet_address: Optional[str] = None) -> List[ChatSession]:
+        try:
+            query = self.db.query(ChatSessionDB)
+            if wallet_address:
+                query = query.filter(ChatSessionDB.wallet_address == wallet_address)
+            db_sessions = query.all()
+            sessions = []
+
+            for db_session in db_sessions:
+                session = self.get_session(str(db_session.id))
+                if session:
+                    sessions.append(session)
+
+            return sessions
+
+        except Exception as e:
+            logger.error(f"Error getting all sessions: {str(e)}")
+            self.db.rollback()
+            self._get_new_session()
+            return []
 
     async def add_message(
         self,
@@ -127,11 +200,19 @@ class ChatSessionService:
         model_id: str,
         metadata: Optional[Dict[str, Any]] = None
     ) -> None:
-        """Add a message to a chat session."""
         try:
-            session = self.get_session(session_id)
-            if not session:
+            db_session = self.db.query(ChatSessionDB).filter(
+                ChatSessionDB.id == uuid.UUID(session_id)
+            ).first()
+            if not db_session:
                 raise ValueError(f"Session {session_id} not found")
+
+            # Update session title if it's the first message
+            if not db_session.title and role == "user":
+                # Use first 50 characters of the message as title
+                db_session.title = content[:50] + "..." if len(content) > 50 else content
+                db_session.updated_at = datetime.now(timezone.utc)
+                self.db.add(db_session)
 
             message_metadata = metadata or {}
 
@@ -158,53 +239,95 @@ class ChatSessionService:
             else:
                 timestamp = datetime.now(timezone.utc)
 
-            message = ChatMessage(
+            db_message = ChatMessageDB(
+                session_id=uuid.UUID(session_id),
                 role=role,
                 content=content,
                 timestamp=timestamp,
                 model_name=model_name,
                 model_id=model_id,
-                verification_hash=message_metadata.get("verification_hash"),
-                signature=message_metadata.get("signature"),
                 ipfs_cid=message_metadata.get("ipfs_cid"),
                 transaction_hash=message_metadata.get("transaction_hash"),
-                metadata=message_metadata
+                verification_hash=message_metadata.get("verification_hash"),
+                signature=message_metadata.get("signature"),
+                message_metadata=message_metadata
             )
 
-            session.messages.append(message)
-            session.updated_at = datetime.utcnow()
-            self.sessions[session_id] = session
+            self.db.add(db_message)
+            self.db.commit()
 
         except Exception as e:
             logger.error(f"Error adding message to session {session_id}: {str(e)}")
+            self.db.rollback()
+            self._get_new_session()
             raise
 
     def get_session_messages(self, session_id: str) -> Optional[List[ChatMessage]]:
-        """Get all messages in a session, ensuring metadata is complete."""
-        session = self.get_session(session_id)
-        if session:
-            logged_messages = []
-            for message in session.messages:
-                if message.metadata is None:
-                    message.metadata = {}
-                message.metadata.update({
-                    "model": message.model_name,
-                    "model_id": message.model_id,
-                    "ipfsHash": message.ipfs_cid,
-                    "transactionHash": message.transaction_hash,
-                    "temperature": message.metadata.get("temperature", 0.7),
-                    "max_tokens": message.metadata.get("max_tokens", 512),
-                    "top_p": message.metadata.get("top_p", 0.9),
-                    "do_sample": message.metadata.get("do_sample", True),
-                    "num_beams": message.metadata.get("num_beams", 1),
-                    "early_stopping": message.metadata.get("early_stopping", False),
-                    "timestamp": message.timestamp.isoformat().replace("+00:00", "Z")
+        try:
+            db_messages = self.db.query(ChatMessageDB).filter(
+                ChatMessageDB.session_id == uuid.UUID(session_id)
+            ).order_by(ChatMessageDB.timestamp).all()
+
+            messages = []
+            for db_msg in db_messages:
+                if db_msg.message_metadata is None:
+                    db_msg.message_metadata = {}
+                
+                # Update metadata with all fields
+                db_msg.message_metadata.update({
+                    "model": db_msg.model_name,
+                    "model_id": db_msg.model_id,
+                    "ipfs_cid": db_msg.ipfs_cid,
+                    "transaction_hash": db_msg.transaction_hash,
+                    "verification_hash": db_msg.verification_hash,
+                    "signature": db_msg.signature,
+                    "temperature": db_msg.message_metadata.get("temperature", 0.7),
+                    "max_tokens": db_msg.message_metadata.get("max_tokens", 512),
+                    "top_p": db_msg.message_metadata.get("top_p", 0.9),
+                    "do_sample": db_msg.message_metadata.get("do_sample", True),
+                    "num_beams": db_msg.message_metadata.get("num_beams", 1),
+                    "early_stopping": db_msg.message_metadata.get("early_stopping", False),
+                    "timestamp": db_msg.timestamp.isoformat().replace("+00:00", "Z")
                 })
-                logged_messages.append(message)
-            return logged_messages
-        return None
+
+                message = ChatMessage(
+                    role=db_msg.role,
+                    content=db_msg.content,
+                    timestamp=db_msg.timestamp,
+                    model_name=db_msg.model_name or "unknown",
+                    model_id=db_msg.model_id or "unknown",
+                    metadata=db_msg.message_metadata
+                )
+                messages.append(message)
+
+            return messages
+
+        except Exception as e:
+            logger.error(f"Error getting session messages: {str(e)}")
+            self.db.rollback()
+            self._get_new_session()
+            return None
 
     def format_session_history(self, session_id: str) -> Optional[str]:
-        """Format the chat history of a session as a string."""
         session = self.get_session(session_id)
         return session.format_chat_history() if session else None
+
+    def delete_session(self, session_id: str) -> None:
+        """Delete a chat session and all its messages."""
+        try:
+            # First delete all messages in the session
+            self.db.query(ChatMessageDB).filter(
+                ChatMessageDB.session_id == uuid.UUID(session_id)
+            ).delete()
+
+            # Then delete the session itself
+            self.db.query(ChatSessionDB).filter(
+                ChatSessionDB.id == uuid.UUID(session_id)
+            ).delete()
+
+            self.db.commit()
+        except Exception as e:
+            logger.error(f"Error deleting session {session_id}: {str(e)}")
+            self.db.rollback()
+            self._get_new_session()
+            raise

@@ -70,15 +70,14 @@ class ChatMessage(BaseModel):
     role: str = Field(..., description="The role of the message sender (user or assistant)")
     content: str = Field(..., description="The content of the message")
     timestamp: datetime = Field(..., description="When the message was sent")
-    model_name: Optional[str] = Field(None, description="The model used for generation")
-    model_id: Optional[str] = Field(None, alias="modelId", description="The full model ID from Hugging Face")
-    ipfs_cid: Optional[str] = Field(None, alias="ipfsHash", description="The IPFS CID of the message")
-    transaction_hash: Optional[str] = Field(None, alias="transactionHash", description="The blockchain transaction hash")
-    verification_hash: Optional[str] = Field(None, description="The hash of the prompt-response pair")
-    signature: Optional[str] = Field(None, description="The digital signature of the verification hash")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata about the message")
 
     class Config:
         allow_population_by_field_name = True
+        json_encoders = {
+            datetime: lambda dt: dt.isoformat()
+        }
+        protected_namespaces = ()
 
 class SessionResponse(BaseModel):
     """Response model for retrieving a chat session."""

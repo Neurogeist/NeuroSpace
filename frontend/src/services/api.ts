@@ -56,19 +56,15 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
-  ipfsHash?: string;
-  transactionHash?: string;
-  verification_hash?: string;
-  signature?: string;
-  metadata?: {
-    model: string;
-    model_id: string;
-    temperature: number;
-    max_tokens: number;
-    top_p: number;
-    do_sample: boolean;
-    num_beams: number;
-    early_stopping: boolean;
+  metadata: {
+    model?: string;
+    model_id?: string;
+    temperature?: number;
+    max_tokens?: number;
+    top_p?: number;
+    do_sample?: boolean;
+    num_beams?: number;
+    early_stopping?: boolean;
     verification_hash?: string;
     signature?: string;
     ipfs_cid?: string;
@@ -110,9 +106,13 @@ export const submitPrompt = async (
     }
 };
 
-export const getSessions = async (): Promise<ChatSession[]> => {
+export const getSessions = async (userAddress: string): Promise<ChatSession[]> => {
   try {
-    const response = await axios.get(`${API_BASE_URL}/sessions`);
+    const response = await axios.get(`${API_BASE_URL}/sessions`, {
+      params: {
+        wallet_address: userAddress
+      }
+    });
     return response.data;
   } catch (error) {
     if (axios.isAxiosError(error)) {
@@ -189,3 +189,16 @@ export const verifyMessage = async (
   verifyCache.set(cacheKey, request);
   return request;
 };
+
+export async function deleteSession(sessionId: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}`, {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to delete session');
+    }
+}

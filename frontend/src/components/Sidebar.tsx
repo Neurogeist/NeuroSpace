@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
     Box,
     VStack,
@@ -8,10 +8,20 @@ import {
     Divider,
     HStack,
     IconButton,
-    Tooltip
+    Tooltip,
+    useDisclosure,
+    AlertDialog,
+    AlertDialogBody,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogContent,
+    AlertDialogOverlay,
+    useToast
 } from '@chakra-ui/react';
 import { FiPlus, FiTrash2 } from 'react-icons/fi';
 import { ChatSession } from '../types/chat';
+import { deleteSession } from '../services/api';
+import { useApp } from '../context/AppContext';
 
 interface SidebarProps {
     sessions: ChatSession[];
@@ -21,11 +31,57 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ sessions, activeSessionId, onNewChat, onSelectSession }: SidebarProps) {
+    const { isOpen, onOpen, onClose } = useDisclosure();
+    const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
+    const cancelRef = React.useRef<HTMLButtonElement>(null);
+    const { refreshSessions } = useApp();
+    const toast = useToast();
+
     const bgColor = useColorModeValue('white', 'gray.800');
     const textColor = useColorModeValue('gray.800', 'gray.200');
     const borderColor = useColorModeValue('gray.200', 'gray.700');
     const hoverBgColor = useColorModeValue('gray.100', 'gray.700');
     const activeBgColor = useColorModeValue('blue.50', 'blue.900');
+
+    const handleDeleteClick = (e: React.MouseEvent, sessionId: string) => {
+        e.stopPropagation();
+        setSessionToDelete(sessionId);
+        onOpen();
+    };
+
+    const handleDeleteConfirm = async () => {
+        if (!sessionToDelete) return;
+
+        try {
+            await deleteSession(sessionToDelete);
+            await refreshSessions();
+
+            // If the deleted session was active, clear it
+            if (sessionToDelete === activeSessionId) {
+                localStorage.removeItem('activeSessionId');
+                onNewChat();
+            }
+
+            toast({
+                title: "Session deleted",
+                status: "success",
+                duration: 3000,
+                isClosable: true,
+            });
+        } catch (error) {
+            console.error('Error deleting session:', error);
+            toast({
+                title: "Error",
+                description: "Failed to delete session",
+                status: "error",
+                duration: 3000,
+                isClosable: true,
+            });
+        } finally {
+            setSessionToDelete(null);
+            onClose();
+        }
+    };
 
     return (
         <Box h="100%" p={4}>
@@ -72,16 +128,40 @@ export default function Sidebar({ sessions, activeSessionId, onNewChat, onSelect
                                         icon={<FiTrash2 />}
                                         size="xs"
                                         variant="ghost"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            // TODO: Implement delete functionality
-                                        }}
+                                        onClick={(e) => handleDeleteClick(e, session.session_id)}
                                     />
                                 </Tooltip>
                             </HStack>
                         </Button>
                     ))}
                 </VStack>
+
+                <AlertDialog
+                    isOpen={isOpen}
+                    leastDestructiveRef={cancelRef}
+                    onClose={onClose}
+                >
+                    <AlertDialogOverlay>
+                        <AlertDialogContent>
+                            <AlertDialogHeader fontSize="lg" fontWeight="bold">
+                                Delete Chat Session
+                            </AlertDialogHeader>
+
+                            <AlertDialogBody>
+                                Are you sure you want to delete this chat session? This action cannot be undone.
+                            </AlertDialogBody>
+
+                            <AlertDialogFooter>
+                                <Button ref={cancelRef} onClick={onClose}>
+                                    Cancel
+                                </Button>
+                                <Button colorScheme="red" onClick={handleDeleteConfirm} ml={3}>
+                                    Delete
+                                </Button>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialogOverlay>
+                </AlertDialog>
             </VStack>
         </Box>
     );

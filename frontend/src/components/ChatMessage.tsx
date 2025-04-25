@@ -9,6 +9,11 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { Components } from 'react-markdown';
 
+const blockExplorerUrl =
+  import.meta.env.VITE_ENVIRONMENT?.toLowerCase() === 'production'
+    ? 'https://basescan.org'
+    : 'https://sepolia.basescan.org';
+
 interface ChatMessageProps {
     message: ChatMessage;
 }
@@ -149,9 +154,9 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
         );
     };
 
-    // Get hash information from either root level or metadata
-    const ipfsHash = message.ipfsHash || message.metadata?.ipfs_cid;
-    const transactionHash = message.transactionHash || message.metadata?.transaction_hash;
+    // Get hash information from metadata
+    const ipfsHash = message.metadata?.ipfs_cid;
+    const transactionHash = message.metadata?.transaction_hash;
 
     return (
         <Box
@@ -206,7 +211,7 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
             {message.role === 'assistant' && transactionHash && (
               <Tooltip label="View on BaseScan">
                 <Link
-                  href={`https://sepolia.basescan.org/tx/${transactionHash}`}
+                  href={`${blockExplorerUrl}/tx/${transactionHash}`}
                   isExternal
                   color={linkColor}
                   display="flex"
