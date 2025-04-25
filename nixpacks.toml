@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["python310", "pip", "postgresql_16.dev", "gcc"]
+nixPkgs = ["python310", "gcc", "postgresql_16.dev"]
 
 [phases.build]
 cmds = [
