@@ -1,8 +1,12 @@
 [phases.setup]
-nixPkgs = ["python310Full", "gcc", "postgresql_16.dev"]
+nixPkgs = ["python310", "gcc", "postgresql_16.dev"]
+cmds = ["python3 -m venv /opt/venv"]
 
 [phases.build]
-cmds = ["pip install --no-cache-dir -r requirements.txt"]
+cmds = [
+  ". /opt/venv/bin/activate",
+  "pip install --no-cache-dir -r requirements.txt"
+]
 
 [phases.start]
-cmd = "uvicorn api.app.main:app --host 0.0.0.0 --port 8000"
+cmd = ". /opt/venv/bin/activate && uvicorn api.app.main:app --host 0.0.0.0 --port 8000"
