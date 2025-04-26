@@ -101,6 +101,10 @@ export const payForMessage = async (sessionId: string): Promise<void> => {
         throw new Error('MetaMask is not installed');
     }
 
+    if (!sessionId || sessionId.length === 0) {
+        throw new Error('Session ID is invalid or missing');
+    }
+
     const provider = new ethers.BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
     const contract = new ethers.Contract(PAYMENT_CONTRACT_ADDRESS!, PAYMENT_CONTRACT_ABI, signer);
@@ -110,4 +114,4 @@ export const payForMessage = async (sessionId: string): Promise<void> => {
     });
 
     await tx.wait();
-}; 
+};

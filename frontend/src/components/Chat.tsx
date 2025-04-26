@@ -3,21 +3,14 @@ import {
     Box,
     VStack,
     HStack,
-    Input,
     Button,
     Text,
     IconButton,
     useColorModeValue,
     Flex,
-    Link,
-    Tooltip,
     Container,
     Select,
     FormControl,
-    FormLabel,
-    UnorderedList,
-    ListItem,
-    Heading,
     useDisclosure,
     Collapse,
     Textarea,
@@ -29,22 +22,20 @@ import {
     AlertDescription,
     useToast
 } from '@chakra-ui/react';
-import { FiSend, FiRefreshCw, FiHash, FiLink } from 'react-icons/fi';
 import { ChevronLeftIcon, ChevronRightIcon } from '@chakra-ui/icons';
-import { ChatMessage, ChatSession } from '../types/chat';
-import { submitPrompt, getAvailableModels, getSessions, getSession } from '../services/api';
+import { ChatMessage } from '../types/chat';
+import { submitPrompt, getSession } from '../services/api';
 import Sidebar from './Sidebar';
 import ChatMessageComponent from './ChatMessage';
 import { useApp } from '../context/AppContext';
-import { connectWallet, payForMessage } from '../services/blockchain';
+import {  payForMessage } from '../services/blockchain';
 
 export default function Chat() {
     const {
         models: availableModels,
         sessions: availableSessions,
         // isLoading, // Remove generic loading if using specific ones
-        isLoadingModels, // Get specific loading state for models
-        isLoadingSessions, // Get specific loading state for sessions
+        // Get specific loading state for sessions
         error,
         refreshSessions,
         // refreshModels, // Destructure if you need it
@@ -72,14 +63,10 @@ export default function Chat() {
     const bgColor = useColorModeValue('gray.50', 'gray.900');
     const borderColor = useColorModeValue('gray.200', 'gray.700');
     const messageBgColor = useColorModeValue('gray.50', 'gray.700');
-    const userMessageBgColor = useColorModeValue('blue.50', 'blue.900');
     const textColor = useColorModeValue('gray.800', 'gray.200');
-    const linkColor = useColorModeValue('blue.500', 'blue.300');
     const inputBgColor = useColorModeValue('white', 'gray.800');
     const inputBorderColor = useColorModeValue('gray.200', 'gray.600');
     const inputTextColor = useColorModeValue('gray.800', 'gray.200');
-    const placeholderColor = useColorModeValue('gray.500', 'gray.400');
-    const timestampColor = useColorModeValue('gray.500', 'gray.400');
     const buttonBgColor = useColorModeValue('blue.500', 'blue.400');
     const buttonHoverBgColor = useColorModeValue('blue.600', 'blue.500');
 
@@ -263,26 +250,6 @@ export default function Chat() {
         setActiveSessionId(sessionId);
     };
 
-    const formatHash = (hash: string) => {
-        return `${hash.slice(0, 6)}...${hash.slice(-4)}`;
-    };
-
-    const renderMetadata = (message: ChatMessage) => {
-        if (!message.metadata) return null;
-
-        return (
-            <Box mt={2} fontSize="xs" color={timestampColor}>
-                <HStack spacing={2}>
-                    <Text>Model: {message.metadata.model}</Text>
-                    <Text>•</Text>
-                    <Text>Temperature: {message.metadata.temperature}</Text>
-                    <Text>•</Text>
-                    <Text>Max Tokens: {message.metadata.max_tokens}</Text>
-                </HStack>
-            </Box>
-        );
-    };
-
     const groupedModels = Object.entries(availableModels).reduce((acc, [name, id]) => {
         const provider = name.includes('local') ? 'Local' : 'Remote';
         if (!acc[provider]) {
@@ -292,18 +259,6 @@ export default function Chat() {
         return acc;
     }, {} as { [key: string]: { name: string; id: string }[] });
 
-/*
-
-    if (isLoading) {
-        return (
-            <Flex h="100vh" align="center" justify="center" bg={bgColor}>
-                <VStack spacing={4}>
-                    <Spinner size="xl" color="blue.500" />
-                    <Text>Loading chat interface...</Text>
-                </VStack>
-            </Flex>
-        );
-    }*/
 
     return (
         <Flex h="100vh" bg={bgColor} position="relative">
