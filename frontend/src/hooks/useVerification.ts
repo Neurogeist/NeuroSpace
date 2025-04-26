@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import { API_BASE_URL } from '../services/api';
 
 interface VerificationResult {
   is_valid: boolean;
@@ -35,7 +36,7 @@ export const useVerification = (verification_hash?: string, signature?: string) 
 
       try {
         // Verify signature
-        const verifyResponse = await axios.post<VerificationResult>('http://localhost:8000/verify', {
+        const verifyResponse = await axios.post<VerificationResult>(`${API_BASE_URL}/verify`, {
           verification_hash,
           signature
         });
@@ -43,7 +44,7 @@ export const useVerification = (verification_hash?: string, signature?: string) 
         setVerificationResult(verifyResponse.data);
 
         // Check if hash exists on-chain
-        const hashResponse = await axios.get<HashInfo>(`http://localhost:8000/verify/hash/${verification_hash}`);
+        const hashResponse = await axios.get<HashInfo>(`${API_BASE_URL}/verify/hash/${verification_hash}`);
         setHashInfo(hashResponse.data);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Verification failed');

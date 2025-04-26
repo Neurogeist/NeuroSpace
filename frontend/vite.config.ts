@@ -8,29 +8,7 @@ export default defineConfig({
   server: {
     port: 5173,
     open: true,
-    cors: true,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
-        configure: (proxy, _options) => {
-          proxy.on('proxyReq', (proxyReq, req, _res) => {
-            // Add X-User-Address header
-            proxyReq.setHeader('X-User-Address', '0x1234567890123456789012345678901234567890');
-            
-            // Forward all headers from the original request
-            const headers = req.headers;
-            Object.keys(headers).forEach(key => {
-              const value = headers[key];
-              if (value !== undefined) {
-                proxyReq.setHeader(key, value);
-              }
-            });
-          });
-        }
-      }
-    }
+    cors: true
   },
   resolve: {
     alias: {
