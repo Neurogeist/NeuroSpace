@@ -1,14 +1,10 @@
-import React from 'react';
 import {
     Box,
     HStack,
     Text,
     Tooltip,
-    useColorModeValue,
-    Spinner,
-    IconButton
+    useColorModeValue
 } from '@chakra-ui/react';
-import { FiCheck, FiX, FiAlertTriangle, FiRefreshCw } from 'react-icons/fi';
 import { VerificationResponse } from '../services/api';
 
 interface VerificationStatusProps {

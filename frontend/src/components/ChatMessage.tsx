@@ -18,11 +18,6 @@ interface ChatMessageProps {
     message: ChatMessage;
 }
 
-interface CodeProps {
-    inline?: boolean;
-    children: React.ReactNode;
-}
-
 const formatHash = (hash: string) => {
     return `${hash.slice(0, 6)}...${hash.slice(-4)}`;
 };
@@ -72,7 +67,6 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
     const [isVerifying, setIsVerifying] = useState(false);
     const [verificationError, setVerificationError] = useState<string | null>(null);
 
-    const textColor = useColorModeValue('gray.800', 'gray.200');
     const messageBgColor = useColorModeValue('gray.50', 'gray.700');
     const userMessageBgColor = useColorModeValue('blue.50', 'blue.900');
     const timestampColor = useColorModeValue('gray.500', 'gray.400');
