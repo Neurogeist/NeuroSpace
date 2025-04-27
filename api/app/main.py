@@ -37,28 +37,19 @@ app = FastAPI(
     version="1.0.0"
 )
 
-class CustomCORSMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        # Handle preflight requests
-        if request.method == "OPTIONS":
-            response = Response()
-            response.headers["Access-Control-Allow-Origin"] = "http://localhost:5173"
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-User-Address, X-Source"
-            response.headers["Access-Control-Allow-Credentials"] = "false"
-            response.headers["Access-Control-Max-Age"] = "3600"
-            return response
+origins = [
+    "http://localhost:5173",  # For local dev
+    "https://neurospace-8rnuzn35m-neurogeists-projects.vercel.app",  # Your Vercel frontend
+    "https://neurospace.chat",  # (Optional) if you link your domain later
+]
 
-        # Handle actual requests
-        response = await call_next(request)
-        response.headers["Access-Control-Allow-Origin"] = "http://localhost:5173"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-User-Address, X-Source"
-        response.headers["Access-Control-Allow-Credentials"] = "false"
-        return response
-
-# Add custom CORS middleware first
-app.add_middleware(CustomCORSMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Initialize services
 settings = get_settings()

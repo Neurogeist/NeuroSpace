@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import {
     Box,
     HStack,
@@ -6,7 +6,6 @@ import {
     Text,
     Link,
     IconButton,
-    Tooltip,
     useColorModeValue,
     Collapse,
     Button,
@@ -14,8 +13,7 @@ import {
     useToast,
     Spinner
 } from '@chakra-ui/react';
-import { FiCheck, FiX, FiRefreshCw, FiCopy, FiExternalLink } from 'react-icons/fi';
-import axios from 'axios';
+import { FiRefreshCw, FiCopy, FiExternalLink } from 'react-icons/fi';
 import { verifyMessage } from '../services/api';
 
 interface VerificationBadgeProps {
@@ -52,8 +50,8 @@ export default function VerificationBadge({
         match: boolean;
     } | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const { hasCopied: hasCopiedHash, onCopy: onCopyHash } = useClipboard(verification_hash);
-    const { hasCopied: hasCopiedSignature, onCopy: onCopySignature } = useClipboard(signature);
+    const { onCopy: onCopyHash } = useClipboard(verification_hash);
+    const { onCopy: onCopySignature } = useClipboard(signature);
     const toast = useToast();
     const isVerifying = useRef(false);
 
@@ -93,14 +91,6 @@ export default function VerificationBadge({
             isVerifying.current = false;
         }
     };
-
-    /*
-
-    useEffect(() => {
-        verifyHash();
-    }, [verification_hash, signature]);
-
-    */
 
     const handleCopy = (type: 'hash' | 'signature') => {
         if (type === 'hash') {

@@ -37,9 +37,7 @@ export default function Sidebar({ sessions, activeSessionId, onNewChat, onSelect
     const { refreshSessions } = useApp();
     const toast = useToast();
 
-    const bgColor = useColorModeValue('white', 'gray.800');
     const textColor = useColorModeValue('gray.800', 'gray.200');
-    const borderColor = useColorModeValue('gray.200', 'gray.700');
     const hoverBgColor = useColorModeValue('gray.100', 'gray.700');
     const activeBgColor = useColorModeValue('blue.50', 'blue.900');
 
