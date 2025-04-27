@@ -39,7 +39,7 @@ app = FastAPI(
 
 origins = [
     "http://localhost:5173",  # For local dev
-    "https://neurospace-8rnuzn35m-neurogeists-projects.vercel.app",  # Your Vercel frontend
+    "https://www.neurospace.chat",  # Your Vercel frontend
     "https://neurospace.chat",  # (Optional) if you link your domain later
 ]
 
