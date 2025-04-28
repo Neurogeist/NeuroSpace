@@ -73,8 +73,6 @@ export default function Chat() {
     const buttonHoverBgColor = useColorModeValue('blue.600', 'blue.500');
     const iconColor = useColorModeValue('gray.800', 'gray.200');
 
-    const sidebarWidth = useBreakpointValue({ base: '100%', md: '300px' });
-    const mainContentWidth = useBreakpointValue({ base: '100%', md: 'calc(100% - 300px)' });
     const maxMessageWidth = useBreakpointValue({ base: '100%', md: '800px' });
 
     useEffect(() => {

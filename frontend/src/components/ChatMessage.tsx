@@ -1,4 +1,4 @@
-import { Box, Text, HStack, Link, Tooltip, useColorModeValue, Code, useBreakpointValue, VStack } from '@chakra-ui/react';
+import { Box, Text, HStack, Link, Tooltip, useColorModeValue, Code, useBreakpointValue } from '@chakra-ui/react';
 import { FiHash, FiLink } from 'react-icons/fi';
 import { ChatMessage } from '../types/chat';
 import React, { useState, useEffect } from 'react';
@@ -155,7 +155,6 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
     // Responsive values
     const padding = useBreakpointValue({ base: 3, md: 4 });
     const spacing = useBreakpointValue({ base: 2, md: 4 });
-    const fontSize = useBreakpointValue({ base: 'xs', md: 'sm' });
     const maxWidth = useBreakpointValue({ base: '90%', md: '80%' });
 
     return (
