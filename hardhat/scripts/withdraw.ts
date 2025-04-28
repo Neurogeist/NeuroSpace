@@ -2,7 +2,7 @@ import { JsonRpcProvider, Wallet, Contract } from "ethers";
 import * as dotenv from "dotenv";
 dotenv.config();
 
-const CONTRACT_ADDRESS = "0xE76704A7e2057ed6F19CA4E634b91dB91dB03c35";
+const CONTRACT_ADDRESS = "0x0Ad764CDA14Eb88DaE0A1ed49B52281BC67f42D2";
 const ABI = [
   "function withdraw() external",
 ];
@@ -12,7 +12,7 @@ async function main() {
     throw new Error("PRIVATE_KEY not set in .env file");
   }
 
-  const provider = new JsonRpcProvider("https://sepolia.base.org");
+  const provider = new JsonRpcProvider("https://mainnet.base.org"); // Production Base mainnet
   const wallet = new Wallet(process.env.PRIVATE_KEY, provider);
   const contract = new Contract(CONTRACT_ADDRESS, ABI, wallet);
 
