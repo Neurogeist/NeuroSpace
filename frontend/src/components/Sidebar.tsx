@@ -16,7 +16,8 @@ import {
     AlertDialogHeader,
     AlertDialogContent,
     AlertDialogOverlay,
-    useToast
+    useToast,
+    useBreakpointValue
 } from '@chakra-ui/react';
 import { FiPlus, FiTrash2 } from 'react-icons/fi';
 import { ChatSession } from '../types/chat';
@@ -41,6 +42,13 @@ export default function Sidebar({ sessions, activeSessionId, onNewChat, onSelect
     const hoverBgColor = useColorModeValue('gray.100', 'gray.700');
     const activeBgColor = useColorModeValue('blue.50', 'blue.900');
 
+    // Responsive values
+    const buttonSize = useBreakpointValue({ base: 'xs', md: 'sm' });
+    const textSize = useBreakpointValue({ base: 'xs', md: 'sm' });
+    const padding = useBreakpointValue({ base: 2, md: 4 });
+    const spacing = useBreakpointValue({ base: 2, md: 4 });
+    const iconSize = useBreakpointValue({ base: 'xs', md: 'sm' });
+
     const handleDeleteClick = (e: React.MouseEvent, sessionId: string) => {
         e.stopPropagation();
         setSessionToDelete(sessionId);
@@ -54,7 +62,6 @@ export default function Sidebar({ sessions, activeSessionId, onNewChat, onSelect
             await deleteSession(sessionToDelete);
             await refreshSessions();
 
-            // If the deleted session was active, clear it
             if (sessionToDelete === activeSessionId) {
                 localStorage.removeItem('activeSessionId');
                 onNewChat();
@@ -82,13 +89,22 @@ export default function Sidebar({ sessions, activeSessionId, onNewChat, onSelect
     };
 
     return (
-        <Box h="100%" p={4}>
-            <VStack spacing={4} align="stretch" h="100%">
+        <Box 
+            h="100%" 
+            p={padding}
+            w={{ base: '100%', md: '300px' }}
+            position={{ base: 'relative', md: 'fixed' }}
+            left={0}
+            top={0}
+            bottom={0}
+        >
+            <VStack spacing={spacing} align="stretch" h="100%">
                 <Button
                     leftIcon={<FiPlus />}
                     colorScheme="blue"
                     onClick={onNewChat}
-                    size="sm"
+                    size={buttonSize}
+                    w="100%"
                 >
                     New Chat
                 </Button>
@@ -96,10 +112,11 @@ export default function Sidebar({ sessions, activeSessionId, onNewChat, onSelect
                 <Divider />
 
                 <VStack
-                    spacing={2}
+                    spacing={spacing}
                     align="stretch"
                     overflowY="auto"
                     flex="1"
+                    maxH={{ base: '200px', md: 'calc(100vh - 120px)' }}
                 >
                     {sessions.map((session) => (
                         <Button
@@ -109,14 +126,16 @@ export default function Sidebar({ sessions, activeSessionId, onNewChat, onSelect
                             bg={session.session_id === activeSessionId ? activeBgColor : 'transparent'}
                             _hover={{ bg: hoverBgColor }}
                             onClick={() => onSelectSession(session.session_id)}
-                            size="sm"
+                            size={buttonSize}
                             position="relative"
+                            px={2}
                         >
-                            <HStack w="100%" justify="space-between">
+                            <HStack w="100%" justify="space-between" spacing={2}>
                                 <Text
                                     isTruncated
                                     color={textColor}
-                                    fontSize="sm"
+                                    fontSize={textSize}
+                                    flex="1"
                                 >
                                     {session.messages[0]?.content || 'New Chat'}
                                 </Text>
@@ -124,7 +143,7 @@ export default function Sidebar({ sessions, activeSessionId, onNewChat, onSelect
                                     <IconButton
                                         aria-label="Delete chat"
                                         icon={<FiTrash2 />}
-                                        size="xs"
+                                        size={iconSize}
                                         variant="ghost"
                                         onClick={(e) => handleDeleteClick(e, session.session_id)}
                                     />
@@ -141,19 +160,19 @@ export default function Sidebar({ sessions, activeSessionId, onNewChat, onSelect
                 >
                     <AlertDialogOverlay>
                         <AlertDialogContent>
-                            <AlertDialogHeader fontSize="lg" fontWeight="bold">
+                            <AlertDialogHeader fontSize={{ base: 'md', md: 'lg' }} fontWeight="bold">
                                 Delete Chat Session
                             </AlertDialogHeader>
 
-                            <AlertDialogBody>
+                            <AlertDialogBody fontSize={{ base: 'sm', md: 'md' }}>
                                 Are you sure you want to delete this chat session? This action cannot be undone.
                             </AlertDialogBody>
 
                             <AlertDialogFooter>
-                                <Button ref={cancelRef} onClick={onClose}>
+                                <Button ref={cancelRef} onClick={onClose} size={buttonSize}>
                                     Cancel
                                 </Button>
-                                <Button colorScheme="red" onClick={handleDeleteConfirm} ml={3}>
+                                <Button colorScheme="red" onClick={handleDeleteConfirm} ml={3} size={buttonSize}>
                                     Delete
                                 </Button>
                             </AlertDialogFooter>

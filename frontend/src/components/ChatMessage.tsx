@@ -1,4 +1,4 @@
-import { Box, Text, HStack, Link, Tooltip, useColorModeValue, Code } from '@chakra-ui/react';
+import { Box, Text, HStack, Link, Tooltip, useColorModeValue, Code, useBreakpointValue, VStack } from '@chakra-ui/react';
 import { FiHash, FiLink } from 'react-icons/fi';
 import { ChatMessage } from '../types/chat';
 import React, { useState, useEffect } from 'react';
@@ -51,7 +51,7 @@ const MarkdownComponents: Components = {
     ul: ({ children }) => <Box as="ul" pl={4} mb={2}>{children}</Box>,
     ol: ({ children }) => (
         <Box as="ol" pl={4} mb={2} style={{ listStylePosition: 'inside' }}>
-          {children}
+            {children}
         </Box>
     ),      
     li: ({ children }) => <Box as="li" mb={1}>{children}</Box>,
@@ -139,7 +139,7 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
         
         return (
             <Box mt={2} fontSize="xs" color={timestampColor}>
-                <HStack spacing={4}>
+                <HStack spacing={4} wrap="wrap">
                     <Text fontWeight="bold">Model: {message.metadata.model}</Text>
                     <Text>Temperature: {message.metadata.temperature}</Text>
                     <Text>Max Tokens: {message.metadata.max_tokens}</Text>
@@ -152,74 +152,90 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
     const ipfsHash = message.metadata?.ipfs_cid;
     const transactionHash = message.metadata?.transaction_hash;
 
+    // Responsive values
+    const padding = useBreakpointValue({ base: 3, md: 4 });
+    const spacing = useBreakpointValue({ base: 2, md: 4 });
+    const fontSize = useBreakpointValue({ base: 'xs', md: 'sm' });
+    const maxWidth = useBreakpointValue({ base: '90%', md: '80%' });
+
     return (
         <Box
-          p={4}
-          borderRadius="lg"
-          bg={message.role === 'user' ? userMessageBgColor : messageBgColor}
-          maxW="80%"
-          alignSelf={message.role === 'user' ? 'flex-end' : 'flex-start'}
-          mb={4}
+            p={padding}
+            borderRadius="lg"
+            bg={message.role === 'user' ? userMessageBgColor : messageBgColor}
+            maxW={maxWidth}
+            alignSelf={message.role === 'user' ? 'flex-end' : 'flex-start'}
+            mb={4}
         >
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            rehypePlugins={[rehypeRaw]}
-            components={MarkdownComponents}
-          >
-            {message.content}
-          </ReactMarkdown>
-      
-          {message.role === 'assistant' && message.metadata?.verification_hash && (
-            <VerificationStatus
-              verificationResult={verificationResult}
-              isLoading={isVerifying}
-              error={verificationError || undefined}
-            />
-          )}
-      
-          <HStack spacing={4} mt={2} fontSize="xs" color={timestampColor}>
-            <Text>
-              {new Date(message.timestamp).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
-                hour12: true
-              })}
-            </Text>
-            {message.role === 'assistant' && ipfsHash && (
-              <Tooltip label="View on IPFS">
-                <Link
-                  href={`https://ipfs.io/ipfs/${ipfsHash}`}
-                  isExternal
-                  color={linkColor}
-                  display="flex"
-                  alignItems="center"
-                  gap={1}
-                >
-                  <FiHash />
-                  {formatHash(ipfsHash)}
-                </Link>
-              </Tooltip>
+            <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeRaw]}
+                components={MarkdownComponents}
+            >
+                {message.content}
+            </ReactMarkdown>
+        
+            {message.role === 'assistant' && message.metadata?.verification_hash && (
+                <Box mt={2}>
+                    <VerificationStatus
+                        verificationResult={verificationResult}
+                        isLoading={isVerifying}
+                        error={verificationError || undefined}
+                    />
+                </Box>
             )}
-      
-            {message.role === 'assistant' && transactionHash && (
-              <Tooltip label="View on BaseScan">
-                <Link
-                  href={`${blockExplorerUrl}/tx/${transactionHash}`}
-                  isExternal
-                  color={linkColor}
-                  display="flex"
-                  alignItems="center"
-                  gap={1}
-                >
-                  <FiLink />
-                  {formatHash(transactionHash)}
-                </Link>
-              </Tooltip>
-            )}
-          </HStack>
-      
-          {message.role === 'assistant' && renderMetadata(message)}
+        
+            <HStack 
+                spacing={spacing} 
+                mt={2} 
+                fontSize="xs" 
+                color={timestampColor}
+                flexWrap="wrap"
+            >
+                <Text>
+                    {new Date(message.timestamp).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: true
+                    })}
+                </Text>
+                {message.role === 'assistant' && ipfsHash && (
+                    <Tooltip label="View on IPFS">
+                        <Link
+                            href={`https://ipfs.io/ipfs/${ipfsHash}`}
+                            isExternal
+                            color={linkColor}
+                            display="flex"
+                            alignItems="center"
+                            gap={1}
+                            fontSize="xs"
+                        >
+                            <FiHash />
+                            {formatHash(ipfsHash)}
+                        </Link>
+                    </Tooltip>
+                )}
+        
+                {message.role === 'assistant' && transactionHash && (
+                    <Tooltip label="View on BaseScan">
+                        <Link
+                            href={`${blockExplorerUrl}/tx/${transactionHash}`}
+                            isExternal
+                            color={linkColor}
+                            display="flex"
+                            alignItems="center"
+                            gap={1}
+                            fontSize="xs"
+                        >
+                            <FiLink />
+                            {formatHash(transactionHash)}
+                        </Link>
+                    </Tooltip>
+                )}
+            </HStack>
+        
+            {message.role === 'assistant' && renderMetadata(message)}
         </Box>
-      ); 
+    );
 } 

@@ -20,7 +20,8 @@ import {
     AlertIcon,
     AlertTitle,
     AlertDescription,
-    useToast
+    useToast,
+    useColorMode
 } from '@chakra-ui/react';
 import { ChevronLeftIcon, ChevronRightIcon } from '@chakra-ui/icons';
 import { ChatMessage } from '../types/chat';
@@ -28,20 +29,19 @@ import { submitPrompt, getSession } from '../services/api';
 import Sidebar from './Sidebar';
 import ChatMessageComponent from './ChatMessage';
 import { useApp } from '../context/AppContext';
-import {  payForMessage } from '../services/blockchain';
+import { payForMessage } from '../services/blockchain';
+import { FiMoon, FiSun } from 'react-icons/fi';
 
 export default function Chat() {
     const {
         models: availableModels,
         sessions: availableSessions,
-        // isLoading, // Remove generic loading if using specific ones
-        // Get specific loading state for sessions
+        userAddress,
+        connectWallet,
         error,
-        refreshSessions,
-        // refreshModels, // Destructure if you need it
-        userAddress,    // <<< ADD: Get userAddress from context
-        connectWallet   // <<< ADD: Get connectWallet function from context
-      } = useApp();
+        refreshSessions
+    } = useApp();
+    const { colorMode, toggleColorMode } = useColorMode();
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
     const [activeSessionId, setActiveSessionId] = useState<string | null>(() => {
@@ -57,7 +57,9 @@ export default function Chat() {
     const [isThinking, setIsThinking] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
-    const { isOpen: isSidebarOpen, onToggle: toggleSidebar } = useDisclosure({ defaultIsOpen: true });
+    const { isOpen: isSidebarOpen, onToggle: toggleSidebar } = useDisclosure({ 
+        defaultIsOpen: window.innerWidth >= 768 // Only open by default on desktop
+    });
     const toast = useToast();
 
     const bgColor = useColorModeValue('gray.50', 'gray.900');
@@ -69,6 +71,7 @@ export default function Chat() {
     const inputTextColor = useColorModeValue('gray.800', 'gray.200');
     const buttonBgColor = useColorModeValue('blue.500', 'blue.400');
     const buttonHoverBgColor = useColorModeValue('blue.600', 'blue.500');
+    const iconColor = useColorModeValue('gray.800', 'gray.200');
 
     const sidebarWidth = useBreakpointValue({ base: '100%', md: '300px' });
     const mainContentWidth = useBreakpointValue({ base: '100%', md: 'calc(100% - 300px)' });
@@ -134,6 +137,19 @@ export default function Chat() {
         localStorage.setItem('selectedModel', selectedModel);
     }, [selectedModel]);
 
+    // Add a resize listener to handle sidebar state on window resize
+    useEffect(() => {
+        const handleResize = () => {
+            if (window.innerWidth >= 768 && !isSidebarOpen) {
+                toggleSidebar();
+            } else if (window.innerWidth < 768 && isSidebarOpen) {
+                toggleSidebar();
+            }
+        };
+
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, [isSidebarOpen, toggleSidebar]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -267,62 +283,114 @@ export default function Chat() {
                 icon={isSidebarOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
                 onClick={toggleSidebar}
                 position="absolute"
-                left={isSidebarOpen ? "300px" : "0"}
+                left={isSidebarOpen ? { base: "calc(100% - 40px)", md: "300px" } : "0"}
                 top="50%"
                 transform="translateY(-50%)"
                 zIndex={2}
                 bg={inputBgColor}
                 _hover={{ bg: buttonHoverBgColor }}
                 transition="all 0.2s"
+                size={{ base: 'sm', md: 'md' }}
+                display={{ base: 'none', md: 'flex' }}
+            />
+
+            <IconButton
+                aria-label="Open sidebar"
+                icon={<ChevronRightIcon />}
+                onClick={toggleSidebar}
+                position="fixed"
+                left={2}
+                top={4}
+                zIndex={2}
+                bg={inputBgColor}
+                _hover={{ bg: buttonHoverBgColor }}
+                size="sm"
+                display={{ base: 'flex', md: 'none' }}
             />
 
             <Collapse in={isSidebarOpen} animateOpacity>
                 <Box
-                    w={sidebarWidth}
+                    w={{ base: '100%', md: '300px' }}
                     h="100%"
                     borderRight="1px"
                     borderColor={borderColor}
                     bg={inputBgColor}
-                    position="relative"
+                    position={{ base: 'fixed', md: 'relative' }}
+                    left={{ base: 0, md: 'auto' }}
                     zIndex={1}
                 >
-                    <Sidebar
-                    sessions={availableSessions}
-                        activeSessionId={activeSessionId}
-                        onNewChat={handleNewChat}
-                        onSelectSession={handleSelectSession}
-                    />
+                    <Box position="relative" h="100%">
+                        <IconButton
+                            aria-label="Close sidebar"
+                            icon={<ChevronLeftIcon />}
+                            onClick={toggleSidebar}
+                            position="absolute"
+                            right={2}
+                            top={2}
+                            size="sm"
+                            display={{ base: 'flex', md: 'none' }}
+                        />
+                        <Sidebar
+                            sessions={availableSessions}
+                            activeSessionId={activeSessionId}
+                            onNewChat={handleNewChat}
+                            onSelectSession={handleSelectSession}
+                        />
+                    </Box>
                 </Box>
             </Collapse>
 
-            <Flex direction="column" flex="1" w={isSidebarOpen ? mainContentWidth : '100%'} transition="all 0.2s">
-                <Box p={4} borderBottom="1px" borderColor={borderColor} bg={inputBgColor}>
+            <Flex 
+                direction="column" 
+                flex="1" 
+                w="100%" 
+                transition="all 0.2s"
+                position="relative"
+                overflow="hidden"
+            >
+                <Box p={{ base: 2, md: 4 }} borderBottom="1px" borderColor={borderColor} bg={inputBgColor}>
                     <Container maxW={maxMessageWidth}>
-                        <HStack justify="space-between" align="center">
-                            <Text fontSize="2xl" fontWeight="bold" color={textColor}>
+                        <Flex
+                            direction={{ base: 'column', sm: 'row' }}
+                            justify="space-between"
+                            align={{ base: 'stretch', sm: 'center' }}
+                            gap={{ base: 2, sm: 4 }}
+                        >
+                            <Text fontSize={{ base: 'xl', md: '2xl' }} fontWeight="bold" color={textColor}>
                                 NeuroSpace Chat
                             </Text>
-                            <FormControl width="auto">
-                                <Select
-                                    value={selectedModel}
-                                    onChange={(e) => setSelectedModel(e.target.value)}
-                                    size="md"
-                                    bg={inputBgColor}
-                                    borderColor={inputBorderColor}
-                                    color={inputTextColor}
-                                >
-                                    {Object.entries(groupedModels).map(([provider, models]) => (
-                                        <optgroup key={provider} label={provider}>
-                                            {models.map(({ name }) => (
-                                                <option key={name} value={name}>
-                                                    {name}
-                                                </option>
-                                            ))}
-                                        </optgroup>
-                                    ))}
-                                </Select>
-                            </FormControl>
-                        </HStack>
+                            <HStack spacing={4} justify={{ base: 'space-between', sm: 'flex-end' }} w={{ base: '100%', sm: 'auto' }}>
+                                <FormControl width={{ base: '100%', sm: '200px' }}>
+                                    <Select
+                                        value={selectedModel}
+                                        onChange={(e) => setSelectedModel(e.target.value)}
+                                        size={{ base: 'sm', md: 'md' }}
+                                        bg={inputBgColor}
+                                        borderColor={inputBorderColor}
+                                        color={inputTextColor}
+                                    >
+                                        {Object.entries(groupedModels).map(([provider, models]) => (
+                                            <optgroup key={provider} label={provider}>
+                                                {models.map(({ name }) => (
+                                                    <option key={name} value={name}>
+                                                        {name}
+                                                    </option>
+                                                ))}
+                                            </optgroup>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+                                <IconButton
+                                    aria-label="Toggle color mode"
+                                    icon={colorMode === 'light' ? <FiMoon /> : <FiSun />}
+                                    onClick={toggleColorMode}
+                                    size={{ base: 'sm', md: 'md' }}
+                                    colorScheme="blue"
+                                    variant="ghost"
+                                    color={iconColor}
+                                />
+                            </HStack>
+                        </Flex>
                     </Container>
                 </Box>
 
@@ -334,7 +402,13 @@ export default function Chat() {
                     </Alert>
                 )}
 
-                <Flex direction="column" flex="1" overflowY="auto" p={4}>
+                <Flex 
+                    direction="column" 
+                    flex="1" 
+                    overflowY="auto" 
+                    p={{ base: 2, md: 4 }}
+                    position="relative"
+                >
                     <Container maxW={maxMessageWidth}>
                         <VStack spacing={4} align="stretch">
                             {messages.map((message, index) => (
@@ -353,22 +427,32 @@ export default function Chat() {
                     </Container>
                 </Flex>
 
-                <Box p={4} borderTop="1px" borderColor={borderColor} bg={inputBgColor}>
+                <Box 
+                    p={{ base: 2, md: 4 }} 
+                    borderTop="1px" 
+                    borderColor={borderColor} 
+                    bg={inputBgColor}
+                >
                     <Container maxW={maxMessageWidth}>
                         {!userAddress ? (
-                            <Button onClick={connectWallet} colorScheme="blue">
+                            <Button 
+                                onClick={connectWallet} 
+                                colorScheme="blue"
+                                size={{ base: 'sm', md: 'md' }}
+                                w="100%"
+                            >
                                 Connect Wallet
                             </Button>
                         ) : (
                             <form onSubmit={handleSubmit}>
-                                <HStack>
+                                <HStack spacing={2}>
                                     <FormControl>
                                         <Textarea
                                             ref={inputRef}
                                             value={input}
                                             onChange={(e) => setInput(e.target.value)}
                                             placeholder="Type your message..."
-                                            size="md"
+                                            size={{ base: 'sm', md: 'md' }}
                                             resize="none"
                                             minH="40px"
                                             maxH="150px"
@@ -391,7 +475,8 @@ export default function Chat() {
                                         colorScheme="blue"
                                         isLoading={isThinking}
                                         isDisabled={!input.trim()}
-                                        px={6}
+                                        px={{ base: 4, md: 6 }}
+                                        size={{ base: 'sm', md: 'md' }}
                                     >
                                         Send (0.00001 ETH)
                                     </Button>
