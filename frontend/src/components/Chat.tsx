@@ -275,6 +275,12 @@ export default function Chat() {
         return acc;
     }, {} as { [key: string]: { name: string; id: string }[] });
 
+    const formatModelName = (name: string) => {
+        if (window.innerWidth < 768) {
+            return name.length > 20 ? `${name.slice(0, 17)}...` : name;
+        }
+        return name;
+    };
 
     return (
         <Flex h="100vh" bg={bgColor} position="relative">
@@ -300,7 +306,7 @@ export default function Chat() {
                 onClick={toggleSidebar}
                 position="fixed"
                 left={2}
-                top={4}
+                top={2}
                 zIndex={2}
                 bg={inputBgColor}
                 _hover={{ bg: buttonHoverBgColor }}
@@ -355,6 +361,8 @@ export default function Chat() {
                             justify="space-between"
                             align={{ base: 'stretch', sm: 'center' }}
                             gap={{ base: 2, sm: 4 }}
+                            position="relative"
+                            pl={{ base: 10, md: 0 }}
                         >
                             <Text fontSize={{ base: 'xl', md: '2xl' }} fontWeight="bold" color={textColor}>
                                 NeuroSpace Chat
@@ -373,7 +381,7 @@ export default function Chat() {
                                             <optgroup key={provider} label={provider}>
                                                 {models.map(({ name }) => (
                                                     <option key={name} value={name}>
-                                                        {name}
+                                                        {formatModelName(name)}
                                                     </option>
                                                 ))}
                                             </optgroup>
@@ -397,8 +405,8 @@ export default function Chat() {
                 {error && (
                     <Alert status="error" mb={4}>
                         <AlertIcon />
-                        <AlertTitle>Error:</AlertTitle>
-                        <AlertDescription>{error}</AlertDescription>
+                        <AlertTitle fontSize={{ base: 'sm', md: 'md' }}>Error:</AlertTitle>
+                        <AlertDescription fontSize={{ base: 'sm', md: 'md' }}>{error}</AlertDescription>
                     </Alert>
                 )}
 
@@ -478,7 +486,8 @@ export default function Chat() {
                                         px={{ base: 4, md: 6 }}
                                         size={{ base: 'sm', md: 'md' }}
                                     >
-                                        Send (0.00001 ETH)
+                                        <Text display={{ base: 'none', sm: 'block' }}>Send (0.00001 ETH)</Text>
+                                        <Text display={{ base: 'block', sm: 'none' }}>Send</Text>
                                     </Button>
                                 </HStack>
                             </form>
