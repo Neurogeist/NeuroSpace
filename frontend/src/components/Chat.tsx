@@ -174,7 +174,7 @@ export default function Chat() {
 
             setThinkingStatus("Thinking...");
 
-            const response = await submitPrompt(
+            await submitPrompt(
                 input,
                 selectedModel,
                 userAddress,
