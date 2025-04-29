@@ -45,13 +45,10 @@ export default function Chat() {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
     const [activeSessionId, setActiveSessionId] = useState<string | null>(() => {
-        // Try to get the active session from localStorage on initial load
         const savedSessionId = localStorage.getItem('activeSessionId');
         return savedSessionId || null;
     });
-    const [justCreatedSession, setJustCreatedSession] = useState(false);
     const [selectedModel, setSelectedModel] = useState<string>(() => {
-        // Try to get the selected model from localStorage on initial load
         const savedModel = localStorage.getItem('selectedModel');
         return savedModel || 'mixtral-8x7b-instruct';
     });
@@ -59,7 +56,7 @@ export default function Chat() {
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const { isOpen: isSidebarOpen, onToggle: toggleSidebar } = useDisclosure({ 
-        defaultIsOpen: window.innerWidth >= 768 // Only open by default on desktop
+        defaultIsOpen: window.innerWidth >= 768
     });
     const toast = useToast();
 
@@ -88,27 +85,15 @@ export default function Chat() {
     }, [input]);
 
     useEffect(() => {
-        // This effect now runs *only* when availableSessions changes.
-        // If, at the time the sessions list updates, there's no active session,
-        // it selects the first one as a default.
-        // It will NOT run when handleNewChat sets activeSessionId to null.
         if (availableSessions.length > 0 && !activeSessionId) {
-             console.log("Setting default session because availableSessions updated and no active session found.");
             setActiveSessionId(availableSessions[0].session_id);
         }
-        // Remove activeSessionId from the dependency array
-    }, [availableSessions]); // <-- Corrected dependency
+    }, [availableSessions]);
 
     useEffect(() => {
         const loadSession = async () => {
             if (!activeSessionId) {
                 setMessages([]);
-                return;
-            }
-    
-            if (justCreatedSession) {
-                console.log("🛑 Skipping loadSession because session just created");
-                setJustCreatedSession(false); // Reset flag
                 return;
             }
     
@@ -130,7 +115,6 @@ export default function Chat() {
         loadSession();
     }, [activeSessionId]);
     
-
     useEffect(() => {
         if (activeSessionId) {
             localStorage.setItem('activeSessionId', activeSessionId);
@@ -143,7 +127,6 @@ export default function Chat() {
         localStorage.setItem('selectedModel', selectedModel);
     }, [selectedModel]);
 
-    // Add a resize listener to handle sidebar state on window resize
     useEffect(() => {
         const handleResize = () => {
             if (window.innerWidth >= 768 && !isSidebarOpen) {
@@ -158,23 +141,23 @@ export default function Chat() {
     }, [isSidebarOpen, toggleSidebar]);
 
     const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
         if (!input.trim() || thinkingStatus) return;
-    
+
+        e.preventDefault();
         if (!userAddress) {
             toast({ title: "Connect wallet", status: "error" });
             return;
         }
-    
+
         setThinkingStatus("Processing Payment...");
-    
+
         const userMessage: ChatMessage = { content: input, role: "user", timestamp: new Date().toISOString() };
         setMessages(prev => [...prev, userMessage]);
         setInput('');
-    
+
         let sessionId = activeSessionId;
         let createdNewSession = false;
-    
+
         try {
             if (!sessionId) {
                 const sessionResponse = await createSession(userAddress);
@@ -186,13 +169,11 @@ export default function Chat() {
             const tx = await payForMessage(sessionId);
             console.log("💵 Payment transaction hash:", tx.hash);
 
-            // 🛑 Wait for the tx to be mined before proceeding
             await tx.wait();
             console.log("✅ Payment confirmed on chain");
 
-            setThinkingStatus("Thinking...");  // Switch status after payment!
+            setThinkingStatus("Thinking...");
 
-            // Now safely submit prompt
             const response = await submitPrompt(
                 input,
                 selectedModel,
@@ -211,8 +192,7 @@ export default function Chat() {
             }
     
         } catch (err) {
-            const error = err as any; // 👈 explicitly cast 'err' to any
-        
+            const error = err as any;
             console.error('Error during prompt submission:', error);
         
             let errorMessage = "An unexpected error occurred.";
@@ -235,8 +215,6 @@ export default function Chat() {
             setThinkingStatus(null);
         }
     };
-    
-    
 
     const handleNewChat = () => {
         setMessages([]);
@@ -404,14 +382,16 @@ export default function Chat() {
                             {messages.map((message, index) => (
                                 <ChatMessageComponent key={index} message={message} />
                             ))}
+                            
                             {thinkingStatus && (
                                 <Box p={4} borderRadius="lg" bg={messageBgColor} maxW="80%" alignSelf="flex-start">
                                     <HStack>
-                                    <Spinner size="sm" />
-                                    <Text>{thinkingStatus}</Text>  {/* Dynamically show what we're doing */}
+                                        <Spinner size="sm" />
+                                        <Text>{thinkingStatus}</Text>
                                     </HStack>
                                 </Box>
                             )}
+
                             <div ref={messagesEndRef} />
                         </VStack>
                     </Container>
@@ -468,7 +448,6 @@ export default function Chat() {
                                         px={{ base: 4, md: 6 }}
                                         size={{ base: 'sm', md: 'md' }}
                                     >
-
                                         <Text display={{ base: 'none', sm: 'block' }}>Send (0.00001 ETH)</Text>
                                         <Text display={{ base: 'block', sm: 'none' }}>Send</Text>
                                     </Button>
