@@ -21,7 +21,7 @@ import re
 import ipaddress
 from fastapi import BackgroundTasks
 from .services.model_registry import ModelRegistry
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from .services.payment import PaymentService
 
 # Configure logging
@@ -337,6 +337,39 @@ async def delete_session(session_id: str):
     except Exception as e:
         logger.error(f"Error deleting session: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+class CreateSessionRequest(BaseModel):
+    wallet_address: str = Field(..., description="The wallet address of the user")
+
+class CreateSessionResponse(BaseModel):
+    session_id: str = Field(..., description="The unique identifier for the chat session")
+    created_at: datetime = Field(..., description="When the session was created")
+    updated_at: datetime = Field(..., description="When the session was last updated")
+
+    class Config:
+        json_encoders = {
+            datetime: lambda dt: dt.isoformat()
+        }
+
+@app.post("/sessions/create", response_model=CreateSessionResponse)
+async def create_session(request: CreateSessionRequest):
+    """Create a new chat session for a wallet address."""
+    try:
+        session_id = str(uuid.uuid4())
+        chat_session_service.create_session(session_id, wallet_address=request.wallet_address)
+        session = chat_session_service.get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=500, detail="Failed to create session")
+        
+        return CreateSessionResponse(
+            session_id=session_id,
+            created_at=session.created_at,
+            updated_at=session.updated_at
+        )
+    except Exception as e:
+        logger.error(f"Error creating session: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):

@@ -25,7 +25,7 @@ import {
 } from '@chakra-ui/react';
 import { ChevronLeftIcon, ChevronRightIcon } from '@chakra-ui/icons';
 import { ChatMessage } from '../types/chat';
-import { submitPrompt, getSession } from '../services/api';
+import { submitPrompt, getSession, createSession } from '../services/api';
 import Sidebar from './Sidebar';
 import ChatMessageComponent from './ChatMessage';
 import { useApp } from '../context/AppContext';
@@ -49,6 +49,7 @@ export default function Chat() {
         const savedSessionId = localStorage.getItem('activeSessionId');
         return savedSessionId || null;
     });
+    const [justCreatedSession, setJustCreatedSession] = useState(false);
     const [selectedModel, setSelectedModel] = useState<string>(() => {
         // Try to get the selected model from localStorage on initial load
         const savedModel = localStorage.getItem('selectedModel');
@@ -104,7 +105,13 @@ export default function Chat() {
                 setMessages([]);
                 return;
             }
-
+    
+            if (justCreatedSession) {
+                console.log("🛑 Skipping loadSession because session just created");
+                setJustCreatedSession(false); // Reset flag
+                return;
+            }
+    
             try {
                 const session = await getSession(activeSessionId);
                 setMessages(session.messages);
@@ -119,9 +126,10 @@ export default function Chat() {
                 });
             }
         };
-
+    
         loadSession();
     }, [activeSessionId]);
+    
 
     useEffect(() => {
         if (activeSessionId) {
@@ -152,7 +160,7 @@ export default function Chat() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!input.trim() || isThinking) return;
-
+    
         if (!userAddress) {
             toast({
                 title: 'Error',
@@ -163,20 +171,18 @@ export default function Chat() {
             });
             return;
         }
-
-        // Ensure a model is selected
+    
         if (!selectedModel) {
             toast({
-                title: "Error",
-                description: "Please select a model before submitting",
-                status: "error",
+                title: 'Error',
+                description: 'Please select a model before submitting',
+                status: 'error',
                 duration: 3000,
                 isClosable: true,
             });
             return;
         }
-
-        // Add user message immediately
+    
         const userMessage: ChatMessage = {
             content: input,
             role: 'user',
@@ -184,28 +190,30 @@ export default function Chat() {
         };
         setMessages(prev => [...prev, userMessage]);
         setInput('');
-        
-        // Show thinking indicator
         setIsThinking(true);
-
-        console.log("🔍 activeSessionId before payForMessage:", activeSessionId);
-        console.log("🧵 Length of sessionId:", activeSessionId?.length);
-
+    
         try {
-            // Make payment first
-            const safeSessionId = (activeSessionId && activeSessionId.length < 100) ? activeSessionId : 'new';
-            await payForMessage(safeSessionId);
-            
+            let sessionId = activeSessionId;
+    
+            if (!sessionId) {
+                const sessionResponse = await createSession(userAddress);
+                sessionId = sessionResponse.session_id;
+                setActiveSessionId(sessionId); // <-- still set react state
+                setJustCreatedSession(true); // <-- still set react flag
+                localStorage.setItem('activeSessionId', sessionId);
+                console.log('🆕 Created new session:', sessionId);
+            }
+    
+            // 🚨 Always use local sessionId from this scope — never rely on activeSessionId right away
+            await payForMessage(sessionId);
+    
             const response = await submitPrompt(
                 input,
                 selectedModel,
                 userAddress,
-                activeSessionId || undefined
+                sessionId
             );
-            console.log('Prompt response:', response);
-            console.log("🧪 Backend response.session_id:", response.session_id);
-
-
+    
             const assistantMessage: ChatMessage = {
                 content: response.response,
                 role: 'assistant',
@@ -227,32 +235,22 @@ export default function Chat() {
                 ipfsHash: response.metadata.ipfs_cid,
                 transactionHash: response.metadata.transaction_hash,
             };
-
-            // Update messages and turn off loading state in a single batch
+    
             setMessages(prev => [...prev, assistantMessage]);
-            setIsThinking(false);
-            
-            // Always refresh sessions after a successful response
-            await refreshSessions();
-            
-            // Update active session if needed
-            if (!activeSessionId && response.session_id) {
-                setActiveSessionId(response.session_id);
-                localStorage.setItem('activeSessionId', response.session_id);
-            }
-            
+    
         } catch (error) {
             console.error('Error submitting prompt:', error);
             toast({
-                title: "Error",
-                description: "Failed to submit prompt. Please try again.",
-                status: "error",
+                title: 'Error',
+                description: 'Failed to submit prompt. Please try again.',
+                status: 'error',
                 duration: 3000,
                 isClosable: true,
             });
+        } finally {
             setIsThinking(false);
         }
-    };
+    };    
 
     const handleNewChat = () => {
         setMessages([]);

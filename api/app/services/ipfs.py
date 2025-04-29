@@ -198,14 +198,17 @@ class IPFSService:
 
             else:
                 # Fallback to local IPFS node
-                return await self._make_request(
+                response_data = await self._make_request(
                     "add",
                     files={"file": ("data.json", json_data, "application/json")}
-                )["Hash"]
+                )
+                logger.info(f"✅ Uploaded to Local IPFS: {response_data['Hash']}")
+                return response_data["Hash"]
 
         except Exception as e:
             logger.error(f"Error uploading JSON to IPFS: {str(e)}")
             raise Exception(f"Failed to upload JSON to IPFS: {str(e)}")
+
 
     async def _make_request(self, endpoint: str, files: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Make a request to the IPFS API."""

@@ -203,3 +203,21 @@ export async function deleteSession(sessionId: string): Promise<void> {
         throw new Error('Failed to delete session');
     }
 }
+
+export interface CreateSessionResponse {
+  session_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export const createSession = async (walletAddress: string): Promise<CreateSessionResponse> => {
+  try {
+    const response = await axios.post(`${API_BASE_URL}/sessions/create`, {
+      wallet_address: walletAddress
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error creating session:', error);
+    throw error;
+  }
+};
