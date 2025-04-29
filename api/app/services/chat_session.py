@@ -209,10 +209,12 @@ class ChatSessionService:
 
             # Update session title if it's the first message
             if not db_session.title and role == "user":
-                # Use first 50 characters of the message as title
+                # Set title based on first user message
                 db_session.title = content[:50] + "..." if len(content) > 50 else content
-                db_session.updated_at = datetime.now(timezone.utc)
-                self.db.add(db_session)
+
+            # Always update updated_at when any new message is added
+            db_session.updated_at = datetime.now(timezone.utc)
+            self.db.add(db_session)
 
             message_metadata = metadata or {}
 

@@ -19,9 +19,10 @@ import time
 import os
 import re
 import ipaddress
+import asyncio
 from fastapi import BackgroundTasks
 from .services.model_registry import ModelRegistry
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from .services.payment import PaymentService
 
 # Configure logging
@@ -160,21 +161,29 @@ class PromptRequest(BaseModel):
     model: str
     user_address: str
     session_id: Optional[str] = None
+    tx_hash: Optional[str] = None   # <-- add this!
 
 @app.post("/submit_prompt")
 async def submit_prompt(request: PromptRequest):
     """Submit a prompt and get a response."""
     try:
-        # Verify payment before processing
-        try:
-            if not payment_service.verify_payment(request.session_id or "new", request.user_address):
-                raise HTTPException(status_code=402, detail="Payment required")
-        except Exception as e:
-            logger.error(f"Error verifying payment: {str(e)}")
-            # For testing, allow the request to proceed
-            # In production, you should raise the HTTPException
-            pass
-        
+        # Retry payment verification 2-3 times if needed
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                if not payment_service.verify_payment(request.session_id or "new", request.user_address):
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(2)  # Wait 2 seconds and retry
+                        continue
+                    raise HTTPException(status_code=402, detail="Payment required")
+                break  # Payment verified, break loop
+            except Exception as e:
+                logger.error(f"Error verifying payment on attempt {attempt + 1}: {str(e)}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2)
+                    continue
+                raise HTTPException(status_code=500, detail="Error verifying payment")
+
         # Get the active session or create a new one
         session_id = request.session_id or str(uuid.uuid4())
         if not chat_session_service.get_session(session_id):
@@ -197,16 +206,21 @@ async def submit_prompt(request: PromptRequest):
         
         # Extract the response text
         response = llm_response.get('response', '') if isinstance(llm_response, dict) else llm_response
-        
+
         # Create verification hash
         verification_hash = llm_service.create_verification_hash(request.prompt, response)
-        
+
         # Sign the verification hash
         signature = blockchain_service.sign_message(verification_hash)
-        
-        # Store hash on blockchain
-        blockchain_result = await blockchain_service.submit_to_blockchain(verification_hash)
-        transaction_hash = blockchain_result.get('transaction_hash')
+
+        # Check if frontend provided tx_hash
+        if request.tx_hash:
+            logger.info(f"Using frontend-provided tx_hash: {request.tx_hash}")
+            transaction_hash = request.tx_hash
+        else:
+            logger.info("No tx_hash provided from frontend. Submitting to blockchain...")
+            blockchain_result = await blockchain_service.submit_to_blockchain(verification_hash)
+            transaction_hash = blockchain_result.get('transaction_hash')
         
         # Upload to IPFS
         ipfs_data = {
@@ -337,6 +351,39 @@ async def delete_session(session_id: str):
     except Exception as e:
         logger.error(f"Error deleting session: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+class CreateSessionRequest(BaseModel):
+    wallet_address: str = Field(..., description="The wallet address of the user")
+
+class CreateSessionResponse(BaseModel):
+    session_id: str = Field(..., description="The unique identifier for the chat session")
+    created_at: datetime = Field(..., description="When the session was created")
+    updated_at: datetime = Field(..., description="When the session was last updated")
+
+    class Config:
+        json_encoders = {
+            datetime: lambda dt: dt.isoformat()
+        }
+
+@app.post("/sessions/create", response_model=CreateSessionResponse)
+async def create_session(request: CreateSessionRequest):
+    """Create a new chat session for a wallet address."""
+    try:
+        session_id = str(uuid.uuid4())
+        chat_session_service.create_session(session_id, wallet_address=request.wallet_address)
+        session = chat_session_service.get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=500, detail="Failed to create session")
+        
+        return CreateSessionResponse(
+            session_id=session_id,
+            created_at=session.created_at,
+            updated_at=session.updated_at
+        )
+    except Exception as e:
+        logger.error(f"Error creating session: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):

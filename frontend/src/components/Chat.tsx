@@ -25,7 +25,7 @@ import {
 } from '@chakra-ui/react';
 import { ChevronLeftIcon, ChevronRightIcon } from '@chakra-ui/icons';
 import { ChatMessage } from '../types/chat';
-import { submitPrompt, getSession } from '../services/api';
+import { submitPrompt, getSession, createSession } from '../services/api';
 import Sidebar from './Sidebar';
 import ChatMessageComponent from './ChatMessage';
 import { useApp } from '../context/AppContext';
@@ -45,20 +45,18 @@ export default function Chat() {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
     const [activeSessionId, setActiveSessionId] = useState<string | null>(() => {
-        // Try to get the active session from localStorage on initial load
         const savedSessionId = localStorage.getItem('activeSessionId');
         return savedSessionId || null;
     });
     const [selectedModel, setSelectedModel] = useState<string>(() => {
-        // Try to get the selected model from localStorage on initial load
         const savedModel = localStorage.getItem('selectedModel');
         return savedModel || 'mixtral-8x7b-instruct';
     });
-    const [isThinking, setIsThinking] = useState(false);
+    const [thinkingStatus, setThinkingStatus] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const { isOpen: isSidebarOpen, onToggle: toggleSidebar } = useDisclosure({ 
-        defaultIsOpen: window.innerWidth >= 768 // Only open by default on desktop
+        defaultIsOpen: window.innerWidth >= 768
     });
     const toast = useToast();
 
@@ -87,16 +85,10 @@ export default function Chat() {
     }, [input]);
 
     useEffect(() => {
-        // This effect now runs *only* when availableSessions changes.
-        // If, at the time the sessions list updates, there's no active session,
-        // it selects the first one as a default.
-        // It will NOT run when handleNewChat sets activeSessionId to null.
         if (availableSessions.length > 0 && !activeSessionId) {
-             console.log("Setting default session because availableSessions updated and no active session found.");
             setActiveSessionId(availableSessions[0].session_id);
         }
-        // Remove activeSessionId from the dependency array
-    }, [availableSessions]); // <-- Corrected dependency
+    }, [availableSessions]);
 
     useEffect(() => {
         const loadSession = async () => {
@@ -104,7 +96,7 @@ export default function Chat() {
                 setMessages([]);
                 return;
             }
-
+    
             try {
                 const session = await getSession(activeSessionId);
                 setMessages(session.messages);
@@ -119,10 +111,10 @@ export default function Chat() {
                 });
             }
         };
-
+    
         loadSession();
     }, [activeSessionId]);
-
+    
     useEffect(() => {
         if (activeSessionId) {
             localStorage.setItem('activeSessionId', activeSessionId);
@@ -135,7 +127,6 @@ export default function Chat() {
         localStorage.setItem('selectedModel', selectedModel);
     }, [selectedModel]);
 
-    // Add a resize listener to handle sidebar state on window resize
     useEffect(() => {
         const handleResize = () => {
             if (window.innerWidth >= 768 && !isSidebarOpen) {
@@ -150,107 +141,78 @@ export default function Chat() {
     }, [isSidebarOpen, toggleSidebar]);
 
     const handleSubmit = async (e: React.FormEvent) => {
+        if (!input.trim() || thinkingStatus) return;
+
         e.preventDefault();
-        if (!input.trim() || isThinking) return;
-
         if (!userAddress) {
-            toast({
-                title: 'Error',
-                description: 'Please connect your wallet first',
-                status: 'error',
-                duration: 3000,
-                isClosable: true,
-            });
+            toast({ title: "Connect wallet", status: "error" });
             return;
         }
 
-        // Ensure a model is selected
-        if (!selectedModel) {
-            toast({
-                title: "Error",
-                description: "Please select a model before submitting",
-                status: "error",
-                duration: 3000,
-                isClosable: true,
-            });
-            return;
-        }
+        setThinkingStatus("Processing Payment...");
 
-        // Add user message immediately
-        const userMessage: ChatMessage = {
-            content: input,
-            role: 'user',
-            timestamp: new Date().toISOString(),
-        };
+        const userMessage: ChatMessage = { content: input, role: "user", timestamp: new Date().toISOString() };
         setMessages(prev => [...prev, userMessage]);
         setInput('');
-        
-        // Show thinking indicator
-        setIsThinking(true);
 
-        console.log("🔍 activeSessionId before payForMessage:", activeSessionId);
-        console.log("🧵 Length of sessionId:", activeSessionId?.length);
+        let sessionId = activeSessionId;
+        let createdNewSession = false;
 
         try {
-            // Make payment first
-            const safeSessionId = (activeSessionId && activeSessionId.length < 100) ? activeSessionId : 'new';
-            await payForMessage(safeSessionId);
-            
-            const response = await submitPrompt(
+            if (!sessionId) {
+                const sessionResponse = await createSession(userAddress);
+                sessionId = sessionResponse.session_id;
+                createdNewSession = true;
+                console.log("🆕 Created new session:", sessionId);
+            }
+
+            const tx = await payForMessage(sessionId);
+            console.log("💵 Payment transaction hash:", tx.hash);
+
+            await tx.wait();
+            console.log("✅ Payment confirmed on chain");
+
+            setThinkingStatus("Thinking...");
+
+            await submitPrompt(
                 input,
                 selectedModel,
                 userAddress,
-                activeSessionId || undefined
+                sessionId,
+                tx.hash
             );
-            console.log('Prompt response:', response);
-            console.log("🧪 Backend response.session_id:", response.session_id);
-
-
-            const assistantMessage: ChatMessage = {
-                content: response.response,
-                role: 'assistant',
-                timestamp: new Date().toISOString(),
-                metadata: {
-                    model: selectedModel,
-                    model_id: response.model_id,
-                    temperature: response.metadata.temperature,
-                    max_tokens: response.metadata.max_tokens,
-                    top_p: response.metadata.top_p,
-                    do_sample: response.metadata.do_sample,
-                    num_beams: response.metadata.num_beams,
-                    early_stopping: response.metadata.early_stopping,
-                    verification_hash: response.metadata.verification_hash,
-                    signature: response.metadata.signature,
-                    ipfs_cid: response.metadata.ipfs_cid,
-                    transaction_hash: response.metadata.transaction_hash,
-                },
-                ipfsHash: response.metadata.ipfs_cid,
-                transactionHash: response.metadata.transaction_hash,
-            };
-
-            // Update messages and turn off loading state in a single batch
-            setMessages(prev => [...prev, assistantMessage]);
-            setIsThinking(false);
-            
-            // Always refresh sessions after a successful response
+    
             await refreshSessions();
-            
-            // Update active session if needed
-            if (!activeSessionId && response.session_id) {
-                setActiveSessionId(response.session_id);
-                localStorage.setItem('activeSessionId', response.session_id);
+            const session = await getSession(sessionId);
+            setMessages(session.messages);
+    
+            if (createdNewSession) {
+                setActiveSessionId(sessionId);
+                localStorage.setItem('activeSessionId', sessionId);
             }
-            
-        } catch (error) {
-            console.error('Error submitting prompt:', error);
+    
+        } catch (err) {
+            const error = err as any;
+            console.error('Error during prompt submission:', error);
+        
+            let errorMessage = "An unexpected error occurred.";
+            if (error?.code === "ACTION_REJECTED") {
+                errorMessage = "Payment cancelled.";
+            } else if (error instanceof Error) {
+                errorMessage = error.message;
+            }
+        
             toast({
-                title: "Error",
-                description: "Failed to submit prompt. Please try again.",
+                title: "Submission Error",
+                description: errorMessage,
                 status: "error",
-                duration: 3000,
-                isClosable: true,
             });
-            setIsThinking(false);
+        
+            if (error?.code === "ACTION_REJECTED") {
+                setMessages(prev => prev.slice(0, -1));
+            }
+        } finally {
+            setThinkingStatus(null);
         }
     };
 
@@ -420,14 +382,16 @@ export default function Chat() {
                             {messages.map((message, index) => (
                                 <ChatMessageComponent key={index} message={message} />
                             ))}
-                            {isThinking && (
+                            
+                            {thinkingStatus && (
                                 <Box p={4} borderRadius="lg" bg={messageBgColor} maxW="80%" alignSelf="flex-start">
                                     <HStack>
                                         <Spinner size="sm" />
-                                        <Text>Thinking...</Text>
+                                        <Text>{thinkingStatus}</Text>
                                     </HStack>
                                 </Box>
                             )}
+
                             <div ref={messagesEndRef} />
                         </VStack>
                     </Container>
@@ -479,7 +443,7 @@ export default function Chat() {
                                     <Button
                                         type="submit"
                                         colorScheme="blue"
-                                        isLoading={isThinking}
+                                        isLoading={!!thinkingStatus}
                                         isDisabled={!input.trim()}
                                         px={{ base: 4, md: 6 }}
                                         size={{ base: 'sm', md: 'md' }}

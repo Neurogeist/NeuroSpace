@@ -96,15 +96,7 @@ export const getPaymentContract = async () => {
     return new ethers.Contract(PAYMENT_CONTRACT_ADDRESS, PAYMENT_CONTRACT_ABI, signer);
 };
 
-export const payForMessage = async (sessionId: string): Promise<void> => {
-    if (!window.ethereum) {
-        throw new Error('MetaMask is not installed');
-    }
-
-    if (!sessionId || sessionId.length === 0) {
-        throw new Error('Session ID is invalid or missing');
-    }
-
+export const payForMessage = async (sessionId: string) => {
     const provider = new ethers.BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
     const contract = new ethers.Contract(PAYMENT_CONTRACT_ADDRESS!, PAYMENT_CONTRACT_ABI, signer);
@@ -113,5 +105,5 @@ export const payForMessage = async (sessionId: string): Promise<void> => {
         value: ethers.parseEther('0.00001')
     });
 
-    await tx.wait();
+    return tx;
 };
