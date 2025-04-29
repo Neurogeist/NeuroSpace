@@ -19,6 +19,7 @@ import time
 import os
 import re
 import ipaddress
+import asyncio
 from fastapi import BackgroundTasks
 from .services.model_registry import ModelRegistry
 from pydantic import BaseModel, Field
@@ -166,16 +167,23 @@ class PromptRequest(BaseModel):
 async def submit_prompt(request: PromptRequest):
     """Submit a prompt and get a response."""
     try:
-        # Verify payment before processing
-        try:
-            if not payment_service.verify_payment(request.session_id or "new", request.user_address):
-                raise HTTPException(status_code=402, detail="Payment required")
-        except Exception as e:
-            logger.error(f"Error verifying payment: {str(e)}")
-            # For testing, allow the request to proceed
-            # In production, you should raise the HTTPException
-            pass
-        
+        # Retry payment verification 2-3 times if needed
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                if not payment_service.verify_payment(request.session_id or "new", request.user_address):
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(2)  # Wait 2 seconds and retry
+                        continue
+                    raise HTTPException(status_code=402, detail="Payment required")
+                break  # Payment verified, break loop
+            except Exception as e:
+                logger.error(f"Error verifying payment on attempt {attempt + 1}: {str(e)}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2)
+                    continue
+                raise HTTPException(status_code=500, detail="Error verifying payment")
+
         # Get the active session or create a new one
         session_id = request.session_id or str(uuid.uuid4())
         if not chat_session_service.get_session(session_id):

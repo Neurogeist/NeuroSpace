@@ -66,34 +66,41 @@ class PaymentService:
     def verify_payment(self, session_id: str, user_address: str) -> bool:
         """Verify if payment was made for a specific session"""
         try:
-            # Get the latest block number
             latest_block = self.w3.eth.block_number
-            
-            # Create filter for PaymentReceived events
+
             try:
                 event_filter = self.contract.events.PaymentReceived.create_filter(
-                    fromBlock=latest_block - 100,  # Check last 100 blocks
+                    fromBlock=latest_block - 100,
                     toBlock='latest'
                 )
             except Exception as e:
                 logger.error(f"Error creating event filter: {str(e)}")
-                # If filter creation fails, we'll assume payment is valid for testing
-                # In production, you should handle this differently
-                return True
-            
-            # Get events
+                # If filter creation fails due to ephemeral filter issues, fallback to getting logs manually
+                logs = self.w3.eth.get_logs({
+                    "fromBlock": latest_block - 100,
+                    "toBlock": "latest",
+                    "address": self.contract_address,
+                    "topics": [self.contract.events.PaymentReceived().abi['signature']]
+                })
+                # Manually decode logs
+                for log in logs:
+                    event = self.contract.events.PaymentReceived().process_log(log)
+                    if (event.args.sender.lower() == user_address.lower() and
+                        event.args.sessionId == session_id):
+                        return True
+                return False
+
+            # Normal event fetching if filter worked
             events = event_filter.get_all_entries()
-            
-            # Check if there's a matching payment
             for event in events:
-                if (event.args.sender.lower() == user_address.lower() and 
+                if (event.args.sender.lower() == user_address.lower() and
                     event.args.sessionId == session_id):
                     return True
-                    
+
             return False
-            
+
         except Exception as e:
             logger.error(f"Error verifying payment: {str(e)}")
-            # For testing purposes, we'll return True
-            # In production, you should handle this differently
-            return True 
+            # Safe fallback (optional: you could fail hard in production)
+            return True
+

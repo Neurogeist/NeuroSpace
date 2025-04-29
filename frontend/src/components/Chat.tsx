@@ -56,6 +56,7 @@ export default function Chat() {
         return savedModel || 'mixtral-8x7b-instruct';
     });
     const [isThinking, setIsThinking] = useState(false);
+    const [thinkingStatus, setThinkingStatus] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const { isOpen: isSidebarOpen, onToggle: toggleSidebar } = useDisclosure({ 
@@ -159,61 +160,61 @@ export default function Chat() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!input.trim() || isThinking) return;
+        if (!input.trim() || thinkingStatus) return;
     
         if (!userAddress) {
             toast({ title: "Connect wallet", status: "error" });
             return;
         }
     
-        setIsThinking(true);
+        setThinkingStatus("Processing Payment...");
     
         const userMessage: ChatMessage = { content: input, role: "user", timestamp: new Date().toISOString() };
         setMessages(prev => [...prev, userMessage]);
         setInput('');
     
-        try {
-            let sessionId = activeSessionId;
+        let sessionId = activeSessionId;
+        let createdNewSession = false;
     
-            // 🛑 FIRST: if no session, CREATE ONE
+        try {
             if (!sessionId) {
                 const sessionResponse = await createSession(userAddress);
                 sessionId = sessionResponse.session_id;
-                setActiveSessionId(sessionId);
-                localStorage.setItem('activeSessionId', sessionId);
+                createdNewSession = true;
                 console.log("🆕 Created new session:", sessionId);
             }
     
-            // ✅ SECOND: now that you have a real sessionId, pay for message
             const tx = await payForMessage(sessionId);
             console.log("💵 Payment transaction hash:", tx.hash);
     
-            // ✅ THIRD: submit prompt, passing tx.hash
+            setThinkingStatus("Thinking...");  // Switch status after payment!
+    
             const response = await submitPrompt(
                 input,
                 selectedModel,
                 userAddress,
                 sessionId,
-                tx.hash // send txHash!
+                tx.hash
             );
     
-            const assistantMessage: ChatMessage = {
-                content: response.response,
-                role: "assistant",
-                timestamp: new Date().toISOString(),
-                metadata: response.metadata,
-                ipfsHash: response.metadata.ipfs_cid,
-                transactionHash: response.metadata.transaction_hash,
-            };
-            setMessages(prev => [...prev, assistantMessage]);
+            await refreshSessions();
+            const session = await getSession(sessionId);
+            setMessages(session.messages);
+    
+            if (createdNewSession) {
+                setActiveSessionId(sessionId);
+                localStorage.setItem('activeSessionId', sessionId);
+            }
     
         } catch (error) {
             console.error('Error during prompt submission:', error);
-            toast({ title: "Submission Error", description: error.message, status: "error" });
+            const description = error instanceof Error ? error.message : 'An unexpected error occurred.';
+            toast({ title: "Submission Error", description, status: "error" });
         } finally {
-            setIsThinking(false);
+            setThinkingStatus(null);
         }
     };
+    
     
 
     const handleNewChat = () => {
@@ -382,11 +383,11 @@ export default function Chat() {
                             {messages.map((message, index) => (
                                 <ChatMessageComponent key={index} message={message} />
                             ))}
-                            {isThinking && (
+                            {thinkingStatus && (
                                 <Box p={4} borderRadius="lg" bg={messageBgColor} maxW="80%" alignSelf="flex-start">
                                     <HStack>
-                                        <Spinner size="sm" />
-                                        <Text>Thinking...</Text>
+                                    <Spinner size="sm" />
+                                    <Text>{thinkingStatus}</Text>  {/* Dynamically show what we're doing */}
                                     </HStack>
                                 </Box>
                             )}
@@ -441,11 +442,12 @@ export default function Chat() {
                                     <Button
                                         type="submit"
                                         colorScheme="blue"
-                                        isLoading={isThinking}
+                                        isLoading={!!thinkingStatus}
                                         isDisabled={!input.trim()}
                                         px={{ base: 4, md: 6 }}
                                         size={{ base: 'sm', md: 'md' }}
                                     >
+
                                         <Text display={{ base: 'none', sm: 'block' }}>Send (0.00001 ETH)</Text>
                                         <Text display={{ base: 'block', sm: 'none' }}>Send</Text>
                                     </Button>
