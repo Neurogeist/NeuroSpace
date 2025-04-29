@@ -162,95 +162,59 @@ export default function Chat() {
         if (!input.trim() || isThinking) return;
     
         if (!userAddress) {
-            toast({
-                title: 'Error',
-                description: 'Please connect your wallet first',
-                status: 'error',
-                duration: 3000,
-                isClosable: true,
-            });
+            toast({ title: "Connect wallet", status: "error" });
             return;
         }
     
-        if (!selectedModel) {
-            toast({
-                title: 'Error',
-                description: 'Please select a model before submitting',
-                status: 'error',
-                duration: 3000,
-                isClosable: true,
-            });
-            return;
-        }
+        setIsThinking(true);
     
-        const userMessage: ChatMessage = {
-            content: input,
-            role: 'user',
-            timestamp: new Date().toISOString(),
-        };
+        const userMessage: ChatMessage = { content: input, role: "user", timestamp: new Date().toISOString() };
         setMessages(prev => [...prev, userMessage]);
         setInput('');
-        setIsThinking(true);
     
         try {
             let sessionId = activeSessionId;
     
+            // 🛑 FIRST: if no session, CREATE ONE
             if (!sessionId) {
                 const sessionResponse = await createSession(userAddress);
                 sessionId = sessionResponse.session_id;
-                setActiveSessionId(sessionId); // <-- still set react state
-                setJustCreatedSession(true); // <-- still set react flag
+                setActiveSessionId(sessionId);
                 localStorage.setItem('activeSessionId', sessionId);
-                console.log('🆕 Created new session:', sessionId);
+                console.log("🆕 Created new session:", sessionId);
             }
     
-            // 🚨 Always use local sessionId from this scope — never rely on activeSessionId right away
-            await payForMessage(sessionId);
+            // ✅ SECOND: now that you have a real sessionId, pay for message
+            const tx = await payForMessage(sessionId);
+            console.log("💵 Payment transaction hash:", tx.hash);
     
+            // ✅ THIRD: submit prompt, passing tx.hash
             const response = await submitPrompt(
                 input,
                 selectedModel,
                 userAddress,
-                sessionId
+                sessionId,
+                tx.hash // send txHash!
             );
     
             const assistantMessage: ChatMessage = {
                 content: response.response,
-                role: 'assistant',
+                role: "assistant",
                 timestamp: new Date().toISOString(),
-                metadata: {
-                    model: selectedModel,
-                    model_id: response.model_id,
-                    temperature: response.metadata.temperature,
-                    max_tokens: response.metadata.max_tokens,
-                    top_p: response.metadata.top_p,
-                    do_sample: response.metadata.do_sample,
-                    num_beams: response.metadata.num_beams,
-                    early_stopping: response.metadata.early_stopping,
-                    verification_hash: response.metadata.verification_hash,
-                    signature: response.metadata.signature,
-                    ipfs_cid: response.metadata.ipfs_cid,
-                    transaction_hash: response.metadata.transaction_hash,
-                },
+                metadata: response.metadata,
                 ipfsHash: response.metadata.ipfs_cid,
                 transactionHash: response.metadata.transaction_hash,
             };
-    
             setMessages(prev => [...prev, assistantMessage]);
     
         } catch (error) {
-            console.error('Error submitting prompt:', error);
-            toast({
-                title: 'Error',
-                description: 'Failed to submit prompt. Please try again.',
-                status: 'error',
-                duration: 3000,
-                isClosable: true,
-            });
+            console.error('Error during prompt submission:', error);
+            toast({ title: "Submission Error", description: error.message, status: "error" });
         } finally {
             setIsThinking(false);
         }
-    };    
+    };
+    
 
     const handleNewChat = () => {
         setMessages([]);

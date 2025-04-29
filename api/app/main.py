@@ -160,6 +160,7 @@ class PromptRequest(BaseModel):
     model: str
     user_address: str
     session_id: Optional[str] = None
+    tx_hash: Optional[str] = None   # <-- add this!
 
 @app.post("/submit_prompt")
 async def submit_prompt(request: PromptRequest):
@@ -197,16 +198,21 @@ async def submit_prompt(request: PromptRequest):
         
         # Extract the response text
         response = llm_response.get('response', '') if isinstance(llm_response, dict) else llm_response
-        
+
         # Create verification hash
         verification_hash = llm_service.create_verification_hash(request.prompt, response)
-        
+
         # Sign the verification hash
         signature = blockchain_service.sign_message(verification_hash)
-        
-        # Store hash on blockchain
-        blockchain_result = await blockchain_service.submit_to_blockchain(verification_hash)
-        transaction_hash = blockchain_result.get('transaction_hash')
+
+        # Check if frontend provided tx_hash
+        if request.tx_hash:
+            logger.info(f"Using frontend-provided tx_hash: {request.tx_hash}")
+            transaction_hash = request.tx_hash
+        else:
+            logger.info("No tx_hash provided from frontend. Submitting to blockchain...")
+            blockchain_result = await blockchain_service.submit_to_blockchain(verification_hash)
+            transaction_hash = blockchain_result.get('transaction_hash')
         
         # Upload to IPFS
         ipfs_data = {
