@@ -55,7 +55,6 @@ export default function Chat() {
         const savedModel = localStorage.getItem('selectedModel');
         return savedModel || 'mixtral-8x7b-instruct';
     });
-    const [isThinking, setIsThinking] = useState(false);
     const [thinkingStatus, setThinkingStatus] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -183,12 +182,17 @@ export default function Chat() {
                 createdNewSession = true;
                 console.log("🆕 Created new session:", sessionId);
             }
-    
+
             const tx = await payForMessage(sessionId);
             console.log("💵 Payment transaction hash:", tx.hash);
-    
+
+            // 🛑 Wait for the tx to be mined before proceeding
+            await tx.wait();
+            console.log("✅ Payment confirmed on chain");
+
             setThinkingStatus("Thinking...");  // Switch status after payment!
-    
+
+            // Now safely submit prompt
             const response = await submitPrompt(
                 input,
                 selectedModel,
@@ -206,10 +210,27 @@ export default function Chat() {
                 localStorage.setItem('activeSessionId', sessionId);
             }
     
-        } catch (error) {
+        } catch (err) {
+            const error = err as any; // 👈 explicitly cast 'err' to any
+        
             console.error('Error during prompt submission:', error);
-            const description = error instanceof Error ? error.message : 'An unexpected error occurred.';
-            toast({ title: "Submission Error", description, status: "error" });
+        
+            let errorMessage = "An unexpected error occurred.";
+            if (error?.code === "ACTION_REJECTED") {
+                errorMessage = "Payment cancelled.";
+            } else if (error instanceof Error) {
+                errorMessage = error.message;
+            }
+        
+            toast({
+                title: "Submission Error",
+                description: errorMessage,
+                status: "error",
+            });
+        
+            if (error?.code === "ACTION_REJECTED") {
+                setMessages(prev => prev.slice(0, -1));
+            }
         } finally {
             setThinkingStatus(null);
         }
