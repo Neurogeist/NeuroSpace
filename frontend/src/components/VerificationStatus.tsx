@@ -11,12 +11,14 @@ interface VerificationStatusProps {
     verificationResult: VerificationResponse | null;
     isLoading: boolean;
     error?: string;
+    hashMatch?: boolean;
 }
 
 export default function VerificationStatus({
     verificationResult,
     isLoading,
-    error
+    error,
+    hashMatch
 }: VerificationStatusProps) {
     const statusColor = useColorModeValue('gray.600', 'gray.300');
     const verifiedColor = useColorModeValue('green.600', 'green.300');
@@ -45,6 +47,21 @@ export default function VerificationStatus({
 
     if (!verificationResult) {
         return null;
+    }
+
+    if (hashMatch === false) {
+        return (
+            <Box mt={2} fontSize="sm" color={invalidColor}>
+                <HStack spacing={2}>
+                    <Text>❌ Hash Mismatch</Text>
+                    <Tooltip label="The message content has been tampered with">
+                        <Text fontSize="xs" color={statusColor}>
+                            (Content verification failed)
+                        </Text>
+                    </Tooltip>
+                </HStack>
+            </Box>
+        );
     }
 
     if (!verificationResult.is_valid) {
@@ -76,7 +93,7 @@ export default function VerificationStatus({
         <Box mt={2} fontSize="sm" color={verifiedColor}>
             <HStack spacing={2}>
                 <Text>✅ Verified</Text>
-                <Tooltip label="Recovered address matches expected address">
+                <Tooltip label="Content hash and signature are valid">
                     <Text fontSize="xs" color={statusColor}>
                         ({verificationResult.recovered_address.slice(0, 6)}...{verificationResult.recovered_address.slice(-4)})
                     </Text>

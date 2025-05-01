@@ -289,7 +289,11 @@ class ChatSessionService:
                     "do_sample": db_msg.message_metadata.get("do_sample", True),
                     "num_beams": db_msg.message_metadata.get("num_beams", 1),
                     "early_stopping": db_msg.message_metadata.get("early_stopping", False),
-                    "timestamp": db_msg.timestamp.isoformat().replace("+00:00", "Z")
+                    "timestamp": db_msg.timestamp.isoformat().replace("+00:00", "Z"),
+                    "original_prompt": db_msg.message_metadata.get("original_prompt", ""),
+                    "wallet_address": db_msg.message_metadata.get("wallet_address", ""),
+                    "session_id": db_msg.message_metadata.get("session_id", ""),
+                    "system_prompt": db_msg.message_metadata.get("system_prompt", None)
                 })
 
                 message = ChatMessage(

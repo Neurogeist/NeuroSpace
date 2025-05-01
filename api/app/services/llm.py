@@ -10,6 +10,8 @@ from .model_registry import ModelRegistry
 from .llm_remote import RemoteLLMClient
 from .chat_session import ChatSessionService
 import tiktoken  # Add this to your imports
+import hashlib
+import json
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -203,7 +205,7 @@ class LLMService:
 
             logger.info(f"🧠 Selected {len(selected_messages)} messages out of {len(messages)} total")
 
-            logger.info(f"Final prompt token count: {token_count}")
+            #logger.info(f"Final prompt token count: {token_count}")
             return formatted_prompt
 
         except Exception as e:
@@ -301,29 +303,18 @@ class LLMService:
         
         return text 
 
-    def create_verification_hash(self, prompt: str, response: str) -> str:
-        """Create a verification hash for a prompt and response."""
+        
+    def create_verification_hash(self, data: Dict[str, Any]) -> str:
+        """Create a verification hash for the full generation payload."""
         try:
-            # Create a dictionary with the data to hash
-            data = {
-                "prompt": prompt,
-                "response": response,
-                "model_name": self.current_model_name,
-                "model_id": self.config.model_id,
-                "timestamp": datetime.utcnow().isoformat()
-            }
-            
-            # Convert to JSON and encode as bytes
             import json
-            data_bytes = json.dumps(data, sort_keys=True).encode('utf-8')
-            
-            # Hash the bytes
             import hashlib
-            hash_obj = hashlib.sha256(data_bytes)
-            
-            # Return the hex digest
-            return hash_obj.hexdigest()
-            
+
+            data_bytes = json.dumps(data, sort_keys=True, separators=(',', ':')).encode('utf-8')
+            hash_hex = hashlib.sha256(data_bytes).hexdigest()
+
+            logger.info(f"🔐 Generated hash: {hash_hex}")
+            return hash_hex
         except Exception as e:
-            logger.error(f"Error creating verification hash: {str(e)}")
-            raise Exception(f"Failed to create verification hash: {str(e)}") 
+            logger.error(f"❌ Error creating verification hash: {str(e)}")
+            raise

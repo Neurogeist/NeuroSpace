@@ -19,6 +19,11 @@ export interface ChatMessage {
         signature?: string;
         ipfs_cid?: string;
         transaction_hash?: string;
+        timestamp?: string;
+        original_prompt?: string;
+        wallet_address?: string;
+        session_id?: string;
+        system_prompt?: string | null;
     };
 }
 
