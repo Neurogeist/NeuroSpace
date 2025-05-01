@@ -205,7 +205,7 @@ class LLMService:
 
             logger.info(f"🧠 Selected {len(selected_messages)} messages out of {len(messages)} total")
 
-            logger.info(f"Final prompt token count: {token_count}")
+            #logger.info(f"Final prompt token count: {token_count}")
             return formatted_prompt
 
         except Exception as e:
@@ -309,8 +309,6 @@ class LLMService:
         try:
             import json
             import hashlib
-
-            logger.info(f"🔍 Creating verification hash with data: {json.dumps(data, indent=2)}")
 
             data_bytes = json.dumps(data, sort_keys=True, separators=(',', ':')).encode('utf-8')
             hash_hex = hashlib.sha256(data_bytes).hexdigest()

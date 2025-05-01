@@ -124,11 +124,7 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
                 }
 
                 const hashIsValid = await verifyHash(verificationData, metadata.verification_hash);
-                console.log('🔐 Hash Verification Result:', {
-                    isValid: hashIsValid,
-                    computedHash: await generateVerificationHash(verificationData),
-                    expectedHash: metadata.verification_hash
-                });
+                console.log('🔐 Hash match:', hashIsValid);
                 setHashMatch(hashIsValid);
 
                 if (!hashIsValid) {
@@ -151,7 +147,6 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
     
                 if (!isMounted) return;
     
-                console.log('Verification result:', result);
                 setVerificationResult(result);
                 sessionStorage.setItem(key, JSON.stringify(result));
             } catch (error) {

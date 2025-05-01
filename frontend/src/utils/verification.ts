@@ -57,7 +57,7 @@ export async function generateVerificationHash(data: VerificationData): Promise<
     });
     
 
-    console.log('📝 Serialized data (frontend):', serializedData);
+    //console.log('📝 Serialized data (frontend):', serializedData);
     
     // Generate SHA-256 hash using Web Crypto API
     const encoder = new TextEncoder();
