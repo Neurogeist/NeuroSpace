@@ -8,7 +8,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { Components } from 'react-markdown';
-import { generateVerificationHash, verifyHash } from '../utils/verification';
+import { verifyHash } from '../utils/verification';
 
 const blockExplorerUrl =
   import.meta.env.VITE_ENVIRONMENT?.toLowerCase() === 'production'
