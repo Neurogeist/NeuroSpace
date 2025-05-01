@@ -207,8 +207,27 @@ async def submit_prompt(request: PromptRequest):
         # Extract the response text
         response = llm_response.get('response', '') if isinstance(llm_response, dict) else llm_response
 
-        # Create verification hash
-        verification_hash = llm_service.create_verification_hash(request.prompt, response)
+        # Step 1: Freeze timestamp (UTC with 'Z')
+        timestamp = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+        # Step 2: Construct full hash input
+        verification_payload = {
+            "prompt": request.prompt,
+            "response": response,
+            "model_name": request.model,
+            "model_id": model_config.model_id,
+            "temperature": model_config.temperature,
+            "max_tokens": model_config.max_new_tokens,
+            "system_prompt": None,  # Will fill later if applicable
+            "timestamp": timestamp,
+            "wallet_address": request.user_address,
+            "session_id": session_id,
+            "rag_sources": [],  # placeholder
+            "tool_calls": []    # placeholder
+        }
+
+        # Step 3: Hash
+        verification_hash = llm_service.create_verification_hash(verification_payload)
 
         # Sign the verification hash
         signature = blockchain_service.sign_message(verification_hash)
@@ -228,7 +247,7 @@ async def submit_prompt(request: PromptRequest):
             "response": response,
             "model_name": request.model,
             "model_id": model_config.model_id,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": timestamp,
             "verification_hash": verification_hash,
             "signature": signature,
             "transaction_hash": transaction_hash
@@ -243,7 +262,7 @@ async def submit_prompt(request: PromptRequest):
             model_name=request.model,
             model_id=model_config.model_id,
             metadata={
-                "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "timestamp": timestamp,
                 "model_name": request.model,
                 "model_id": model_config.model_id,
                 "temperature": model_config.temperature,
@@ -251,7 +270,10 @@ async def submit_prompt(request: PromptRequest):
                 "ipfs_cid": ipfs_cid,
                 "verification_hash": verification_hash,
                 "signature": signature,
-                "transaction_hash": transaction_hash
+                "transaction_hash": transaction_hash,
+                "original_prompt": request.prompt,
+                "wallet_address": request.user_address,
+                "session_id": session_id
             }
         )
         
@@ -262,7 +284,7 @@ async def submit_prompt(request: PromptRequest):
             model_name=request.model,
             model_id=model_config.model_id,
             metadata={
-                "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "timestamp": timestamp,
                 "model_name": request.model,
                 "model_id": model_config.model_id,
                 "temperature": model_config.temperature,
@@ -270,7 +292,10 @@ async def submit_prompt(request: PromptRequest):
                 "ipfs_cid": ipfs_cid,
                 "verification_hash": verification_hash,
                 "signature": signature,
-                "transaction_hash": transaction_hash
+                "transaction_hash": transaction_hash,
+                "original_prompt": request.prompt,
+                "wallet_address": request.user_address,
+                "session_id": session_id
             }
         )
         

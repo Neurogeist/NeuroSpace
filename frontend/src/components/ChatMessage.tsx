@@ -8,6 +8,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { Components } from 'react-markdown';
+import { generateVerificationHash, verifyHash } from '../utils/verification';
 
 const blockExplorerUrl =
   import.meta.env.VITE_ENVIRONMENT?.toLowerCase() === 'production'
@@ -66,6 +67,7 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
     const [verificationResult, setVerificationResult] = useState<any>(null);
     const [isVerifying, setIsVerifying] = useState(false);
     const [verificationError, setVerificationError] = useState<string | null>(null);
+    const [hashMatch, setHashMatch] = useState<boolean | undefined>(undefined);
 
     const messageBgColor = useColorModeValue('gray.50', 'gray.700');
     const userMessageBgColor = useColorModeValue('blue.50', 'blue.900');
@@ -92,7 +94,48 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
             try {
                 setIsVerifying(true);
                 setVerificationError(null);
-    
+                setHashMatch(undefined);
+
+                const verificationData = {
+                    prompt: metadata.original_prompt || '',
+                    response: message.content,
+                    model_name: metadata.model || '',
+                    model_id: metadata.model_id || '',
+                    temperature: metadata.temperature || 0,
+                    max_tokens: metadata.max_tokens || 0,
+                    system_prompt: null,
+                    timestamp: metadata.timestamp || '',
+                    wallet_address: metadata.wallet_address || '', // pass this in metadata if not already
+                    session_id: metadata.session_id || '',         // same here
+                    rag_sources: [],
+                    tool_calls: []
+                };
+
+                console.log('🔍 Verification Data:', {
+                    verificationData,
+                    metadata,
+                    messageContent: message.content
+                });
+
+                if (!metadata.verification_hash) {
+                    console.error('❌ No verification hash found');
+                    setHashMatch(false);
+                    return;
+                }
+
+                const hashIsValid = await verifyHash(verificationData, metadata.verification_hash);
+                console.log('🔐 Hash Verification Result:', {
+                    isValid: hashIsValid,
+                    computedHash: await generateVerificationHash(verificationData),
+                    expectedHash: metadata.verification_hash
+                });
+                setHashMatch(hashIsValid);
+
+                if (!hashIsValid) {
+                    console.error('❌ Hash verification failed');
+                    return;
+                }
+
                 console.log('Verifying message:', {
                     verification_hash: metadata.verification_hash,
                     signature: metadata.signature,
@@ -104,7 +147,7 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
                     metadata.signature!,
                     undefined,
                     'ChatMessage'
-                  );                
+                );                
     
                 if (!isMounted) return;
     
@@ -130,9 +173,9 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
         message.metadata?.verification_hash,
         message.metadata?.signature,
         message.role,
-        message.timestamp
+        message.timestamp,
+        message.content
     ]);
-    
     
     const renderMetadata = (message: ChatMessage) => {
         if (!message.metadata) return null;
@@ -148,11 +191,9 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
         );
     };
 
-    // Get hash information from metadata
     const ipfsHash = message.metadata?.ipfs_cid;
     const transactionHash = message.metadata?.transaction_hash;
 
-    // Responsive values
     const padding = useBreakpointValue({ base: 3, md: 4 });
     const spacing = useBreakpointValue({ base: 2, md: 4 });
     const maxWidth = useBreakpointValue({ base: '90%', md: '80%' });
@@ -180,6 +221,7 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
                         verificationResult={verificationResult}
                         isLoading={isVerifying}
                         error={verificationError || undefined}
+                        hashMatch={hashMatch}
                     />
                 </Box>
             )}
