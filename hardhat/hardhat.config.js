@@ -3,9 +3,9 @@ require("dotenv").config();
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
-  solidity: "0.8.19",
+  solidity: "0.8.20",
   paths: {
-    sources: "../contracts",      // Points to root contracts folder
+    sources: "./contracts",      // Points to root contracts folder
     artifacts: "./artifacts",     // Keep artifacts in hardhat folder
     cache: "./cache"             // Keep cache in hardhat folder
   },
