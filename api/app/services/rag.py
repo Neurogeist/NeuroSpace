@@ -34,25 +34,70 @@ class RAGService:
         self.blockchain_service = blockchain_service
         self.ipfs_service = ipfs_service
         self.chat_session_service = chat_session_service
-        self.chunk_size = 500
-        self.chunk_overlap = 50
+        self.chunk_size = 1000
+        self.chunk_overlap = 100
         self.embedding_dim = 1536  # for OpenAI ada-002
 
     def _chunk_text(self, text: str) -> List[str]:
-        chunks = []
-        start = 0
-        while start < len(text):
-            end = min(len(text), start + self.chunk_size)
-            chunks.append(text[start:end])
-            start = end - self.chunk_overlap
-        return chunks
+        """Split text into overlapping chunks."""
+        try:
+            logger.info(f"Starting text chunking. Text length: {len(text)}")
+            chunks = []
+            start = 0
+            
+            # Split text into paragraphs first
+            paragraphs = text.split('\n\n')
+            logger.info(f"Split into {len(paragraphs)} paragraphs")
+            
+            current_chunk = ""
+            for paragraph in paragraphs:
+                # If adding this paragraph would exceed chunk size, save current chunk
+                if len(current_chunk) + len(paragraph) > self.chunk_size and current_chunk:
+                    chunks.append(current_chunk.strip())
+                    current_chunk = paragraph
+                else:
+                    if current_chunk:
+                        current_chunk += "\n\n"
+                    current_chunk += paragraph
+            
+            # Add the last chunk if it exists
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+            
+            logger.info(f"Completed chunking. Total chunks: {len(chunks)}")
+            return chunks
+        except Exception as e:
+            logger.error(f"Error in _chunk_text: {str(e)}")
+            raise
 
     async def embed_texts_openai(self, texts: List[str]) -> List[List[float]]:
-        response = await run_in_threadpool(lambda: openai.Embedding.create(
-            input=texts,
-            model="text-embedding-ada-002"
-        ))
-        return [d["embedding"] for d in response["data"]]
+        """Create embeddings using OpenAI's API."""
+        try:
+            from openai import OpenAI
+            client = OpenAI()
+            
+            # Process in batches to avoid rate limits
+            batch_size = 100
+            all_embeddings = []
+            
+            for i in range(0, len(texts), batch_size):
+                batch = texts[i:i + batch_size]
+                logger.info(f"Processing embedding batch {i//batch_size + 1}")
+                
+                response = await run_in_threadpool(
+                    lambda: client.embeddings.create(
+                        input=batch,
+                        model="text-embedding-ada-002"
+                    )
+                )
+                
+                batch_embeddings = [d.embedding for d in response.data]
+                all_embeddings.extend(batch_embeddings)
+            
+            return all_embeddings
+        except Exception as e:
+            logger.error(f"Error in embed_texts_openai: {str(e)}")
+            raise
 
     async def upload_document(self, file_path: str) -> Dict[str, Any]:
         try:
@@ -60,6 +105,7 @@ class RAGService:
             with open(file_path, "rb") as f:
                 content_bytes = f.read()
             content = content_bytes.decode("utf-8")
+            logger.info(f"Read {len(content)} characters from file")
 
             logger.info("Uploading to IPFS")
             ipfs_hash = await self.ipfs_service.add_content(content)
@@ -68,12 +114,19 @@ class RAGService:
             document_id = hashlib.sha256(file_path.encode()).hexdigest()
             document_name = Path(file_path).name
 
+            logger.info("Processing document into chunks")
             chunks = self._chunk_text(content)
-            logger.info(f"Split into {len(chunks)} chunks")
+            logger.info(f"Created {len(chunks)} chunks from document")
 
-            chunk_embeddings = await self.embed_texts_openai(chunks)
-            logger.info("Embeddings created")
+            logger.info("Starting OpenAI embedding")
+            try:
+                chunk_embeddings = await self.embed_texts_openai(chunks)
+                logger.info(f"Successfully created embeddings for {len(chunk_embeddings)} chunks")
+            except Exception as e:
+                logger.error(f"Error during OpenAI embedding: {str(e)}")
+                raise
 
+            logger.info("Starting database operations")
             db = SessionLocal()
             try:
                 upload = DocumentUpload(
@@ -82,6 +135,7 @@ class RAGService:
                     ipfs_hash=ipfs_hash
                 )
                 db.add(upload)
+                logger.info("Added document upload record")
 
                 for i, (chunk, emb) in enumerate(zip(chunks, chunk_embeddings)):
                     chunk_record = DocumentChunk(
@@ -93,16 +147,20 @@ class RAGService:
                         embedding=emb
                     )
                     db.add(chunk_record)
+                logger.info(f"Added {len(chunks)} chunk records")
 
                 db.commit()
+                logger.info("Successfully committed database changes")
             except Exception as e:
                 db.rollback()
                 logger.error(f"DB write error: {str(e)}")
                 raise
             finally:
                 db.close()
+                logger.info("Closed database connection")
 
             os.remove(file_path)
+            logger.info("Cleaned up temporary file")
 
             return {
                 "id": document_id,
@@ -127,16 +185,17 @@ class RAGService:
             logger.info("Embedding query")
             query_embedding = await self.embed_texts_openai([query])
             query_vec = query_embedding[0]
+            logger.info(f"Query vector length: {len(query_vec)}")
 
             logger.info("Running similarity query")
             sql = text("""
                 SELECT *,
-                    1 - (embedding <#> :query_vector) AS similarity
+                    1 - (embedding <#> (:query_vector)::vector) AS similarity
                 FROM document_chunks
-                ORDER BY embedding <#> :query_vector
+                ORDER BY embedding <#> (:query_vector)::vector
                 LIMIT :top_k
             """)
-            result = db.execute(sql, {"query_vector": query_vec, "top_k": top_k}).fetchall()
+            result = db.execute(sql, {"query_vector": query_vec, "top_k": top_k}).mappings().fetchall()
 
             if not result:
                 return {

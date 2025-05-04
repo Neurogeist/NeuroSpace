@@ -16,7 +16,7 @@ class DocumentChunk(Base):
     ipfs_hash = Column(String, nullable=False)
     chunk_index = Column(Integer, nullable=False)
     content = Column(Text, nullable=False)
-    embedding = Column(Vector(384), nullable=False)
+    embedding = Column(Vector(1536), nullable=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     def __repr__(self):
