@@ -231,4 +231,15 @@ class BlockchainService:
             
         except Exception as e:
             logger.error(f"Error verifying signature: {str(e)}")
-            raise 
+            raise
+
+    async def close(self):
+        """Close any open connections."""
+        try:
+            if hasattr(self, 'w3') and self.w3:
+                # Close any open connections
+                if hasattr(self.w3.provider, 'close'):
+                    self.w3.provider.close()
+            logger.info("Blockchain service connections closed")
+        except Exception as e:
+            logger.error(f"Error closing blockchain connections: {str(e)}") 

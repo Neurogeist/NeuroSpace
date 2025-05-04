@@ -24,7 +24,7 @@ from fastapi import BackgroundTasks
 from .services.model_registry import ModelRegistry
 from pydantic import BaseModel, Field
 from .services.payment import PaymentService
-from api.app.services.rag import RAGService
+from .services.rag import RAGService
 
 # Configure logging
 logging.basicConfig(
@@ -532,20 +532,24 @@ async def upload_document(file: UploadFile = File(...)):
         logger.error(f"Error uploading document: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+class RAGQueryRequest(BaseModel):
+    query: str
+    top_k: int = 3
+
 @app.post("/rag/query")
-async def query_documents(request: Dict[str, Any]):
-    """Query documents using RAG."""
+async def query_documents(request: RAGQueryRequest):
+    """Query uploaded documents using vector search + LLM, return a verifiable answer."""
     try:
-        query = request.get("query")
-        if not query:
-            raise HTTPException(status_code=400, detail="Query is required")
-        
-        result = await rag_service.query_documents(query)
+        result = await rag_service.query_documents(
+            query=request.query,
+            top_k=request.top_k
+        )
         return result
-        
     except Exception as e:
         logger.error(f"Error querying documents: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/rag/documents")
 async def get_documents():

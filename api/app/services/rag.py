@@ -1,15 +1,26 @@
 import logging
+import os
+import hashlib
 from typing import List, Dict, Any
 from datetime import datetime
 from pathlib import Path
-import json
-import hashlib
-from api.app.services.llm import LLMService
-from api.app.services.blockchain import BlockchainService
-from api.app.services.ipfs import IPFSService
-from api.app.services.chat_session import ChatSessionService
+
+import openai
+import numpy as np
+from fastapi.concurrency import run_in_threadpool
+from sqlalchemy import text
+
+from ..models.document import DocumentChunk, DocumentUpload
+from ..models.database import SessionLocal
+from .llm import LLMService
+from .blockchain import BlockchainService
+from .ipfs import IPFSService
+from .chat_session import ChatSessionService
+
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 logger = logging.getLogger(__name__)
+
 
 class RAGService:
     def __init__(
@@ -23,77 +34,173 @@ class RAGService:
         self.blockchain_service = blockchain_service
         self.ipfs_service = ipfs_service
         self.chat_session_service = chat_session_service
-        self.documents: Dict[str, Dict[str, Any]] = {}
+        self.chunk_size = 500
+        self.chunk_overlap = 50
+        self.embedding_dim = 1536  # for OpenAI ada-002
+
+    def _chunk_text(self, text: str) -> List[str]:
+        chunks = []
+        start = 0
+        while start < len(text):
+            end = min(len(text), start + self.chunk_size)
+            chunks.append(text[start:end])
+            start = end - self.chunk_overlap
+        return chunks
+
+    async def embed_texts_openai(self, texts: List[str]) -> List[List[float]]:
+        response = await run_in_threadpool(lambda: openai.Embedding.create(
+            input=texts,
+            model="text-embedding-ada-002"
+        ))
+        return [d["embedding"] for d in response["data"]]
 
     async def upload_document(self, file_path: str) -> Dict[str, Any]:
-        """Upload a document to IPFS and store its metadata."""
         try:
-            # Read the document
-            with open(file_path, 'r') as f:
-                content = f.read()
+            logger.info("Reading document file")
+            with open(file_path, "rb") as f:
+                content_bytes = f.read()
+            content = content_bytes.decode("utf-8")
 
-            # Upload to IPFS
+            logger.info("Uploading to IPFS")
             ipfs_hash = await self.ipfs_service.add_content(content)
+            logger.info(f"Uploaded to IPFS: {ipfs_hash}")
 
-            # Create document metadata
-            document = {
-                'id': str(hashlib.sha256(file_path.encode()).hexdigest()),
-                'name': Path(file_path).name,
-                'ipfsHash': ipfs_hash,
-                'status': 'Uploaded',
-                'content': content,
-                'timestamp': datetime.utcnow().isoformat()
+            document_id = hashlib.sha256(file_path.encode()).hexdigest()
+            document_name = Path(file_path).name
+
+            chunks = self._chunk_text(content)
+            logger.info(f"Split into {len(chunks)} chunks")
+
+            chunk_embeddings = await self.embed_texts_openai(chunks)
+            logger.info("Embeddings created")
+
+            db = SessionLocal()
+            try:
+                upload = DocumentUpload(
+                    document_id=document_id,
+                    name=document_name,
+                    ipfs_hash=ipfs_hash
+                )
+                db.add(upload)
+
+                for i, (chunk, emb) in enumerate(zip(chunks, chunk_embeddings)):
+                    chunk_record = DocumentChunk(
+                        document_id=document_id,
+                        document_name=document_name,
+                        ipfs_hash=ipfs_hash,
+                        chunk_index=i,
+                        content=chunk,
+                        embedding=emb
+                    )
+                    db.add(chunk_record)
+
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                logger.error(f"DB write error: {str(e)}")
+                raise
+            finally:
+                db.close()
+
+            os.remove(file_path)
+
+            return {
+                "id": document_id,
+                "name": document_name,
+                "ipfsHash": ipfs_hash,
+                "status": "Uploaded",
+                "content": content,
+                "timestamp": datetime.utcnow().isoformat()
             }
 
-            # Store in memory (TODO: Replace with database)
-            self.documents[document['id']] = document
-
-            return document
-
         except Exception as e:
-            logger.error(f"Error uploading document: {str(e)}")
+            logger.error(f"Upload error: {str(e)}")
+            try:
+                os.remove(file_path)
+            except:
+                pass
             raise
 
-    async def query_documents(self, query: str) -> Dict[str, Any]:
-        """Query documents and generate a response with sources."""
+    async def query_documents(self, query: str, top_k: int = 3) -> Dict[str, Any]:
+        db = SessionLocal()
         try:
-            # TODO: Implement actual RAG logic
-            # For now, return a mock response
-            response = "This is a mock response that would be generated by the RAG system..."
-            sources = [
-                {
-                    'id': '1',
-                    'snippet': 'This is a relevant text snippet from the document that answers the question...',
-                    'ipfsHash': 'QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco',
-                    'transactionHash': '0x1234...5678'
-                }
-            ]
+            logger.info("Embedding query")
+            query_embedding = await self.embed_texts_openai([query])
+            query_vec = query_embedding[0]
 
-            # Create verification payload
+            logger.info("Running similarity query")
+            sql = text("""
+                SELECT *,
+                    1 - (embedding <#> :query_vector) AS similarity
+                FROM document_chunks
+                ORDER BY embedding <#> :query_vector
+                LIMIT :top_k
+            """)
+            result = db.execute(sql, {"query_vector": query_vec, "top_k": top_k}).fetchall()
+
+            if not result:
+                return {
+                    "response": "I couldn't find relevant information in the uploaded documents.",
+                    "sources": [],
+                    "verification_hash": "",
+                    "signature": "",
+                    "transaction_hash": "",
+                    "ipfs_cid": ""
+                }
+
+            chunks = [{
+                "document_id": r["document_id"],
+                "document_name": r["document_name"],
+                "ipfsHash": r["ipfs_hash"],
+                "chunk_index": r["chunk_index"],
+                "content": r["content"],
+                "similarity": r["similarity"]
+            } for r in result]
+
+            context = "\n\n".join([
+                f"Document: {c['document_name']}\nContent: {c['content']}" for c in chunks
+            ])
+
+            prompt = f"""Based on the following context, answer the question below.
+If the answer cannot be found in the context, say "I cannot find the answer in the provided documents."
+
+Context:
+{context}
+
+Question: {query}
+
+Answer:"""
+
+            llm_response = await self.llm_service.generate_response(
+                model_id="gpt-3.5-turbo",
+                prompt=prompt,
+                temperature=0.7
+            )
+            response = llm_response.get("response", "") if isinstance(llm_response, dict) else llm_response
+
             timestamp = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-            verification_payload = {
+            sources = [{
+                "id": c["document_id"],
+                "snippet": c["content"],
+                "ipfsHash": c["ipfsHash"],
+                "chunk_index": c["chunk_index"],
+                "similarity": c["similarity"]
+            } for c in chunks]
+
+            payload = {
                 "query": query,
                 "response": response,
                 "sources": sources,
                 "timestamp": timestamp
             }
 
-            # Generate verification hash
-            verification_hash = self.llm_service.create_verification_hash(verification_payload)
-
-            # Sign the hash
+            verification_hash = self.llm_service.create_verification_hash(payload)
             signature = self.blockchain_service.sign_message(verification_hash)
-
-            # Submit to blockchain
             blockchain_result = await self.blockchain_service.submit_to_blockchain(verification_hash)
-            transaction_hash = blockchain_result.get('transaction_hash')
+            transaction_hash = blockchain_result.get("transaction_hash")
 
-            # Upload to IPFS
             ipfs_data = {
-                "query": query,
-                "response": response,
-                "sources": sources,
-                "timestamp": timestamp,
+                **payload,
                 "verification_hash": verification_hash,
                 "signature": signature,
                 "transaction_hash": transaction_hash
@@ -110,26 +217,31 @@ class RAGService:
             }
 
         except Exception as e:
-            logger.error(f"Error querying documents: {str(e)}")
+            logger.error(f"Query error: {str(e)}")
             raise
+        finally:
+            db.close()
 
     async def get_documents(self) -> List[Dict[str, Any]]:
-        """Get list of uploaded documents."""
-        return list(self.documents.values())
-
-    async def verify_response(
-        self,
-        verification_hash: str,
-        signature: str
-    ) -> bool:
-        """Verify a RAG response using blockchain."""
+        db = SessionLocal()
         try:
-            # Verify the signature
-            result = await self.blockchain_service.verify_message(
-                verification_hash,
-                signature
-            )
-            return result.get('verified', False)
+            uploads = db.query(DocumentUpload).all()
+            return [
+                {
+                    "id": u.document_id,
+                    "name": u.name,
+                    "ipfsHash": u.ipfs_hash,
+                    "uploaded_at": u.uploaded_at.isoformat()
+                }
+                for u in uploads
+            ]
+        finally:
+            db.close()
+
+    async def verify_response(self, verification_hash: str, signature: str) -> bool:
+        try:
+            result = await self.blockchain_service.verify_message(verification_hash, signature)
+            return result.get("verified", False)
         except Exception as e:
-            logger.error(f"Error verifying response: {str(e)}")
-            return False 
+            logger.error(f"Verification error: {str(e)}")
+            return False
