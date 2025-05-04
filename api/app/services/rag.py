@@ -231,7 +231,7 @@ Question: {query}
 Answer:"""
 
             llm_response = await self.llm_service.generate_response(
-                model_id="gpt-3.5-turbo",
+                model_id="mixtral-8x7b-instruct",
                 prompt=prompt,
                 temperature=0.7
             )
