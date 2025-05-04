@@ -299,8 +299,8 @@ Answer:"""
 
     async def verify_response(self, verification_hash: str, signature: str) -> bool:
         try:
-            result = await self.blockchain_service.verify_message(verification_hash, signature)
-            return result.get("verified", False)
+            recovered_address = self.blockchain_service.verify_signature(verification_hash, signature)
+            return recovered_address.lower() == self.blockchain_service.account.address.lower()
         except Exception as e:
             logger.error(f"Verification error: {str(e)}")
             return False

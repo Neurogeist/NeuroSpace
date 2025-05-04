@@ -12,7 +12,9 @@ export interface Source {
     id: string;
     snippet: string;
     ipfsHash: string;
-    transactionHash: string;
+    chunk_index: number;
+    similarity: number;
+    transaction_hash?: string;
 }
 
 export interface RAGResponse {

@@ -131,7 +131,8 @@ export default function RAGPage() {
         }
     };
 
-    const formatHash = (hash: string) => {
+    const formatHash = (hash: string | undefined) => {
+        if (!hash) return '';
         return `${hash.slice(0, 6)}...${hash.slice(-4)}`;
     };
 
@@ -301,19 +302,21 @@ export default function RAGPage() {
                                                     {formatHash(source.ipfsHash)}
                                                 </Link>
                                             </Tooltip>
-                                            <Tooltip label="View on BaseScan">
-                                                <Link
-                                                    href={`${blockExplorerUrl}/tx/${source.transactionHash}`}
-                                                    isExternal
-                                                    color={linkColor}
-                                                    display="flex"
-                                                    alignItems="center"
-                                                    gap={1}
-                                                >
-                                                    <FiLink />
-                                                    {formatHash(source.transactionHash)}
-                                                </Link>
-                                            </Tooltip>
+                                            {source.transaction_hash && (
+                                                <Tooltip label="View on BaseScan">
+                                                    <Link
+                                                        href={`${blockExplorerUrl}/tx/${source.transaction_hash}`}
+                                                        isExternal
+                                                        color={linkColor}
+                                                        display="flex"
+                                                        alignItems="center"
+                                                        gap={1}
+                                                    >
+                                                        <FiLink />
+                                                        {formatHash(source.transaction_hash)}
+                                                    </Link>
+                                                </Tooltip>
+                                            )}
                                         </HStack>
                                     </VStack>
                                 </Box>
