@@ -4,6 +4,7 @@ import hashlib
 from typing import List, Dict, Any
 from datetime import datetime
 from pathlib import Path
+import uuid
 
 import openai
 import numpy as np
@@ -99,80 +100,96 @@ class RAGService:
             logger.error(f"Error in embed_texts_openai: {str(e)}")
             raise
 
-    async def upload_document(self, file_path: str) -> Dict[str, Any]:
+    async def upload_document(self, file_path: str, wallet_address: str) -> Dict[str, Any]:
+        """Upload a document to IPFS and store its chunks in the database."""
         try:
-            logger.info("Reading document file")
-            with open(file_path, "rb") as f:
-                content_bytes = f.read()
-            content = content_bytes.decode("utf-8")
-            logger.info(f"Read {len(content)} characters from file")
-
-            logger.info("Uploading to IPFS")
-            ipfs_hash = await self.ipfs_service.add_content(content)
-            logger.info(f"Uploaded to IPFS: {ipfs_hash}")
-
-            document_id = hashlib.sha256(file_path.encode()).hexdigest()
-            document_name = Path(file_path).name
-
-            logger.info("Processing document into chunks")
-            chunks = self._chunk_text(content)
-            logger.info(f"Created {len(chunks)} chunks from document")
-
-            logger.info("Starting OpenAI embedding")
-            try:
-                chunk_embeddings = await self.embed_texts_openai(chunks)
-                logger.info(f"Successfully created embeddings for {len(chunk_embeddings)} chunks")
-            except Exception as e:
-                logger.error(f"Error during OpenAI embedding: {str(e)}")
-                raise
-
-            logger.info("Starting database operations")
+            # Read file content
+            file_extension = os.path.splitext(file_path)[1].lower()
+            
+            if file_extension == '.pdf':
+                try:
+                    import PyPDF2
+                    text = ""
+                    with open(file_path, 'rb') as file:
+                        pdf_reader = PyPDF2.PdfReader(file)
+                        for page in pdf_reader.pages:
+                            text += page.extract_text() + "\n"
+                except ImportError:
+                    logger.error("PyPDF2 is not installed. Please install it to process PDF files.")
+                    raise Exception("PDF processing is not available. Please install PyPDF2.")
+            else:
+                # For text files
+                with open(file_path, 'r', encoding='utf-8') as file:
+                    text = file.read()
+            
+            # Upload to IPFS
+            ipfs_hash = await self.ipfs_service.add_content(text)
+            
+            # Process document and create chunks
+            document_id = str(uuid.uuid4())
+            document_name = os.path.basename(file_path)
+            
+            # Store document upload record
             db = SessionLocal()
             try:
-                upload = DocumentUpload(
+                document_upload = DocumentUpload(
                     document_id=document_id,
-                    name=document_name,
-                    ipfs_hash=ipfs_hash
+                    document_name=document_name,
+                    ipfs_hash=ipfs_hash,
+                    wallet_address=wallet_address
                 )
-                db.add(upload)
-                logger.info("Added document upload record")
-
-                for i, (chunk, emb) in enumerate(zip(chunks, chunk_embeddings)):
-                    chunk_record = DocumentChunk(
-                        document_id=document_id,
-                        document_name=document_name,
-                        ipfs_hash=ipfs_hash,
-                        chunk_index=i,
-                        content=chunk,
-                        embedding=emb
-                    )
-                    db.add(chunk_record)
-                logger.info(f"Added {len(chunks)} chunk records")
-
+                db.add(document_upload)
                 db.commit()
-                logger.info("Successfully committed database changes")
             except Exception as e:
                 db.rollback()
                 logger.error(f"DB write error: {str(e)}")
                 raise
             finally:
                 db.close()
-                logger.info("Closed database connection")
-
-            os.remove(file_path)
-            logger.info("Cleaned up temporary file")
-
+            
+            # Process document and create chunks
+            chunks = self._chunk_text(text)
+            
+            # Create embeddings for chunks
+            embeddings = await self.embed_texts_openai(chunks)
+            
+            # Store chunks in database
+            db = SessionLocal()
+            try:
+                for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+                    document_chunk = DocumentChunk(
+                        document_id=document_id,
+                        document_name=document_name,
+                        ipfs_hash=ipfs_hash,
+                        chunk_index=i,
+                        content=chunk,
+                        embedding=embedding
+                    )
+                    db.add(document_chunk)
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                logger.error(f"DB write error: {str(e)}")
+                raise
+            finally:
+                db.close()
+            
+            # Clean up the uploaded file
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                logger.warning(f"Failed to remove temporary file {file_path}: {str(e)}")
+            
             return {
                 "id": document_id,
                 "name": document_name,
                 "ipfsHash": ipfs_hash,
-                "status": "Uploaded",
-                "content": content,
-                "timestamp": datetime.utcnow().isoformat()
+                "status": "success"
             }
-
+            
         except Exception as e:
-            logger.error(f"Upload error: {str(e)}")
+            logger.error(f"Error uploading document: {str(e)}")
+            # Clean up the uploaded file in case of error
             try:
                 os.remove(file_path)
             except:
@@ -281,21 +298,25 @@ Answer:"""
         finally:
             db.close()
 
-    async def get_documents(self) -> List[Dict[str, Any]]:
-        db = SessionLocal()
+    async def get_documents(self, wallet_address: str) -> List[Dict[str, Any]]:
+        """Get list of uploaded documents for a specific wallet address."""
         try:
-            uploads = db.query(DocumentUpload).all()
-            return [
-                {
-                    "id": u.document_id,
-                    "name": u.name,
-                    "ipfsHash": u.ipfs_hash,
-                    "uploaded_at": u.uploaded_at.isoformat()
-                }
-                for u in uploads
-            ]
-        finally:
-            db.close()
+            db = SessionLocal()
+            try:
+                documents = db.query(DocumentUpload).filter(
+                    DocumentUpload.wallet_address == wallet_address
+                ).all()
+                return [{
+                    "id": doc.document_id,
+                    "name": doc.document_name,
+                    "ipfsHash": doc.ipfs_hash,
+                    "status": "success"
+                } for doc in documents]
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Error getting documents: {str(e)}")
+            raise
 
     async def verify_response(self, verification_hash: str, signature: str) -> bool:
         try:

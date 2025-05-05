@@ -26,13 +26,14 @@ export interface RAGResponse {
     ipfs_cid: string;
 }
 
-export const uploadDocument = async (file: File): Promise<Document> => {
+export const uploadDocument = async (file: File, walletAddress: string): Promise<Document> => {
     const formData = new FormData();
     formData.append('file', file);
 
     const response = await axios.post<Document>(`${API_BASE_URL}/rag/upload`, formData, {
         headers: {
             'Content-Type': 'multipart/form-data',
+            'wallet-address': walletAddress,
         },
     });
 
@@ -47,8 +48,12 @@ export const queryDocuments = async (query: string): Promise<RAGResponse> => {
     return response.data;
 };
 
-export const getDocuments = async (): Promise<Document[]> => {
-    const response = await axios.get<Document[]>(`${API_BASE_URL}/rag/documents`);
+export const getDocuments = async (walletAddress: string): Promise<Document[]> => {
+    const response = await axios.get<Document[]>(`${API_BASE_URL}/rag/documents`, {
+        headers: {
+            'wallet-address': walletAddress,
+        },
+    });
     return response.data;
 };
 
@@ -66,4 +71,12 @@ export const verifyRAGResponse = async (
         console.error('Error verifying RAG response:', error);
         return false;
     }
+};
+
+export const deleteDocument = async (documentId: string, walletAddress: string): Promise<void> => {
+    await axios.delete(`${API_BASE_URL}/rag/documents/${documentId}`, {
+        headers: {
+            'wallet-address': walletAddress,
+        },
+    });
 }; 

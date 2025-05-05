@@ -1,8 +1,10 @@
 import { ethers } from 'ethers';
 
+type EthereumProvider = ethers.Eip1193Provider;
+
 declare global {
     interface Window {
-        ethereum?: any;
+        ethereum?: EthereumProvider;
     }
 }
 
@@ -91,12 +93,18 @@ export const getNetworkInfo = () => {
 };
 
 export const getPaymentContract = async () => {
+    if (!window.ethereum) {
+        throw new Error('MetaMask is not installed');
+    }
     const provider = new ethers.BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
     return new ethers.Contract(PAYMENT_CONTRACT_ADDRESS, PAYMENT_CONTRACT_ABI, signer);
 };
 
 export const payForMessage = async (sessionId: string) => {
+    if (!window.ethereum) {
+        throw new Error('MetaMask is not installed');
+    }
     const provider = new ethers.BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
     const contract = new ethers.Contract(PAYMENT_CONTRACT_ADDRESS!, PAYMENT_CONTRACT_ABI, signer);

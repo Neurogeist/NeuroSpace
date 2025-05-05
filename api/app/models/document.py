@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, DateTime, Text
+from sqlalchemy import Column, String, Integer, DateTime, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy_utils import UUIDType
 from pgvector.sqlalchemy import Vector
@@ -28,8 +28,9 @@ class DocumentUpload(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     document_id = Column(String, nullable=False)
-    name = Column(String, nullable=False)
+    document_name = Column(String, nullable=False)
     ipfs_hash = Column(String, nullable=False)
+    wallet_address = Column(String, nullable=False)
     uploaded_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     def __repr__(self):

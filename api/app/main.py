@@ -25,6 +25,8 @@ from .services.model_registry import ModelRegistry
 from pydantic import BaseModel, Field
 from .services.payment import PaymentService
 from .services.rag import RAGService
+from .models.database import SessionLocal
+from .models.document import DocumentChunk, DocumentUpload
 
 # Configure logging
 logging.basicConfig(
@@ -512,7 +514,7 @@ async def verify_hash(hash: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/rag/upload")
-async def upload_document(file: UploadFile = File(...)):
+async def upload_document(file: UploadFile = File(...), wallet_address: str = Header(...)):
     """Upload a document for RAG."""
     try:
         # Save the uploaded file
@@ -524,7 +526,7 @@ async def upload_document(file: UploadFile = File(...)):
             buffer.write(content)
         
         # Process the document
-        result = await rag_service.upload_document(file_path)
+        result = await rag_service.upload_document(file_path, wallet_address)
         
         return result
         
@@ -552,10 +554,10 @@ async def query_documents(request: RAGQueryRequest):
 
 
 @app.get("/rag/documents")
-async def get_documents():
-    """Get list of uploaded documents."""
+async def get_documents(wallet_address: str = Header(...)):
+    """Get list of uploaded documents for a specific wallet address."""
     try:
-        documents = await rag_service.get_documents()
+        documents = await rag_service.get_documents(wallet_address)
         return documents
         
     except Exception as e:
@@ -577,4 +579,37 @@ async def verify_rag_response(request: Dict[str, Any]):
         
     except Exception as e:
         logger.error(f"Error verifying RAG response: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/rag/documents/{document_id}")
+async def delete_document(document_id: str, wallet_address: str = Header(...)):
+    """Delete a document and its chunks from the database."""
+    try:
+        db = SessionLocal()
+        try:
+            # Verify the document belongs to the wallet address
+            document = db.query(DocumentUpload).filter(
+                DocumentUpload.document_id == document_id,
+                DocumentUpload.wallet_address == wallet_address
+            ).first()
+            
+            if not document:
+                raise HTTPException(status_code=404, detail="Document not found or unauthorized")
+            
+            # Delete all chunks associated with the document
+            db.query(DocumentChunk).filter(DocumentChunk.document_id == document_id).delete()
+            
+            # Delete the document upload record
+            db.query(DocumentUpload).filter(DocumentUpload.document_id == document_id).delete()
+            
+            db.commit()
+            return {"status": "success", "message": "Document deleted successfully"}
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error deleting document: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Error in delete_document: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e)) 
