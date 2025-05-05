@@ -1,10 +1,8 @@
 import { ethers } from 'ethers';
 
-type EthereumProvider = ethers.Eip1193Provider;
-
 declare global {
     interface Window {
-        ethereum?: EthereumProvider;
+        ethereum: any;
     }
 }
 
