@@ -1,7 +1,7 @@
 import logging
 import os
 import hashlib
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
 import uuid
@@ -10,6 +10,8 @@ import openai
 import numpy as np
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import text
+from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from ..models.document import DocumentChunk, DocumentUpload
 from ..models.database import SessionLocal
@@ -21,6 +23,11 @@ from .chat_session import ChatSessionService
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 logger = logging.getLogger(__name__)
+
+
+def standardize_address(address: str) -> str:
+    """Standardize Ethereum address to lowercase."""
+    return address.lower() if address else None
 
 
 class RAGService:
@@ -40,31 +47,18 @@ class RAGService:
         self.embedding_dim = 1536  # for OpenAI ada-002
 
     def _chunk_text(self, text: str) -> List[str]:
-        """Split text into overlapping chunks."""
+        """Split text into overlapping chunks using a sliding window approach."""
         try:
-            logger.info(f"Starting text chunking. Text length: {len(text)}")
+            logger.info(f"Starting sliding window chunking. Text length: {len(text)}")
             chunks = []
             start = 0
-            
-            # Split text into paragraphs first
-            paragraphs = text.split('\n\n')
-            logger.info(f"Split into {len(paragraphs)} paragraphs")
-            
-            current_chunk = ""
-            for paragraph in paragraphs:
-                # If adding this paragraph would exceed chunk size, save current chunk
-                if len(current_chunk) + len(paragraph) > self.chunk_size and current_chunk:
-                    chunks.append(current_chunk.strip())
-                    current_chunk = paragraph
-                else:
-                    if current_chunk:
-                        current_chunk += "\n\n"
-                    current_chunk += paragraph
-            
-            # Add the last chunk if it exists
-            if current_chunk:
-                chunks.append(current_chunk.strip())
-            
+
+            while start < len(text):
+                end = min(start + self.chunk_size, len(text))
+                chunk = text[start:end]
+                chunks.append(chunk.strip())
+                start += self.chunk_size - self.chunk_overlap  # Slide window
+
             logger.info(f"Completed chunking. Total chunks: {len(chunks)}")
             return chunks
         except Exception as e:
@@ -103,6 +97,9 @@ class RAGService:
     async def upload_document(self, file_path: str, wallet_address: str) -> Dict[str, Any]:
         """Upload a document to IPFS and store its chunks in the database."""
         try:
+            # Standardize wallet address
+            wallet_address = standardize_address(wallet_address)
+            
             # Read file content
             file_extension = os.path.splitext(file_path)[1].lower()
             
@@ -136,7 +133,8 @@ class RAGService:
                     document_id=document_id,
                     document_name=document_name,
                     ipfs_hash=ipfs_hash,
-                    wallet_address=wallet_address
+                    wallet_address=wallet_address,
+                    uploaded_at=datetime.utcnow()
                 )
                 db.add(document_upload)
                 db.commit()
@@ -196,23 +194,39 @@ class RAGService:
                 pass
             raise
 
-    async def query_documents(self, query: str, top_k: int = 3) -> Dict[str, Any]:
-        db = SessionLocal()
+    async def query_documents(self, query: str, wallet_address: str, top_k: int = 3) -> Dict[str, Any]:
+        """Query documents and return relevant chunks with blockchain verification."""
         try:
-            logger.info("Embedding query")
+            # Standardize wallet address
+            wallet_address = standardize_address(wallet_address)
+            
+            # Get query embedding
             query_embedding = await self.embed_texts_openai([query])
             query_vec = query_embedding[0]
             logger.info(f"Query vector length: {len(query_vec)}")
 
             logger.info("Running similarity query")
-            sql = text("""
-                SELECT *,
-                    1 - (embedding <#> (:query_vector)::vector) AS similarity
-                FROM document_chunks
-                ORDER BY embedding <#> (:query_vector)::vector
-                LIMIT :top_k
-            """)
-            result = db.execute(sql, {"query_vector": query_vec, "top_k": top_k}).mappings().fetchall()
+            db = SessionLocal()
+            try:
+                sql = text("""
+                    SELECT *,
+                        1 - (embedding <#> (:query_vector)::vector) AS similarity
+                    FROM document_chunks
+                    WHERE document_id IN (
+                        SELECT document_id 
+                        FROM document_uploads 
+                        WHERE LOWER(wallet_address) = LOWER(:wallet_address)
+                    )
+                    ORDER BY embedding <#> (:query_vector)::vector
+                    LIMIT :top_k
+                """)
+                result = db.execute(sql, {
+                    "query_vector": query_vec,
+                    "top_k": top_k,
+                    "wallet_address": wallet_address
+                }).mappings().fetchall()
+            finally:
+                db.close()
 
             if not result:
                 return {
@@ -295,16 +309,16 @@ Answer:"""
         except Exception as e:
             logger.error(f"Query error: {str(e)}")
             raise
-        finally:
-            db.close()
 
     async def get_documents(self, wallet_address: str) -> List[Dict[str, Any]]:
         """Get list of uploaded documents for a specific wallet address."""
         try:
+            # Standardize wallet address
+            wallet_address = standardize_address(wallet_address)
             db = SessionLocal()
             try:
                 documents = db.query(DocumentUpload).filter(
-                    DocumentUpload.wallet_address == wallet_address
+                    func.lower(DocumentUpload.wallet_address) == wallet_address
                 ).all()
                 return [{
                     "id": doc.document_id,
@@ -325,3 +339,39 @@ Answer:"""
         except Exception as e:
             logger.error(f"Verification error: {str(e)}")
             return False
+
+    def delete_document(self, document_id: str, wallet_address: str) -> bool:
+        """Delete a document and its chunks."""
+        try:
+            # Standardize wallet address
+            wallet_address = standardize_address(wallet_address)
+            
+            db = SessionLocal()
+            try:
+                # Verify ownership
+                document = db.query(DocumentUpload).filter(
+                    DocumentUpload.document_id == document_id,
+                    func.lower(DocumentUpload.wallet_address) == wallet_address
+                ).first()
+                
+                if not document:
+                    return False
+                
+                # Delete chunks first
+                db.query(DocumentChunk).filter(
+                    DocumentChunk.document_id == document_id
+                ).delete()
+                
+                # Delete document
+                db.delete(document)
+                db.commit()
+                return True
+            except Exception as e:
+                db.rollback()
+                raise
+            finally:
+                db.close()
+            
+        except Exception as e:
+            logger.error(f"Error deleting document: {str(e)}")
+            raise

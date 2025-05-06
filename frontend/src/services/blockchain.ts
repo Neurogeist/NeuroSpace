@@ -1,10 +1,12 @@
 import { ethers } from 'ethers';
+import { MetaMaskInpageProvider } from '@metamask/providers';
 
 declare global {
-    interface Window {
-        ethereum: any;
-    }
+  interface Window {
+    ethereum?: MetaMaskInpageProvider | any; // 'any' ensures compatibility
+  }
 }
+
 
 const PAYMENT_CONTRACT_ADDRESS = import.meta.env.VITE_PAYMENT_CONTRACT_ADDRESS;
 const ENVIRONMENT = import.meta.env.VITE_ENVIRONMENT || 'development';

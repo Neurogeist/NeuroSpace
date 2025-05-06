@@ -40,9 +40,10 @@ export const uploadDocument = async (file: File, walletAddress: string): Promise
     return response.data;
 };
 
-export const queryDocuments = async (query: string): Promise<RAGResponse> => {
+export const queryDocuments = async (query: string, walletAddress: string): Promise<RAGResponse> => {
     const response = await axios.post<RAGResponse>(`${API_BASE_URL}/rag/query`, {
         query,
+        wallet_address: walletAddress,
     });
 
     return response.data;

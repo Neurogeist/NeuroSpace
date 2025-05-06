@@ -125,7 +125,7 @@ export default function RAGPage() {
         setVerificationResult(null);
 
         try {
-            const result = await queryDocuments(query);
+            const result = await queryDocuments(query, address || '');
             setResponse(result.response);
             setSources(result.sources);
 

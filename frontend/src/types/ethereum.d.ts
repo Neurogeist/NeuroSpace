@@ -1,3 +1,13 @@
+import { MetaMaskInpageProvider } from '@metamask/providers';
+
+declare global {
+  interface Window {
+    ethereum?: MetaMaskInpageProvider;
+  }
+}
+
+export {};
+
 interface EthereumProvider {
     request: (args: { method: string; params?: any[] }) => Promise<any>;
     on: (event: string, callback: (...args: any[]) => void) => void;

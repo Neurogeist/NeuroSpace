@@ -7,6 +7,10 @@ interface WalletState {
     chainId: string | null;
 }
 
+const standardizeAddress = (address: string | null): string | null => {
+    return address ? address.toLowerCase() : null;
+};
+
 export const useWallet = () => {
     const [walletState, setWalletState] = useState<WalletState>({
         address: null,
@@ -26,7 +30,7 @@ export const useWallet = () => {
             const network = await provider.getNetwork();
             
             setWalletState({
-                address: accounts[0],
+                address: standardizeAddress(accounts[0]),
                 isConnected: true,
                 chainId: network.chainId.toString(),
             });
@@ -53,7 +57,7 @@ export const useWallet = () => {
             } else {
                 setWalletState(prev => ({
                     ...prev,
-                    address: accounts[0],
+                    address: standardizeAddress(accounts[0]),
                     isConnected: true,
                 }));
             }
@@ -78,7 +82,7 @@ export const useWallet = () => {
                 
                 if (accounts.length > 0) {
                     setWalletState({
-                        address: accounts[0].address,
+                        address: standardizeAddress(accounts[0].address),
                         isConnected: true,
                         chainId: network.chainId.toString(),
                     });

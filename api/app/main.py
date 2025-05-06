@@ -25,8 +25,8 @@ from .services.model_registry import ModelRegistry
 from pydantic import BaseModel, Field
 from .services.payment import PaymentService
 from .services.rag import RAGService
-from .models.database import SessionLocal
-from .models.document import DocumentChunk, DocumentUpload
+from .models.database import SessionLocal, engine
+from .models.document import DocumentChunk, DocumentUpload, Base
 
 # Configure logging
 logging.basicConfig(
@@ -537,6 +537,7 @@ async def upload_document(file: UploadFile = File(...), wallet_address: str = He
 
 class RAGQueryRequest(BaseModel):
     query: str
+    wallet_address: str
     top_k: int = 3
 
 @app.post("/rag/query")
@@ -545,6 +546,7 @@ async def query_documents(request: RAGQueryRequest):
     try:
         result = await rag_service.query_documents(
             query=request.query,
+            wallet_address=request.wallet_address,
             top_k=request.top_k
         )
         return result
@@ -564,6 +566,18 @@ async def get_documents(wallet_address: str = Header(...)):
         logger.error(f"Error getting documents: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/rag/documents/{document_id}")
+async def delete_document(document_id: str, wallet_address: str = Header(...)):
+    """Delete a document and its chunks from the database."""
+    try:
+        success = rag_service.delete_document(document_id, wallet_address)
+        if not success:
+            raise HTTPException(status_code=404, detail="Document not found or unauthorized")
+        return {"status": "success", "message": "Document deleted successfully"}
+    except Exception as e:
+        logger.error(f"Error deleting document: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/verify/rag")
 async def verify_rag_response(request: Dict[str, Any]):
     """Verify a RAG response."""
@@ -579,37 +593,4 @@ async def verify_rag_response(request: Dict[str, Any]):
         
     except Exception as e:
         logger.error(f"Error verifying RAG response: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.delete("/rag/documents/{document_id}")
-async def delete_document(document_id: str, wallet_address: str = Header(...)):
-    """Delete a document and its chunks from the database."""
-    try:
-        db = SessionLocal()
-        try:
-            # Verify the document belongs to the wallet address
-            document = db.query(DocumentUpload).filter(
-                DocumentUpload.document_id == document_id,
-                DocumentUpload.wallet_address == wallet_address
-            ).first()
-            
-            if not document:
-                raise HTTPException(status_code=404, detail="Document not found or unauthorized")
-            
-            # Delete all chunks associated with the document
-            db.query(DocumentChunk).filter(DocumentChunk.document_id == document_id).delete()
-            
-            # Delete the document upload record
-            db.query(DocumentUpload).filter(DocumentUpload.document_id == document_id).delete()
-            
-            db.commit()
-            return {"status": "success", "message": "Document deleted successfully"}
-        except Exception as e:
-            db.rollback()
-            logger.error(f"Error deleting document: {str(e)}")
-            raise HTTPException(status_code=500, detail=str(e))
-        finally:
-            db.close()
-    except Exception as e:
-        logger.error(f"Error in delete_document: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e)) 
