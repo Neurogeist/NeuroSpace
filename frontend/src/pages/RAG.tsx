@@ -8,15 +8,11 @@ import {
     Input,
     useToast,
     useColorModeValue,
-    Divider,
-    Spinner,
     Link,
     Tooltip,
     IconButton,
     Textarea,
     Badge,
-    Code,
-    useBreakpointValue,
     AlertDialog,
     AlertDialogBody,
     AlertDialogFooter,
@@ -46,7 +42,6 @@ export default function RAGPage() {
 
     const bgColor = useColorModeValue('white', 'gray.800');
     const borderColor = useColorModeValue('gray.200', 'gray.700');
-    const textColor = useColorModeValue('gray.800', 'gray.100');
     const linkColor = useColorModeValue('blue.500', 'blue.300');
 
     const blockExplorerUrl = import.meta.env.VITE_ENVIRONMENT?.toLowerCase() === 'production'
