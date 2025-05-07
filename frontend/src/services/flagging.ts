@@ -19,7 +19,8 @@ export interface FlaggedMessage {
 export const flagMessage = async (
     messageId: string,
     reason: FlagMessageRequest['reason'],
-    note?: string
+    note?: string,
+    walletAddress?: string
 ): Promise<FlaggedMessage> => {
     try {
         const response = await axios.post(
@@ -28,11 +29,20 @@ export const flagMessage = async (
                 message_id: messageId,
                 reason,
                 note
+            },
+            {
+                headers: {
+                    'wallet-address': walletAddress
+                }
             }
         );
+        
         return response.data.flagged_message;
     } catch (error) {
         console.error('Error flagging message:', error);
+        if (axios.isAxiosError(error)) {
+            console.error('Response data:', error.response?.data);
+        }
         throw error;
     }
 };

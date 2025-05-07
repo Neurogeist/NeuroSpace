@@ -26,74 +26,46 @@ class FlaggingService:
         wallet_address: str,
         note: Optional[str] = None
     ) -> FlaggedMessage:
-        """
-        Flag a message for moderation.
+        """Flag a message for moderation."""
+        logger.info(f"Flagging message {message_id} by {wallet_address} for reason: {reason}")
         
-        Args:
-            message_id: UUID of the message to flag
-            reason: One of 'hallucination', 'inappropriate', 'inaccurate', 'other'
-            wallet_address: Address of the user flagging the message
-            note: Optional note explaining the flag
-            
-        Returns:
-            FlaggedMessage object
-            
-        Raises:
-            ValueError: If reason is invalid or message not found
-            Exception: For database errors
-        """
+        # Validate reason
+        if reason not in self.valid_reasons:
+            logger.error(f"Invalid reason: {reason}")
+            raise ValueError(f"Invalid reason. Must be one of: {', '.join(self.valid_reasons)}")
+        
         try:
-            # Validate reason
-            if reason not in self.valid_reasons:
-                raise ValueError(f"Invalid reason. Must be one of: {', '.join(self.valid_reasons)}")
-
-            # Convert message_id to UUID
-            try:
-                message_uuid = uuid.UUID(message_id)
-            except ValueError:
-                raise ValueError(f"Invalid message ID format: {message_id}")
-
-            # Check if message exists
-            message = self.db.query(ChatMessageDB).filter(ChatMessageDB.id == message_uuid).first()
-            if not message:
-                raise ValueError(f"Message with ID {message_id} not found")
-
-            # Create flagged message record
-            flagged_message = FlaggedMessage(
-                message_id=message_uuid,
-                reason=reason,
-                note=note,
-                wallet_address=wallet_address.lower()  # Standardize wallet address
-            )
-
-            self.db.add(flagged_message)
-            self.db.commit()
-            self.db.refresh(flagged_message)
-
-            logger.info(f"Message {message_id} flagged by {wallet_address} for reason: {reason}")
-            return flagged_message
-
-        except Exception as e:
-            self.db.rollback()
-            logger.error(f"Error flagging message: {str(e)}")
-            self._get_new_session()
-            raise
+            message_uuid = uuid.UUID(message_id)
+        except ValueError as e:
+            logger.error(f"Invalid message ID format: {message_id}")
+            raise ValueError(f"Invalid message ID format: {str(e)}")
+        
+        # Check if message exists
+        message = self.db.query(ChatMessageDB).filter(ChatMessageDB.id == message_uuid).first()
+        if not message:
+            logger.error(f"Message not found: {message_id}")
+            raise ValueError(f"Message not found: {message_id}")
+        
+        # Create flagged message
+        flagged_message = FlaggedMessage(
+            message_id=message_uuid,
+            reason=reason,
+            note=note,
+            wallet_address=wallet_address.lower()  # Standardize wallet address
+        )
+        
+        self.db.add(flagged_message)
+        self.db.commit()
+        self.db.refresh(flagged_message)
+        
+        return flagged_message
 
     def get_flagged_messages(
         self,
         wallet_address: Optional[str] = None,
         reason: Optional[str] = None
     ) -> List[FlaggedMessage]:
-        """
-        Get flagged messages with optional filtering.
-        
-        Args:
-            wallet_address: Optional filter by flagger's wallet address
-            reason: Optional filter by flag reason
-            
-        Returns:
-            List of FlaggedMessage objects
-        """
+        """Get flagged messages with optional filtering."""
         try:
             query = self.db.query(FlaggedMessage)
 

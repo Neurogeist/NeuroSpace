@@ -29,6 +29,8 @@ from .models.database import SessionLocal, engine
 from .models.document import DocumentChunk, DocumentUpload, Base
 from .services.flagging import FlaggingService
 from sqlalchemy.orm import Session
+from pydantic import validator
+from fastapi.exceptions import RequestValidationError
 
 # Configure logging
 logging.basicConfig(
@@ -599,39 +601,51 @@ async def verify_rag_response(request: Dict[str, Any]):
         raise HTTPException(status_code=500, detail=str(e))
 
 class FlagMessageRequest(BaseModel):
-    message_id: uuid.UUID
+    message_id: str
     reason: str
     note: Optional[str] = None
+
+    @validator('message_id')
+    def validate_message_id(cls, v):
+        logger.info(f"Validating message_id: {v}")
+        try:
+            return uuid.UUID(v)
+        except ValueError as e:
+            logger.error(f"Invalid message ID format: {v}, error: {str(e)}")
+            raise ValueError('Invalid message ID format')
+
+    @validator('reason')
+    def validate_reason(cls, v):
+        logger.info(f"Validating reason: {v}")
+        valid_reasons = {'hallucination', 'inappropriate', 'inaccurate', 'other'}
+        if v not in valid_reasons:
+            logger.error(f"Invalid reason: {v}. Must be one of: {', '.join(valid_reasons)}")
+            raise ValueError(f"Invalid reason. Must be one of: {', '.join(valid_reasons)}")
+        return v
+
+    class Config:
+        json_encoders = {
+            uuid.UUID: str
+        }
 
 @app.post("/flag")
 async def flag_message(
     request: FlagMessageRequest,
     wallet_address: str = Header(...)
 ):
-    """Flag a message for moderation."""
+    logger.info(f"Flagging message {request.message_id} by {wallet_address} for reason: {request.reason}")
+    
     try:
         flagged_message = flagging_service.flag_message(
-            message_id=str(request.message_id),
-            reason=request.reason,
-            wallet_address=wallet_address,
-            note=request.note
+            str(request.message_id),
+            request.reason,
+            wallet_address,
+            request.note
         )
-        
-        return {
-            "status": "success",
-            "flagged_message": {
-                "id": str(flagged_message.id),
-                "message_id": str(flagged_message.message_id),
-                "reason": flagged_message.reason,
-                "note": flagged_message.note,
-                "flagged_at": flagged_message.flagged_at.isoformat()
-            }
-        }
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        return {"status": "success", "flagged_message": flagged_message}
     except Exception as e:
-        logger.error(f"Unexpected error in flag_message: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        logger.error(f"Error flagging message: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/flagged-messages")
 async def get_flagged_messages(
@@ -663,3 +677,12 @@ async def get_flagged_messages(
     except Exception as e:
         logger.error(f"Error retrieving flagged messages: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle request validation errors."""
+    logger.error(f"Validation error: {exc.errors()}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors()}
+    )

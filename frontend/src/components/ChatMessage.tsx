@@ -214,8 +214,9 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
         }
 
         try {
+            console.log('Flagging message with ID:', message.id);
             setIsFlagging(true);
-            await flagMessage(message.timestamp, flagReason, flagNote);
+            await flagMessage(message.id, flagReason, flagNote, userAddress);
             toast({
                 title: "Success",
                 description: "Message flagged successfully",

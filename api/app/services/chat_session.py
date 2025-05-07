@@ -21,6 +21,7 @@ class ChatMessage(BaseModel):
     verification_hash: Optional[str] = Field(None, description="The hash of the prompt-response pair")
     signature: Optional[str] = Field(None, description="The digital signature of the verification hash")
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    id: Optional[str] = None
 
     model_config = {
         'populate_by_name': True,
@@ -54,6 +55,10 @@ class ChatMessage(BaseModel):
         # Convert timestamp to ISO string
         if isinstance(data.get('timestamp'), datetime):
             data['timestamp'] = data['timestamp'].isoformat().replace("+00:00", "Z")
+
+        # Convert UUID to string if present
+        if isinstance(data.get('id'), uuid.UUID):
+            data['id'] = str(data['id'])
 
         data["metadata"] = self.metadata
 
@@ -297,6 +302,7 @@ class ChatSessionService:
                 })
 
                 message = ChatMessage(
+                    id=str(db_msg.id),  # Convert UUID to string
                     role=db_msg.role,
                     content=db_msg.content,
                     timestamp=db_msg.timestamp,
