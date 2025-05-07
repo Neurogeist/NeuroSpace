@@ -22,7 +22,7 @@ import {
 } from '@chakra-ui/react';
 import { FiUpload, FiLink, FiHash, FiTrash2 } from 'react-icons/fi';
 import { uploadDocument, queryDocuments, getDocuments, verifyRAGResponse, deleteDocument } from '../services/rag';
-import { Document, Source, RAGResponse } from '../services/rag';
+import { Document, Source } from '../services/rag';
 import { useWallet } from '../hooks/useWallet';
 
 export default function RAGPage() {
