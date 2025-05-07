@@ -1,5 +1,5 @@
-import { Box, Text, HStack, Link, Tooltip, useColorModeValue, Code, useBreakpointValue } from '@chakra-ui/react';
-import { FiHash, FiLink } from 'react-icons/fi';
+import { Box, Text, HStack, Link, Tooltip, useColorModeValue, Code, useBreakpointValue, IconButton, Menu, MenuButton, MenuList, MenuItem, useDisclosure, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton, FormControl, FormLabel, Textarea, Select, Button, useToast } from '@chakra-ui/react';
+import { FiHash, FiLink, FiFlag } from 'react-icons/fi';
 import { ChatMessage } from '../types/chat';
 import React, { useState, useEffect } from 'react';
 import { verifyMessage } from '../services/api';
@@ -9,6 +9,8 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { Components } from 'react-markdown';
 import { verifyHash } from '../utils/verification';
+import { flagMessage } from '../services/flagging';
+import { useApp } from '../context/AppContext';
 
 const blockExplorerUrl =
   import.meta.env.VITE_ENVIRONMENT?.toLowerCase() === 'production'
@@ -68,6 +70,12 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
     const [isVerifying, setIsVerifying] = useState(false);
     const [verificationError, setVerificationError] = useState<string | null>(null);
     const [hashMatch, setHashMatch] = useState<boolean | undefined>(undefined);
+    const [isFlagging, setIsFlagging] = useState(false);
+    const { isOpen: isFlagModalOpen, onOpen: onFlagModalOpen, onClose: onFlagModalClose } = useDisclosure();
+    const [flagReason, setFlagReason] = useState<'hallucination' | 'inappropriate' | 'inaccurate' | 'other'>('hallucination');
+    const [flagNote, setFlagNote] = useState('');
+    const { userAddress } = useApp();
+    const toast = useToast();
 
     const messageBgColor = useColorModeValue('gray.50', 'gray.700');
     const userMessageBgColor = useColorModeValue('blue.50', 'blue.900');
@@ -193,6 +201,43 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
     const spacing = useBreakpointValue({ base: 2, md: 4 });
     const maxWidth = useBreakpointValue({ base: '90%', md: '80%' });
 
+    const handleFlagMessage = async () => {
+        if (!userAddress) {
+            toast({
+                title: "Error",
+                description: "Please connect your wallet to flag messages",
+                status: "error",
+                duration: 3000,
+                isClosable: true,
+            });
+            return;
+        }
+
+        try {
+            setIsFlagging(true);
+            await flagMessage(message.timestamp, flagReason, flagNote);
+            toast({
+                title: "Success",
+                description: "Message flagged successfully",
+                status: "success",
+                duration: 3000,
+                isClosable: true,
+            });
+            onFlagModalClose();
+        } catch (error) {
+            console.error('Error flagging message:', error);
+            toast({
+                title: "Error",
+                description: "Failed to flag message. Please try again.",
+                status: "error",
+                duration: 3000,
+                isClosable: true,
+            });
+        } finally {
+            setIsFlagging(false);
+        }
+    };
+
     return (
         <Box
             p={padding}
@@ -201,7 +246,22 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
             maxW={maxWidth}
             alignSelf={message.role === 'user' ? 'flex-end' : 'flex-start'}
             mb={4}
+            position="relative"
         >
+            {message.role === 'assistant' && (
+                <IconButton
+                    aria-label="Flag message"
+                    icon={<FiFlag />}
+                    size="sm"
+                    position="absolute"
+                    top={2}
+                    right={2}
+                    onClick={onFlagModalOpen}
+                    colorScheme="red"
+                    variant="ghost"
+                />
+            )}
+
             <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 rehypePlugins={[rehypeRaw]}
@@ -272,6 +332,45 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
             </HStack>
         
             {message.role === 'assistant' && renderMetadata(message)}
+
+            <Modal isOpen={isFlagModalOpen} onClose={onFlagModalClose}>
+                <ModalOverlay />
+                <ModalContent>
+                    <ModalHeader>Flag Message</ModalHeader>
+                    <ModalCloseButton />
+                    <ModalBody pb={6}>
+                        <FormControl mb={4}>
+                            <FormLabel>Reason</FormLabel>
+                            <Select
+                                value={flagReason}
+                                onChange={(e) => setFlagReason(e.target.value as any)}
+                            >
+                                <option value="hallucination">Hallucination</option>
+                                <option value="inappropriate">Inappropriate Content</option>
+                                <option value="inaccurate">Inaccurate Information</option>
+                                <option value="other">Other</option>
+                            </Select>
+                        </FormControl>
+                        <FormControl>
+                            <FormLabel>Additional Note (Optional)</FormLabel>
+                            <Textarea
+                                value={flagNote}
+                                onChange={(e) => setFlagNote(e.target.value)}
+                                placeholder="Please provide any additional context..."
+                            />
+                        </FormControl>
+                        <Button
+                            colorScheme="red"
+                            mt={4}
+                            onClick={handleFlagMessage}
+                            isLoading={isFlagging}
+                            w="100%"
+                        >
+                            Flag Message
+                        </Button>
+                    </ModalBody>
+                </ModalContent>
+            </Modal>
         </Box>
     );
 } 

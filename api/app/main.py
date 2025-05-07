@@ -27,6 +27,8 @@ from .services.payment import PaymentService
 from .services.rag import RAGService
 from .models.database import SessionLocal, engine
 from .models.document import DocumentChunk, DocumentUpload, Base
+from .services.flagging import FlaggingService
+from sqlalchemy.orm import Session
 
 # Configure logging
 logging.basicConfig(
@@ -63,6 +65,7 @@ blockchain_service = BlockchainService()
 ipfs_service = IPFSService()
 model_registry = ModelRegistry()
 payment_service = PaymentService()
+flagging_service = FlaggingService()
 
 # Initialize RAG service
 rag_service = RAGService(
@@ -593,4 +596,70 @@ async def verify_rag_response(request: Dict[str, Any]):
         
     except Exception as e:
         logger.error(f"Error verifying RAG response: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(status_code=500, detail=str(e))
+
+class FlagMessageRequest(BaseModel):
+    message_id: uuid.UUID
+    reason: str
+    note: Optional[str] = None
+
+@app.post("/flag")
+async def flag_message(
+    request: FlagMessageRequest,
+    wallet_address: str = Header(...)
+):
+    """Flag a message for moderation."""
+    try:
+        flagged_message = flagging_service.flag_message(
+            message_id=str(request.message_id),
+            reason=request.reason,
+            wallet_address=wallet_address,
+            note=request.note
+        )
+        
+        return {
+            "status": "success",
+            "flagged_message": {
+                "id": str(flagged_message.id),
+                "message_id": str(flagged_message.message_id),
+                "reason": flagged_message.reason,
+                "note": flagged_message.note,
+                "flagged_at": flagged_message.flagged_at.isoformat()
+            }
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Unexpected error in flag_message: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.get("/flagged-messages")
+async def get_flagged_messages(
+    wallet_address: Optional[str] = None,
+    reason: Optional[str] = None
+):
+    """Get flagged messages with optional filtering."""
+    try:
+        flagged_messages = flagging_service.get_flagged_messages(
+            wallet_address=wallet_address,
+            reason=reason
+        )
+        
+        return {
+            "flagged_messages": [
+                {
+                    "id": str(msg.id),
+                    "message_id": str(msg.message_id),
+                    "reason": msg.reason,
+                    "note": msg.note,
+                    "wallet_address": msg.wallet_address,
+                    "flagged_at": msg.flagged_at.isoformat()
+                }
+                for msg in flagged_messages
+            ]
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error retrieving flagged messages: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
