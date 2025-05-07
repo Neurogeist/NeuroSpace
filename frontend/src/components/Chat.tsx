@@ -380,7 +380,11 @@ export default function Chat() {
                     <Container maxW={maxMessageWidth}>
                         <VStack spacing={4} align="stretch">
                             {messages.map((message, index) => (
-                                <ChatMessageComponent key={index} message={message} />
+                                <ChatMessageComponent 
+                                    key={index} 
+                                    message={message} 
+                                    isSidebarOpen={isSidebarOpen}
+                                />
                             ))}
                             
                             {thinkingStatus && (

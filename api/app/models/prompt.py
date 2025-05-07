@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 import re
 from ..services.chat_session import ChatSession
+import uuid
 
 class PromptRequest(BaseModel):
     """Request model for prompt submission."""
@@ -67,6 +68,7 @@ class PromptMetadata(BaseModel):
 
 class ChatMessage(BaseModel):
     """Model for a single chat message."""
+    id: Optional[uuid.UUID] = Field(None, description="The unique identifier for the message")
     role: str = Field(..., description="The role of the message sender (user or assistant)")
     content: str = Field(..., description="The content of the message")
     timestamp: datetime = Field(..., description="When the message was sent")

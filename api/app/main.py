@@ -27,6 +27,10 @@ from .services.payment import PaymentService
 from .services.rag import RAGService
 from .models.database import SessionLocal, engine
 from .models.document import DocumentChunk, DocumentUpload, Base
+from .services.flagging import FlaggingService
+from sqlalchemy.orm import Session
+from pydantic import validator
+from fastapi.exceptions import RequestValidationError
 
 # Configure logging
 logging.basicConfig(
@@ -63,6 +67,7 @@ blockchain_service = BlockchainService()
 ipfs_service = IPFSService()
 model_registry = ModelRegistry()
 payment_service = PaymentService()
+flagging_service = FlaggingService()
 
 # Initialize RAG service
 rag_service = RAGService(
@@ -593,4 +598,85 @@ async def verify_rag_response(request: Dict[str, Any]):
         
     except Exception as e:
         logger.error(f"Error verifying RAG response: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(status_code=500, detail=str(e))
+
+class FlagMessageRequest(BaseModel):
+    message_id: str
+    reason: str
+    note: Optional[str] = None
+
+    @validator('message_id')
+    def validate_message_id(cls, v):
+        try:
+            return uuid.UUID(v)
+        except ValueError as e:
+            raise ValueError('Invalid message ID format')
+
+    @validator('reason')
+    def validate_reason(cls, v):
+        valid_reasons = {'hallucination', 'inappropriate', 'inaccurate', 'other'}
+        if v not in valid_reasons:
+            raise ValueError(f"Invalid reason. Must be one of: {', '.join(valid_reasons)}")
+        return v
+
+    class Config:
+        json_encoders = {
+            uuid.UUID: str
+        }
+
+@app.post("/flag")
+async def flag_message(
+    request: FlagMessageRequest,
+    wallet_address: str = Header(...)
+):
+    try:
+        flagged_message = flagging_service.flag_message(
+            str(request.message_id),
+            request.reason,
+            wallet_address,
+            request.note
+        )
+        return {"status": "success", "flagged_message": flagged_message}
+    except Exception as e:
+        logger.error(f"Error flagging message: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/flagged-messages")
+async def get_flagged_messages(
+    wallet_address: Optional[str] = None,
+    reason: Optional[str] = None
+):
+    """Get flagged messages with optional filtering."""
+    try:
+        flagged_messages = flagging_service.get_flagged_messages(
+            wallet_address=wallet_address,
+            reason=reason
+        )
+        
+        return {
+            "flagged_messages": [
+                {
+                    "id": str(msg.id),
+                    "message_id": str(msg.message_id),
+                    "reason": msg.reason,
+                    "note": msg.note,
+                    "wallet_address": msg.wallet_address,
+                    "flagged_at": msg.flagged_at.isoformat()
+                }
+                for msg in flagged_messages
+            ]
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error retrieving flagged messages: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle request validation errors."""
+    logger.error(f"Validation error: {exc.errors()}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors()}
+    )
