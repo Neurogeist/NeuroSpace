@@ -250,26 +250,33 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
             position="relative"
         >
             {message.role === 'assistant' && (
-                <IconButton
-                    aria-label="Flag message"
-                    icon={<FiFlag />}
-                    size="sm"
+                <Box
                     position="absolute"
                     top={2}
                     right={2}
-                    onClick={onFlagModalOpen}
-                    colorScheme="red"
-                    variant="ghost"
-                />
+                    zIndex={1}
+                    ml={-2}
+                >
+                    <IconButton
+                        aria-label="Flag message"
+                        icon={<FiFlag />}
+                        size="sm"
+                        onClick={onFlagModalOpen}
+                        colorScheme="red"
+                        variant="ghost"
+                    />
+                </Box>
             )}
 
-            <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeRaw]}
-                components={MarkdownComponents}
-            >
-                {message.content}
-            </ReactMarkdown>
+            <Box mr={message.role === 'assistant' ? '6' : 0}>
+                <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[rehypeRaw]}
+                    components={MarkdownComponents}
+                >
+                    {message.content}
+                </ReactMarkdown>
+            </Box>
         
             {message.role === 'assistant' && message.metadata?.verification_hash && (
                 <Box mt={2}>
