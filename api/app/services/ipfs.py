@@ -32,9 +32,12 @@ class IPFSService:
     async def add_content(self, content: str) -> str:
         """Add content to IPFS and return the CID."""
         try:
+            logger.info("Starting IPFS content upload")
             if self.provider == "pinata":
+                logger.info("Using Pinata provider")
                 return await self._add_to_pinata(content)
             else:
+                logger.info("Using local IPFS node")
                 return await self._add_to_local(content)
         except Exception as e:
             logger.error(f"Error adding content to IPFS: {str(e)}")
@@ -43,6 +46,7 @@ class IPFSService:
     async def _add_to_pinata(self, content: str) -> str:
         """Add content to Pinata."""
         try:
+            logger.info("Creating temporary file for Pinata upload")
             # Create a temporary file
             temp_file = Path("temp_content.txt")
             temp_file.write_text(content)
@@ -52,6 +56,7 @@ class IPFSService:
                 'file': ('content.txt', open(temp_file, 'rb'))
             }
             
+            logger.info("Uploading to Pinata")
             # Make the request
             response = requests.post(
                 f"{self.api_url}/pinning/pinFileToIPFS",
@@ -61,11 +66,15 @@ class IPFSService:
             
             # Clean up the temporary file
             temp_file.unlink()
+            logger.info("Temporary file cleaned up")
             
             if response.status_code != 200:
+                logger.error(f"Pinata upload failed: {response.text}")
                 raise Exception(f"Failed to pin file to IPFS: {response.text}")
             
-            return response.json()["IpfsHash"]
+            ipfs_hash = response.json()["IpfsHash"]
+            logger.info(f"Successfully uploaded to Pinata with hash: {ipfs_hash}")
+            return ipfs_hash
             
         except Exception as e:
             logger.error(f"Error adding content to Pinata: {str(e)}")
@@ -74,6 +83,7 @@ class IPFSService:
     async def _add_to_local(self, content: str) -> str:
         """Add content to local IPFS node."""
         try:
+            logger.info("Creating temporary file for local IPFS upload")
             # Create a temporary file
             temp_file = Path("temp_content.txt")
             temp_file.write_text(content)
@@ -83,6 +93,7 @@ class IPFSService:
                 'file': ('content.txt', open(temp_file, 'rb'))
             }
             
+            logger.info("Uploading to local IPFS node")
             # Make the request
             response = requests.post(
                 f"{self.api_url}/add",
@@ -91,11 +102,15 @@ class IPFSService:
             
             # Clean up the temporary file
             temp_file.unlink()
+            logger.info("Temporary file cleaned up")
             
             if response.status_code != 200:
+                logger.error(f"Local IPFS upload failed: {response.text}")
                 raise Exception(f"Failed to add file to IPFS: {response.text}")
             
-            return response.json()["Hash"]
+            ipfs_hash = response.json()["Hash"]
+            logger.info(f"Successfully uploaded to local IPFS with hash: {ipfs_hash}")
+            return ipfs_hash
             
         except Exception as e:
             logger.error(f"Error adding content to local IPFS: {str(e)}")
@@ -241,4 +256,13 @@ class IPFSService:
                         
         except Exception as e:
             logger.error(f"Error making IPFS request: {str(e)}")
-            raise Exception(f"Failed to make IPFS request: {str(e)}") 
+            raise Exception(f"Failed to make IPFS request: {str(e)}")
+
+    async def close(self):
+        """Close any open connections."""
+        try:
+            if hasattr(self, 'session') and self.session:
+                await self.session.close()
+            logger.info("IPFS service connections closed")
+        except Exception as e:
+            logger.error(f"Error closing IPFS connections: {str(e)}") 

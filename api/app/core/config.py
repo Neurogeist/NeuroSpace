@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     # Remote LLM settings
     TOGETHER_API_KEY: Optional[str] = None
     REPLICATE_API_TOKEN: Optional[str] = None
+    OPENAI_API_KEY: Optional[str] = Field(None, env="OPENAI_API_KEY")
     
     # Blockchain settings
     BLOCKCHAIN_NETWORK: str = Field(default="base", env="BLOCKCHAIN_NETWORK")

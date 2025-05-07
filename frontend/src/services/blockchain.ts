@@ -1,10 +1,12 @@
 import { ethers } from 'ethers';
+import { MetaMaskInpageProvider } from '@metamask/providers';
 
 declare global {
-    interface Window {
-        ethereum?: any;
-    }
+  interface Window {
+    ethereum?: MetaMaskInpageProvider | any; // 'any' ensures compatibility
+  }
 }
+
 
 const PAYMENT_CONTRACT_ADDRESS = import.meta.env.VITE_PAYMENT_CONTRACT_ADDRESS;
 const ENVIRONMENT = import.meta.env.VITE_ENVIRONMENT || 'development';
@@ -91,12 +93,18 @@ export const getNetworkInfo = () => {
 };
 
 export const getPaymentContract = async () => {
+    if (!window.ethereum) {
+        throw new Error('MetaMask is not installed');
+    }
     const provider = new ethers.BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
     return new ethers.Contract(PAYMENT_CONTRACT_ADDRESS, PAYMENT_CONTRACT_ABI, signer);
 };
 
 export const payForMessage = async (sessionId: string) => {
+    if (!window.ethereum) {
+        throw new Error('MetaMask is not installed');
+    }
     const provider = new ethers.BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
     const contract = new ethers.Contract(PAYMENT_CONTRACT_ADDRESS!, PAYMENT_CONTRACT_ABI, signer);

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request, Depends, Header
+from fastapi import FastAPI, HTTPException, Request, Depends, Header, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -24,6 +24,9 @@ from fastapi import BackgroundTasks
 from .services.model_registry import ModelRegistry
 from pydantic import BaseModel, Field
 from .services.payment import PaymentService
+from .services.rag import RAGService
+from .models.database import SessionLocal, engine
+from .models.document import DocumentChunk, DocumentUpload, Base
 
 # Configure logging
 logging.basicConfig(
@@ -60,6 +63,14 @@ blockchain_service = BlockchainService()
 ipfs_service = IPFSService()
 model_registry = ModelRegistry()
 payment_service = PaymentService()
+
+# Initialize RAG service
+rag_service = RAGService(
+    llm_service=llm_service,
+    blockchain_service=blockchain_service,
+    ipfs_service=ipfs_service,
+    chat_session_service=chat_session_service
+)
 
 # Request tracking
 request_stats: Dict[str, Any] = {
@@ -500,4 +511,86 @@ async def verify_hash(hash: str):
         
     except Exception as e:
         logger.error(f"Error verifying hash: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/rag/upload")
+async def upload_document(file: UploadFile = File(...), wallet_address: str = Header(...)):
+    """Upload a document for RAG."""
+    try:
+        # Save the uploaded file
+        file_path = f"uploads/{file.filename}"
+        os.makedirs("uploads", exist_ok=True)
+        
+        with open(file_path, "wb") as buffer:
+            content = await file.read()
+            buffer.write(content)
+        
+        # Process the document
+        result = await rag_service.upload_document(file_path, wallet_address)
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error uploading document: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class RAGQueryRequest(BaseModel):
+    query: str
+    wallet_address: str
+    top_k: int = 3
+
+@app.post("/rag/query")
+async def query_documents(request: RAGQueryRequest):
+    """Query uploaded documents using vector search + LLM, return a verifiable answer."""
+    try:
+        result = await rag_service.query_documents(
+            query=request.query,
+            wallet_address=request.wallet_address,
+            top_k=request.top_k
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Error querying documents: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/rag/documents")
+async def get_documents(wallet_address: str = Header(...)):
+    """Get list of uploaded documents for a specific wallet address."""
+    try:
+        documents = await rag_service.get_documents(wallet_address)
+        return documents
+        
+    except Exception as e:
+        logger.error(f"Error getting documents: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/rag/documents/{document_id}")
+async def delete_document(document_id: str, wallet_address: str = Header(...)):
+    """Delete a document and its chunks from the database."""
+    try:
+        success = rag_service.delete_document(document_id, wallet_address)
+        if not success:
+            raise HTTPException(status_code=404, detail="Document not found or unauthorized")
+        return {"status": "success", "message": "Document deleted successfully"}
+    except Exception as e:
+        logger.error(f"Error deleting document: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/verify/rag")
+async def verify_rag_response(request: Dict[str, Any]):
+    """Verify a RAG response."""
+    try:
+        verification_hash = request.get("verification_hash")
+        signature = request.get("signature")
+        
+        if not verification_hash or not signature:
+            raise HTTPException(status_code=400, detail="Verification hash and signature are required")
+        
+        verified = await rag_service.verify_response(verification_hash, signature)
+        return {"verified": verified}
+        
+    except Exception as e:
+        logger.error(f"Error verifying RAG response: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e)) 
