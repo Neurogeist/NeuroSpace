@@ -12,10 +12,12 @@ import {
   Flex,
   Image,
   Stack,
-  useBreakpointValue
+  useBreakpointValue,
+  Badge,
+  Divider
 } from '@chakra-ui/react'
 import { useNavigate } from 'react-router-dom'
-import { FaRobot, FaDatabase, FaLock, FaBolt } from 'react-icons/fa'
+import { FaRobot, FaDatabase, FaLock, FaBolt, FaShieldAlt, FaCheckCircle, FaNetworkWired, FaCoins } from 'react-icons/fa'
 
 const Feature = ({ title, text, icon }: { title: string; text: string; icon: any }) => {
   return (
@@ -56,6 +58,7 @@ const LandingPage = () => {
   const bgColor = useColorModeValue('gray.50', 'gray.900')
   const textColor = useColorModeValue('gray.600', 'gray.400')
   const headingColor = useColorModeValue('gray.800', 'white')
+  const accentColor = useColorModeValue('blue.500', 'blue.300')
 
   return (
     <Box bg={bgColor}>
@@ -68,6 +71,16 @@ const LandingPage = () => {
           justify="space-between"
         >
           <Stack spacing={6} maxW="600px">
+            <Badge
+              colorScheme="blue"
+              alignSelf="start"
+              px={3}
+              py={1}
+              rounded="full"
+              fontSize="sm"
+            >
+              Trust in AI, Mathematically Enforced
+            </Badge>
             <Heading
               size="2xl"
               color={headingColor}
@@ -117,14 +130,14 @@ const LandingPage = () => {
         </Stack>
       </Container>
 
-      {/* Features Section */}
+      {/* Key Features Section */}
       <Box py={20} bg={useColorModeValue('white', 'gray.800')}>
         <Container maxW="container.xl">
           <VStack spacing={12}>
             <Stack spacing={4} textAlign="center">
-              <Heading color={headingColor}>Powerful Features</Heading>
+              <Heading color={headingColor}>Verifiable AI Infrastructure</Heading>
               <Text fontSize="lg" color={textColor} maxW="600px">
-                Discover the capabilities that make NeuroSpace unique
+                Every layer of NeuroSpace is designed to restore user agency, auditability, and credibility in AI interactions
               </Text>
             </Stack>
 
@@ -135,22 +148,67 @@ const LandingPage = () => {
                 text="Interact with state-of-the-art AI models for intelligent conversations"
               />
               <Feature
+                icon={FaShieldAlt}
+                title="Cryptographic Verification"
+                text="Every interaction is hashed, signed, and stored on IPFS with blockchain commitment"
+              />
+              <Feature
                 icon={FaDatabase}
-                title="RAG System"
-                text="Retrieve and generate responses using your own knowledge base"
+                title="Verifiable RAG"
+                text="Document-grounded AI responses with cryptographic guarantees and source verification"
               />
               <Feature
-                icon={FaLock}
-                title="Blockchain Security"
-                text="Secure transactions and interactions powered by blockchain technology"
-              />
-              <Feature
-                icon={FaBolt}
-                title="Lightning Fast"
-                text="Experience quick responses and seamless interactions"
+                icon={FaCoins}
+                title="NeuroCoin (NSPACE)"
+                text="Powered by a fixed-supply ERC-20 token for payments, staking, and governance"
               />
             </SimpleGrid>
           </VStack>
+        </Container>
+      </Box>
+
+      {/* Value Proposition Section */}
+      <Box py={20}>
+        <Container maxW="container.xl">
+          <Stack spacing={12}>
+            <Stack spacing={4} textAlign="center">
+              <Heading color={headingColor}>Why NeuroSpace Matters</Heading>
+              <Text fontSize="lg" color={textColor} maxW="800px" mx="auto">
+                In a world increasingly shaped by black-box models, NeuroSpace reimagines machine intelligence 
+                as a publicly verifiable, user-controlled utility.
+              </Text>
+            </Stack>
+
+            <SimpleGrid columns={{ base: 1, md: 2 }} spacing={8}>
+              <Stack
+                p={8}
+                bg={useColorModeValue('blue.50', 'blue.900')}
+                rounded="xl"
+                spacing={4}
+              >
+                <Icon as={FaCheckCircle} w={8} h={8} color={accentColor} />
+                <Heading size="md">Transparent AI</Heading>
+                <Text color={textColor}>
+                  Every prompt and response is hashed using SHA-256 and signed with your Ethereum wallet, 
+                  creating a tamper-proof record of every conversation.
+                </Text>
+              </Stack>
+
+              <Stack
+                p={8}
+                bg={useColorModeValue('purple.50', 'purple.900')}
+                rounded="xl"
+                spacing={4}
+              >
+                <Icon as={FaShieldAlt} w={8} h={8} color={accentColor} />
+                <Heading size="md">Public Auditing</Heading>
+                <Text color={textColor}>
+                  Anyone can verify the integrity of messages, identity of signers, and timestamps—no 
+                  centralized authority required.
+                </Text>
+              </Stack>
+            </SimpleGrid>
+          </Stack>
         </Container>
       </Box>
 
@@ -168,10 +226,10 @@ const LandingPage = () => {
           >
             <Stack spacing={4} maxW="600px">
               <Heading size="lg" color={headingColor}>
-                Ready to Get Started?
+                Ready to Experience Verifiable AI?
               </Heading>
               <Text fontSize="lg" color={textColor}>
-                Join NeuroSpace today and experience the future of AI-powered interactions
+                Join NeuroSpace today and be part of the future of transparent, trustworthy AI interactions
               </Text>
             </Stack>
             <Button
@@ -181,7 +239,7 @@ const LandingPage = () => {
               px={8}
               _hover={{ transform: 'translateY(-2px)', shadow: 'lg' }}
             >
-              Start Now
+              Get Started
             </Button>
           </Stack>
         </Container>
