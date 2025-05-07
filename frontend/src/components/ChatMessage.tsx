@@ -19,6 +19,7 @@ const blockExplorerUrl =
 
 interface ChatMessageProps {
     message: ChatMessage;
+    isSidebarOpen?: boolean;
 }
 
 const formatHash = (hash: string) => {
@@ -65,7 +66,7 @@ const MarkdownComponents: Components = {
     ),
 };
 
-export default function ChatMessageComponent({ message }: ChatMessageProps) {
+export default function ChatMessageComponent({ message, isSidebarOpen = false }: ChatMessageProps) {
     const [verificationResult, setVerificationResult] = useState<any>(null);
     const [isVerifying, setIsVerifying] = useState(false);
     const [verificationError, setVerificationError] = useState<string | null>(null);
@@ -256,6 +257,7 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
                     right={2}
                     zIndex={1}
                     ml={-2}
+                    display={{ base: isSidebarOpen ? 'none' : 'block', md: 'block' }}
                 >
                     <IconButton
                         aria-label="Flag message"
@@ -268,7 +270,7 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
                 </Box>
             )}
 
-            <Box mr={message.role === 'assistant' ? '6' : 0}>
+            <Box mr={message.role === 'assistant' ? { base: isSidebarOpen ? 0 : '6', md: '6' } : 0}>
                 <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
                     rehypePlugins={[rehypeRaw]}
