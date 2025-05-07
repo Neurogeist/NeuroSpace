@@ -1,4 +1,4 @@
-import { Box, Text, HStack, Link, Tooltip, useColorModeValue, Code, useBreakpointValue, IconButton, Menu, MenuButton, MenuList, MenuItem, useDisclosure, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton, FormControl, FormLabel, Textarea, Select, Button, useToast } from '@chakra-ui/react';
+import { Box, Text, HStack, Link, Tooltip, useColorModeValue, Code, useBreakpointValue, IconButton, useDisclosure, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton, FormControl, FormLabel, Textarea, Select, Button, useToast } from '@chakra-ui/react';
 import { FiHash, FiLink, FiFlag } from 'react-icons/fi';
 import { ChatMessage } from '../types/chat';
 import React, { useState, useEffect } from 'react';
@@ -205,24 +205,36 @@ export default function ChatMessageComponent({ message, isSidebarOpen = false }:
     const handleFlagMessage = async () => {
         if (!userAddress) {
             toast({
-                title: "Error",
+                title: "Wallet not connected",
                 description: "Please connect your wallet to flag messages",
                 status: "error",
-                duration: 3000,
+                duration: 5000,
                 isClosable: true,
             });
             return;
         }
 
-        try {
-            console.log('Flagging message with ID:', message.id);
-            setIsFlagging(true);
-            await flagMessage(message.id, flagReason, flagNote, userAddress);
+        if (!message.id) {
             toast({
-                title: "Success",
-                description: "Message flagged successfully",
+                title: "Error",
+                description: "Message ID is missing",
+                status: "error",
+                duration: 5000,
+                isClosable: true,
+            });
+            return;
+        }
+
+        const messageId = message.id;
+        console.log('Flagging message:', messageId);
+        setIsFlagging(true);
+        try {
+            await flagMessage(messageId, flagReason, flagNote, userAddress);
+            toast({
+                title: "Message flagged",
+                description: "Thank you for helping improve the community",
                 status: "success",
-                duration: 3000,
+                duration: 5000,
                 isClosable: true,
             });
             onFlagModalClose();
@@ -232,7 +244,7 @@ export default function ChatMessageComponent({ message, isSidebarOpen = false }:
                 title: "Error",
                 description: "Failed to flag message. Please try again.",
                 status: "error",
-                duration: 3000,
+                duration: 5000,
                 isClosable: true,
             });
         } finally {
@@ -243,11 +255,11 @@ export default function ChatMessageComponent({ message, isSidebarOpen = false }:
     return (
         <Box
             p={padding}
-            borderRadius="lg"
             bg={message.role === 'user' ? userMessageBgColor : messageBgColor}
+            borderRadius="lg"
+            mb={spacing}
             maxW={maxWidth}
             alignSelf={message.role === 'user' ? 'flex-end' : 'flex-start'}
-            mb={4}
             position="relative"
         >
             {message.role === 'assistant' && (
@@ -266,6 +278,7 @@ export default function ChatMessageComponent({ message, isSidebarOpen = false }:
                         onClick={onFlagModalOpen}
                         colorScheme="red"
                         variant="ghost"
+                        isLoading={isFlagging}
                     />
                 </Box>
             )}
