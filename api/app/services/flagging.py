@@ -31,19 +31,16 @@ class FlaggingService:
         
         # Validate reason
         if reason not in self.valid_reasons:
-            logger.error(f"Invalid reason: {reason}")
             raise ValueError(f"Invalid reason. Must be one of: {', '.join(self.valid_reasons)}")
         
         try:
             message_uuid = uuid.UUID(message_id)
         except ValueError as e:
-            logger.error(f"Invalid message ID format: {message_id}")
             raise ValueError(f"Invalid message ID format: {str(e)}")
         
         # Check if message exists
         message = self.db.query(ChatMessageDB).filter(ChatMessageDB.id == message_uuid).first()
         if not message:
-            logger.error(f"Message not found: {message_id}")
             raise ValueError(f"Message not found: {message_id}")
         
         # Create flagged message

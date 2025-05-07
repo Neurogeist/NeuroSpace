@@ -607,19 +607,15 @@ class FlagMessageRequest(BaseModel):
 
     @validator('message_id')
     def validate_message_id(cls, v):
-        logger.info(f"Validating message_id: {v}")
         try:
             return uuid.UUID(v)
         except ValueError as e:
-            logger.error(f"Invalid message ID format: {v}, error: {str(e)}")
             raise ValueError('Invalid message ID format')
 
     @validator('reason')
     def validate_reason(cls, v):
-        logger.info(f"Validating reason: {v}")
         valid_reasons = {'hallucination', 'inappropriate', 'inaccurate', 'other'}
         if v not in valid_reasons:
-            logger.error(f"Invalid reason: {v}. Must be one of: {', '.join(valid_reasons)}")
             raise ValueError(f"Invalid reason. Must be one of: {', '.join(valid_reasons)}")
         return v
 
@@ -633,8 +629,6 @@ async def flag_message(
     request: FlagMessageRequest,
     wallet_address: str = Header(...)
 ):
-    logger.info(f"Flagging message {request.message_id} by {wallet_address} for reason: {request.reason}")
-    
     try:
         flagged_message = flagging_service.flag_message(
             str(request.message_id),
