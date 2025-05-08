@@ -40,7 +40,6 @@ export default function RAGPage() {
     const toast = useToast();
     const { address, connect, isConnected } = useWallet();
 
-    const bgColor = useColorModeValue('white', 'gray.900');
     const borderColor = useColorModeValue('gray.200', 'gray.700');
     const linkColor = useColorModeValue('blue.500', 'blue.300');
     const textColor = useColorModeValue('gray.800', 'gray.100');
