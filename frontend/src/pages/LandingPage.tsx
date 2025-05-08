@@ -300,6 +300,45 @@ const LandingPage = () => {
         </Container>
       </Box>
 
+      {/* Powered by NSPACE Section */}
+      <Box py={20} bg={useColorModeValue('white', 'gray.800')}>
+        <Container maxW="container.xl">
+          <VStack spacing={10}>
+            <Stack spacing={4} textAlign="center">
+              <Heading color={headingColor}>Powered by NSPACE</Heading>
+              <Text fontSize="lg" color={textColor} maxW="700px">
+                NeuroCoin (NSPACE) is the utility token of NeuroSpace. It fuels chat interactions, RAG queries, staking, and governance—ensuring that the system remains decentralized, transparent, and community-aligned.
+              </Text>
+            </Stack>
+
+            <SimpleGrid columns={{ base: 1, md: 3 }} spacing={8}>
+              <Feature
+                icon={FaCoins}
+                title="Payments"
+                text="Use NSPACE to pay for model queries and document-grounded responses."
+              />
+              <Feature
+                icon={FaShieldAlt}
+                title="Staking"
+                text="Stake NSPACE to prioritize interactions, support verifiers, or audit feedback."
+              />
+              <Feature
+                icon={FaNetworkWired}
+                title="Governance"
+                text="Vote on supported models, moderation policy, and ecosystem direction."
+              />
+            </SimpleGrid>
+
+            <Stack align="center" pt={6}>
+              <Text color={textColor}>Fixed Supply: <strong>100,000,000 NSPACE</strong> &nbsp; • &nbsp; Network: <strong>Base L2</strong></Text>
+              <Button colorScheme="blue" size="lg" mt={4}>
+                Learn More
+              </Button>
+            </Stack>
+          </VStack>
+        </Container>
+      </Box>
+
       {/* CTA Section */}
       <Box py={20}>
         <Container maxW="container.xl">
