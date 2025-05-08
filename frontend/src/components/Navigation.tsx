@@ -4,10 +4,6 @@ import {
   HStack,
   IconButton,
   Button,
-  Menu,
-  MenuButton,
-  MenuList,
-  MenuItem,
   useDisclosure,
   useColorModeValue,
   Stack,
@@ -15,8 +11,7 @@ import {
   Container,
   Text,
   Image,
-  Link,
-  SlideFade
+  Link
 } from '@chakra-ui/react'
 import { HamburgerIcon, CloseIcon, MoonIcon, SunIcon } from '@chakra-ui/icons'
 import { Link as RouterLink, useLocation } from 'react-router-dom'

@@ -12,12 +12,10 @@ import {
   Flex,
   Image,
   Stack,
-  useBreakpointValue,
-  Badge,
-  Divider
+  Badge
 } from '@chakra-ui/react'
 import { useNavigate } from 'react-router-dom'
-import { FaRobot, FaDatabase, FaLock, FaBolt, FaShieldAlt, FaCheckCircle, FaNetworkWired, FaCoins, FaEdit, FaMagic, FaKey, FaLink } from 'react-icons/fa'
+import { FaRobot, FaDatabase, FaShieldAlt, FaCheckCircle, FaNetworkWired, FaCoins, FaEdit, FaMagic, FaKey, FaLink } from 'react-icons/fa'
 
 const Feature = ({ title, text, icon }: { title: string; text: string; icon: any }) => {
   return (

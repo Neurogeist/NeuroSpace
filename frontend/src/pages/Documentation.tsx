@@ -11,19 +11,8 @@ import {
   ListItem,
   ListIcon,
   useColorModeValue,
-  Accordion,
-  AccordionItem,
-  AccordionButton,
-  AccordionPanel,
-  AccordionIcon,
-  Divider,
   Icon,
   Button,
-  Tabs,
-  TabList,
-  TabPanels,
-  Tab,
-  TabPanel,
   useDisclosure,
   Modal,
   ModalOverlay,
@@ -33,9 +22,8 @@ import {
   ModalCloseButton,
   ModalFooter
 } from '@chakra-ui/react'
-import { FaBook, FaRocket, FaShieldAlt, FaDatabase, FaFileAlt, FaCheckCircle, FaWallet, FaRobot, FaLock, FaLink, FaDownload } from 'react-icons/fa'
+import { FaBook, FaRocket, FaShieldAlt, FaDatabase, FaFileAlt, FaCheckCircle, FaWallet, FaRobot, FaLock, FaLink } from 'react-icons/fa'
 import { Link as RouterLink } from 'react-router-dom'
-import { useState } from 'react'
 
 const Section = ({ title, icon, children }: { title: string; icon: any; children: React.ReactNode }) => {
   const bgColor = useColorModeValue('white', 'gray.800')
