@@ -7,8 +7,13 @@ export const theme = extendTheme({
   },
   styles: {
     global: {
+      html: {
+        overflowX: 'hidden',
+      },
       body: {
         bg: 'gray.50',
+        overflowX: 'hidden',
+        width: '100%',
       },
     },
   },

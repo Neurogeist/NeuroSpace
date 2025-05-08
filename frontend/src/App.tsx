@@ -14,7 +14,13 @@ function AppContent() {
   const bgColor = useColorModeValue('white', 'gray.900')
 
   return (
-    <Box minH="100vh" w="100vw" position="relative" bg={bgColor}>
+    <Box 
+      minH="100vh" 
+      w="100vw" 
+      position="relative" 
+      bg={bgColor}
+      overflowX="hidden"
+    >
       {!isChatPage && <Navigation />}
       <Box pt={isChatPage ? 0 : "64px"}>
         <AnimatePresence mode="wait">
