@@ -141,14 +141,21 @@ export default function Navigation() {
           </Flex>
         </Flex>
 
-        <SlideFade in={isOpen} offsetY="-20px">
-          <Box
-            pb={4}
-            display={{ md: 'none' }}
-            borderTop="1px"
-            borderColor={borderColor}
-          >
-            <Stack as="nav" spacing={4}>
+        <Box
+          position="absolute"
+          top="100%"
+          left={0}
+          right={0}
+          bg={bgColor}
+          borderBottom="1px"
+          borderColor={borderColor}
+          display={{ md: 'none' }}
+          transform={isOpen ? 'translateY(0)' : 'translateY(-100%)'}
+          transition="transform 0.2s ease-in-out"
+          visibility={isOpen ? 'visible' : 'hidden'}
+        >
+          <Container maxW="container.xl">
+            <Stack as="nav" spacing={4} py={4}>
               {Links.map((link) => (
                 <NavLink key={link.path} to={link.path}>
                   {link.name}
@@ -163,8 +170,8 @@ export default function Navigation() {
                 Get Started
               </Button>
             </Stack>
-          </Box>
-        </SlideFade>
+          </Container>
+        </Box>
       </Container>
     </Box>
   )
