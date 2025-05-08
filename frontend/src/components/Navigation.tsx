@@ -93,13 +93,13 @@ export default function Navigation() {
           />
 
           <HStack spacing={8} alignItems="center">
-            <Link as={RouterLink} to="/" _hover={{ textDecoration: 'none' }}>
+            <Link as={RouterLink} to="/" _hover={{ textDecoration: 'none' }} pl={2}>
               <HStack spacing={2}>
                 <Image
                   src="/logo.png"
                   alt="NeuroSpace"
-                  fallbackSrc="https://via.placeholder.com/32"
-                  boxSize="32px"
+                  fallbackSrc="https://via.placeholder.com/40"
+                  boxSize="40px"
                 />
                 <Text
                   fontWeight="bold"

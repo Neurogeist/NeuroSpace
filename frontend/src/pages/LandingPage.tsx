@@ -167,7 +167,7 @@ const LandingPage = () => {
             w="100%"
           >
             <Image
-              src="/hero-image.png"
+              src="/hero.png"
               alt="NeuroSpace AI"
               fallbackSrc="https://via.placeholder.com/500x400"
               rounded="lg"
