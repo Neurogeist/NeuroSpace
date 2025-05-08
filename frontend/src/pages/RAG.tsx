@@ -40,9 +40,11 @@ export default function RAGPage() {
     const toast = useToast();
     const { address, connect, isConnected } = useWallet();
 
-    const bgColor = useColorModeValue('white', 'gray.800');
     const borderColor = useColorModeValue('gray.200', 'gray.700');
     const linkColor = useColorModeValue('blue.500', 'blue.300');
+    const textColor = useColorModeValue('gray.800', 'gray.100');
+    const cardBgColor = useColorModeValue('white', 'gray.800');
+    const headerBgColor = useColorModeValue('gray.50', 'gray.800');
 
     const blockExplorerUrl = import.meta.env.VITE_ENVIRONMENT?.toLowerCase() === 'production'
         ? 'https://basescan.org'
@@ -192,11 +194,11 @@ export default function RAGPage() {
     };
 
     return (
-        <Box maxW="1200px" mx="auto" p={4}>
+        <Box maxW="1200px" mx="auto" p={4} minH="100vh">
             <VStack spacing={8} align="stretch">
                 {/* Header */}
-                <HStack justify="space-between">
-                    <Text fontSize="2xl" fontWeight="bold">
+                <HStack justify="space-between" bg={headerBgColor} p={4} borderRadius="lg">
+                    <Text fontSize="2xl" fontWeight="bold" color={textColor}>
                         NeuroSpace Document Q&A
                     </Text>
                     <Button
@@ -210,13 +212,14 @@ export default function RAGPage() {
                 {/* Upload Section */}
                 <Box
                     p={6}
-                    bg={bgColor}
+                    bg={cardBgColor}
                     borderRadius="lg"
                     borderWidth="1px"
                     borderColor={borderColor}
+                    shadow="md"
                 >
                     <VStack spacing={4} align="stretch">
-                        <Text fontSize="lg" fontWeight="semibold">Upload Documents</Text>
+                        <Text fontSize="lg" fontWeight="semibold" color={textColor}>Upload Documents</Text>
                         <HStack>
                             <Input
                                 type="file"
@@ -235,7 +238,7 @@ export default function RAGPage() {
                                 Choose File
                             </Button>
                             {selectedFile && (
-                                <Text>{selectedFile.name}</Text>
+                                <Text color={textColor}>{selectedFile.name}</Text>
                             )}
                             {uploadStatus && (
                                 <Badge colorScheme={uploadStatus === 'Uploaded' ? 'green' : 'blue'}>
@@ -254,16 +257,16 @@ export default function RAGPage() {
                 {/* Document List */}
                 <Box
                     p={6}
-                    bg={bgColor}
+                    bg={cardBgColor}
                     borderRadius="lg"
                     borderWidth="1px"
                     borderColor={borderColor}
                 >
                     <VStack spacing={4} align="stretch">
-                        <Text fontSize="lg" fontWeight="semibold">Uploaded Documents</Text>
+                        <Text fontSize="lg" fontWeight="semibold" color={textColor}>Uploaded Documents</Text>
                         {documents.map(doc => (
                             <HStack key={doc.id} justify="space-between" p={2} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="md">
-                                <Text>{doc.name}</Text>
+                                <Text color={textColor}>{doc.name}</Text>
                                 <HStack>
                                     <Tooltip label="View on IPFS">
                                         <Link
@@ -298,13 +301,13 @@ export default function RAGPage() {
                 {/* Query Section */}
                 <Box
                     p={6}
-                    bg={bgColor}
+                    bg={cardBgColor}
                     borderRadius="lg"
                     borderWidth="1px"
                     borderColor={borderColor}
                 >
                     <VStack spacing={4} align="stretch">
-                        <Text fontSize="lg" fontWeight="semibold">Ask a Question</Text>
+                        <Text fontSize="lg" fontWeight="semibold" color={textColor}>Ask a Question</Text>
                         <Textarea
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
@@ -326,14 +329,14 @@ export default function RAGPage() {
                 {response && (
                     <Box
                         p={6}
-                        bg={bgColor}
+                        bg={cardBgColor}
                         borderRadius="lg"
                         borderWidth="1px"
                         borderColor={borderColor}
                     >
                         <VStack spacing={4} align="stretch">
                             <HStack justify="space-between">
-                                <Text fontSize="lg" fontWeight="semibold">Response</Text>
+                                <Text fontSize="lg" fontWeight="semibold" color={textColor}>Response</Text>
                                 {verificationResult !== null && (
                                     <Badge colorScheme={verificationResult ? 'green' : 'red'}>
                                         {verificationResult ? 'Verified' : 'Unverified'}
@@ -341,7 +344,7 @@ export default function RAGPage() {
                                 )}
                             </HStack>
                             <Box p={4} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="md">
-                                <Text>{response}</Text>
+                                <Text color={textColor}>{response}</Text>
                             </Box>
                         </VStack>
                     </Box>
@@ -351,13 +354,13 @@ export default function RAGPage() {
                 {sources.length > 0 && (
                     <Box
                         p={6}
-                        bg={bgColor}
+                        bg={cardBgColor}
                         borderRadius="lg"
                         borderWidth="1px"
                         borderColor={borderColor}
                     >
                         <VStack spacing={4} align="stretch">
-                            <Text fontSize="lg" fontWeight="semibold">Sources</Text>
+                            <Text fontSize="lg" fontWeight="semibold" color={textColor}>Sources</Text>
                             {sources.map(source => (
                                 <Box
                                     key={source.id}
@@ -366,7 +369,7 @@ export default function RAGPage() {
                                     borderRadius="md"
                                 >
                                     <VStack align="stretch" spacing={2}>
-                                        <Text>{source.snippet}</Text>
+                                        <Text color={textColor}>{source.snippet}</Text>
                                         <HStack spacing={4}>
                                             <Tooltip label="View on IPFS">
                                                 <Link

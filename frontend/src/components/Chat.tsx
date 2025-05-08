@@ -30,7 +30,8 @@ import Sidebar from './Sidebar';
 import ChatMessageComponent from './ChatMessage';
 import { useApp } from '../context/AppContext';
 import { payForMessage } from '../services/blockchain';
-import { FiMoon, FiSun } from 'react-icons/fi';
+import { FiMoon, FiSun, FiHome } from 'react-icons/fi';
+import { Link as RouterLink } from 'react-router-dom';
 
 export default function Chat() {
     const {
@@ -272,6 +273,20 @@ export default function Chat() {
                 _hover={{ bg: buttonHoverBgColor }}
                 size="sm"
                 display={{ base: 'flex', md: 'none' }}
+            />
+
+            <IconButton
+                as={RouterLink}
+                to="/"
+                aria-label="Go to home"
+                icon={<FiHome />}
+                position="fixed"
+                right={2}
+                top={2}
+                zIndex={2}
+                bg={inputBgColor}
+                _hover={{ bg: buttonHoverBgColor }}
+                size="sm"
             />
 
             <Collapse in={isSidebarOpen} animateOpacity>
