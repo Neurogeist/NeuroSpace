@@ -33,7 +33,7 @@ import Sidebar from './Sidebar';
 import ChatMessageComponent from './ChatMessage';
 import { useApp } from '../context/AppContext';
 import { payForMessage, checkTokenAllowance, approveToken, getTokenBalance } from '../services/blockchain';
-import { FiMoon, FiSun, FiHome } from 'react-icons/fi';
+import { FiMoon, FiSun, FiHome, FiRefreshCw } from 'react-icons/fi';
 import { Link as RouterLink } from 'react-router-dom';
 
 export default function Chat() {
@@ -365,6 +365,32 @@ export default function Chat() {
         return name;
     };
 
+    const refreshBalance = async () => {
+        if (!userAddress) return;
+        
+        setIsLoadingBalance(true);
+        try {
+            const balance = await getTokenBalance(userAddress);
+            setTokenBalance(balance);
+        } catch (error) {
+            console.error('Error refreshing token balance:', error);
+            toast({
+                title: "Error",
+                description: "Failed to refresh balance. Please try again.",
+                status: "error",
+                duration: 3000,
+                isClosable: true,
+            });
+        } finally {
+            setIsLoadingBalance(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!userAddress || paymentMethod !== 'NEURO') return;
+        refreshBalance();
+    }, [userAddress, paymentMethod]);
+
     return (
         <Flex h="100vh" bg={bgColor} position="relative">
             <IconButton
@@ -566,13 +592,23 @@ export default function Chat() {
                                             <Radio value="NEURO">
                                                 Pay with NeuroCoin ({tokenPrice} NSPACE)
                                                 {paymentMethod === 'NEURO' && (
-                                                    <Text as="span" ml={2} fontSize="sm" color="gray.500">
-                                                        Balance: {isLoadingBalance ? (
-                                                            <Spinner size="xs" />
-                                                        ) : (
-                                                            `${tokenBalance} NSPACE`
-                                                        )}
-                                                    </Text>
+                                                    <HStack spacing={2} ml={2}>
+                                                        <Text fontSize="sm" color="gray.500">
+                                                            Balance: {isLoadingBalance ? (
+                                                                <Spinner size="xs" />
+                                                            ) : (
+                                                                `${tokenBalance} NSPACE`
+                                                            )}
+                                                        </Text>
+                                                        <IconButton
+                                                            aria-label="Refresh balance"
+                                                            icon={<FiRefreshCw />}
+                                                            size="xs"
+                                                            variant="ghost"
+                                                            onClick={refreshBalance}
+                                                            isLoading={isLoadingBalance}
+                                                        />
+                                                    </HStack>
                                                 )}
                                             </Radio>
                                         </Stack>
@@ -595,15 +631,6 @@ export default function Chat() {
                                                     ✓ NeuroCoin Approved
                                                 </Text>
                                             )}
-                                            <Button
-                                                onClick={() => handlePaymentMethodChange('NEURO')}
-                                                isLoading={isLoadingBalance}
-                                                colorScheme="blue"
-                                                variant="ghost"
-                                                size="sm"
-                                            >
-                                                Refresh Balance
-                                            </Button>
                                         </HStack>
                                     )}
 
