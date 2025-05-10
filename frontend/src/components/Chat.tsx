@@ -300,7 +300,8 @@ export default function Chat() {
                 selectedModel,
                 userAddress,
                 sessionId,
-                tx.hash
+                tx.hash,
+                paymentMethod
             );
     
             await refreshSessions();

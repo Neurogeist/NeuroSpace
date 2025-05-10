@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     # Payment Contract Configuration
     PAYMENT_CONTRACT_ADDRESS: str
     REACT_APP_PAYMENT_CONTRACT_ADDRESS: str
+    NEUROCOIN_PAYMENT_CONTRACT_ADDRESS: str
     
     # Model Configuration
     DEFAULT_MODEL: str = "mixtral-remote"

@@ -177,7 +177,8 @@ class PromptRequest(BaseModel):
     model: str
     user_address: str
     session_id: Optional[str] = None
-    tx_hash: Optional[str] = None   # <-- add this!
+    tx_hash: Optional[str] = None
+    payment_method: str = 'ETH'  # Default to ETH for backward compatibility
 
 @app.post("/submit_prompt")
 async def submit_prompt(request: PromptRequest):
@@ -187,7 +188,7 @@ async def submit_prompt(request: PromptRequest):
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                if not payment_service.verify_payment(request.session_id or "new", request.user_address):
+                if not payment_service.verify_payment(request.session_id or "new", request.user_address, request.payment_method):
                     if attempt < max_retries - 1:
                         await asyncio.sleep(2)  # Wait 2 seconds and retry
                         continue
