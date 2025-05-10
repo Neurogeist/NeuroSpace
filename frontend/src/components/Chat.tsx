@@ -322,7 +322,9 @@ export default function Chat() {
                 errorMessage = "Payment cancelled.";
             } else if (error.message?.includes('Token approval required')) {
                 errorMessage = "Please approve tokens before sending messages.";
-            } else if (error instanceof Error) {
+            } else if (error.response?.data?.detail) {
+                errorMessage = error.response.data.detail;
+            } else if (error.message) {
                 errorMessage = error.message;
             }
         
@@ -330,6 +332,8 @@ export default function Chat() {
                 title: "Submission Error",
                 description: errorMessage,
                 status: "error",
+                duration: 5000,
+                isClosable: true,
             });
         
             if (error?.code === "ACTION_REJECTED") {

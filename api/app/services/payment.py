@@ -107,6 +107,19 @@ class PaymentService:
                 ],
                 "stateMutability": "view",
                 "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "paused",
+                "outputs": [
+                    {
+                        "internalType": "bool",
+                        "name": "",
+                        "type": "bool"
+                    }
+                ],
+                "stateMutability": "view",
+                "type": "function"
             }
         ]
         
@@ -147,35 +160,55 @@ class PaymentService:
         """Verify ETH payment"""
         try:
             latest_block = self.w3.eth.block_number
+            from_block = max(latest_block - 100, 0)  # Ensure we don't go below block 0
+
+            # Get the event signature hash
+            event_abi = {
+                "anonymous": False,
+                "inputs": [
+                    {"indexed": True, "name": "sender", "type": "address"},
+                    {"indexed": False, "name": "amount", "type": "uint256"},
+                    {"indexed": False, "name": "sessionId", "type": "string"}
+                ],
+                "name": "PaymentReceived",
+                "type": "event"
+            }
+            event_signature = self.w3.keccak(text="PaymentReceived(address,uint256,string)").hex()
+
+            # Create the filter parameters
+            filter_params = {
+                "fromBlock": from_block,
+                "toBlock": "latest",
+                "address": self.eth_contract_address,
+                "topics": [event_signature]
+            }
 
             try:
-                event_filter = self.eth_contract.events.PaymentReceived.create_filter(
-                    fromBlock=latest_block - 100,
-                    toBlock='latest'
-                )
-            except Exception as e:
-                logger.error(f"Error creating ETH event filter: {str(e)}")
-                # Fallback to manual log fetching
-                logs = self.w3.eth.get_logs({
-                    "fromBlock": latest_block - 100,
-                    "toBlock": "latest",
-                    "address": self.eth_contract_address,
-                    "topics": [self.eth_contract.events.PaymentReceived().abi['signature']]
-                })
+                # Try to get logs directly
+                logs = self.w3.eth.get_logs(filter_params)
+                logger.info(f"Found {len(logs)} ETH payment events")
+                
+                # Process logs
                 for log in logs:
-                    event = self.eth_contract.events.PaymentReceived().process_log(log)
-                    if (event.args.sender.lower() == user_address.lower() and
-                        event.args.sessionId == session_id):
-                        return True
+                    try:
+                        # Decode the log data using the contract's event interface
+                        event = self.eth_contract.events.PaymentReceived().process_log(log)
+                        
+                        # Check if this is the payment we're looking for
+                        if (event.args.sender.lower() == user_address.lower() and
+                            event.args.sessionId == session_id):
+                            logger.info(f"Found matching ETH payment event for session {session_id}")
+                            return True
+                    except Exception as e:
+                        logger.warning(f"Error processing ETH log: {str(e)}")
+                        continue
+                
+                logger.warning(f"No matching ETH payment found for session {session_id}")
                 return False
 
-            events = event_filter.get_all_entries()
-            for event in events:
-                if (event.args.sender.lower() == user_address.lower() and
-                    event.args.sessionId == session_id):
-                    return True
-
-            return False
+            except Exception as e:
+                logger.error(f"Error getting ETH logs: {str(e)}")
+                return False
 
         except Exception as e:
             logger.error(f"Error verifying ETH payment: {str(e)}")
@@ -184,36 +217,62 @@ class PaymentService:
     def _verify_neurocoin_payment(self, session_id: str, user_address: str) -> bool:
         """Verify NeuroCoin payment"""
         try:
-            latest_block = self.w3.eth.block_number
-
-            try:
-                event_filter = self.neurocoin_contract.events.PaymentReceived.create_filter(
-                    fromBlock=latest_block - 100,
-                    toBlock='latest'
-                )
-            except Exception as e:
-                logger.error(f"Error creating NeuroCoin event filter: {str(e)}")
-                # Fallback to manual log fetching
-                logs = self.w3.eth.get_logs({
-                    "fromBlock": latest_block - 100,
-                    "toBlock": "latest",
-                    "address": self.neurocoin_contract_address,
-                    "topics": [self.neurocoin_contract.events.PaymentReceived().abi['signature']]
-                })
-                for log in logs:
-                    event = self.neurocoin_contract.events.PaymentReceived().process_log(log)
-                    if (event.args.sender.lower() == user_address.lower() and
-                        event.args.sessionId == session_id):
-                        return True
+            # Check if contract is paused
+            is_paused = self.neurocoin_contract.functions.paused().call()
+            if is_paused:
+                logger.error("NeuroCoin payment contract is paused")
                 return False
 
-            events = event_filter.get_all_entries()
-            for event in events:
-                if (event.args.sender.lower() == user_address.lower() and
-                    event.args.sessionId == session_id):
-                    return True
+            latest_block = self.w3.eth.block_number
+            from_block = max(latest_block - 100, 0)  # Ensure we don't go below block 0
 
-            return False
+            # Get the event signature hash
+            event_abi = {
+                "anonymous": False,
+                "inputs": [
+                    {"indexed": True, "name": "sender", "type": "address"},
+                    {"indexed": False, "name": "amount", "type": "uint256"},
+                    {"indexed": False, "name": "sessionId", "type": "string"}
+                ],
+                "name": "PaymentReceived",
+                "type": "event"
+            }
+            event_signature = self.w3.keccak(text="PaymentReceived(address,uint256,string)").hex()
+
+            # Create the filter parameters
+            filter_params = {
+                "fromBlock": from_block,
+                "toBlock": "latest",
+                "address": self.neurocoin_contract_address,
+                "topics": [event_signature]
+            }
+
+            try:
+                # Try to get logs directly
+                logs = self.w3.eth.get_logs(filter_params)
+                logger.info(f"Found {len(logs)} payment events")
+                
+                # Process logs
+                for log in logs:
+                    try:
+                        # Decode the log data using the contract's event interface
+                        event = self.neurocoin_contract.events.PaymentReceived().process_log(log)
+                        
+                        # Check if this is the payment we're looking for
+                        if (event.args.sender.lower() == user_address.lower() and
+                            event.args.sessionId == session_id):
+                            logger.info(f"Found matching payment event for session {session_id}")
+                            return True
+                    except Exception as e:
+                        logger.warning(f"Error processing log: {str(e)}")
+                        continue
+                
+                logger.warning(f"No matching payment found for session {session_id}")
+                return False
+
+            except Exception as e:
+                logger.error(f"Error getting logs: {str(e)}")
+                return False
 
         except Exception as e:
             logger.error(f"Error verifying NeuroCoin payment: {str(e)}")

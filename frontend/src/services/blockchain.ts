@@ -84,6 +84,19 @@ const NEUROCOIN_PAYMENT_ABI = [
         ],
         "stateMutability": "view",
         "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "paused",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
     }
 ];
 
@@ -294,6 +307,12 @@ export const payForMessage = async (sessionId: string, paymentMethod: 'ETH' | 'N
             
             if (!isApproved) {
                 throw new Error('Token approval required. Please approve tokens first.');
+            }
+
+            // Check if contract is paused
+            const isPaused = await contract.paused();
+            if (isPaused) {
+                throw new Error('Contract is currently paused. Please try again later.');
             }
             
             return contract.payForMessage(sessionId);
