@@ -1,56 +1,56 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
-contract LLMVerifier {
-    // Struct to store hash information
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
+
+contract LLMVerifier is Ownable, Pausable {
     struct HashInfo {
         address submitter;
         uint256 timestamp;
     }
-    
-    // Mapping from hash to HashInfo
+
     mapping(bytes32 => HashInfo) public hashInfo;
-    
-    // Event emitted when a hash is stored
-    event HashStored(
-        address indexed submitter,
-        bytes32 hash,
-        uint256 timestamp
-    );
-    
+
+    event HashStored(address indexed submitter, bytes32 indexed hash, uint256 timestamp);
+
     /**
-     * @dev Store a hash with submitter and timestamp
+     * @notice Store a hash (verifiable message hash)
      * @param _hash The hash to store
      */
-    function storeHash(bytes32 _hash) public {
+    function storeHash(bytes32 _hash) external whenNotPaused {
         require(hashInfo[_hash].timestamp == 0, "Hash already exists");
-        
+
         hashInfo[_hash] = HashInfo({
             submitter: msg.sender,
             timestamp: block.timestamp
         });
-        
+
         emit HashStored(msg.sender, _hash, block.timestamp);
     }
-    
+
     /**
-     * @dev Get information about a stored hash
-     * @param _hash The hash to look up
-     * @return submitter The address that submitted the hash
-     * @return timestamp The block timestamp when the hash was submitted
+     * @notice Get full info for a stored hash
      */
-    function getHashInfo(bytes32 _hash) public view returns (address submitter, uint256 timestamp) {
-        HashInfo memory info = hashInfo[_hash];
-        require(info.timestamp != 0, "Hash does not exist");
-        return (info.submitter, info.timestamp);
+    function getHashInfo(bytes32 _hash) external view returns (address submitter, uint256 timestamp) {
+        HashInfo memory stored = hashInfo[_hash];
+        require(stored.timestamp != 0, "Hash does not exist");
+        return (stored.submitter, stored.timestamp);
     }
-    
+
     /**
-     * @dev Check if a hash exists
-     * @param _hash The hash to check
-     * @return exists True if the hash exists
+     * @notice Check if a hash exists
      */
-    function hashExists(bytes32 _hash) public view returns (bool exists) {
+    function hashExists(bytes32 _hash) external view returns (bool) {
         return hashInfo[_hash].timestamp != 0;
     }
-} 
+
+    // Optional control: pause in case of abuse
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+}

@@ -1,29 +1,28 @@
 const { ethers } = require("hardhat");
-require('dotenv').config();
+require("dotenv").config();
 
 async function main() {
-    // Get the contract factory
-    const ChatPayment = await ethers.getContractFactory("ChatPayment");
-    
-    // Deploy the contract
+    const [deployer] = await ethers.getSigners();
+    const network = await ethers.provider.getNetwork();
+
     console.log("Deploying ChatPayment contract...");
+    console.log(`From address: ${deployer.address}`);
+    console.log(`Network: ${network.name} (chainId: ${network.chainId})`);
+
+    const ChatPayment = await ethers.getContractFactory("ChatPayment");
     const chatPayment = await ChatPayment.deploy();
-    
-    // Wait for deployment
+
     await chatPayment.waitForDeployment();
-    
     const address = await chatPayment.getAddress();
-    console.log("ChatPayment deployed to:", address);
-    
-    // Log the contract address to update in .env
-    console.log("\nUpdate your .env file with these values:");
+
+    console.log("✅ ChatPayment deployed to:", address);
+
+    console.log("\n📌 Update your .env file with:");
     console.log(`PAYMENT_CONTRACT_ADDRESS=${address}`);
     console.log(`REACT_APP_PAYMENT_CONTRACT_ADDRESS=${address}`);
 }
 
-main()
-    .then(() => process.exit(0))
-    .catch((error) => {
-        console.error(error);
-        process.exit(1);
-    }); 
+main().then(() => process.exit(0)).catch((error) => {
+    console.error("❌ Deployment failed:", error);
+    process.exit(1);
+});

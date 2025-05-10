@@ -1,23 +1,71 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
-contract ChatPayment {
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
+
+contract ChatPayment is ReentrancyGuard, Pausable {
     event PaymentReceived(address indexed sender, uint256 amount, string sessionId);
-    
-    uint256 public constant PRICE_PER_MESSAGE = 0.00001 ether;
+    event PriceUpdated(uint256 oldPrice, uint256 newPrice);
+    event Withdrawn(address indexed recipient, uint256 amount);
+
     address public owner;
-    
+    uint256 public pricePerMessage = 0.00001 ether;
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Only owner can call this");
+        _;
+    }
+
     constructor() {
         owner = msg.sender;
     }
-    
-    function payForMessage(string memory sessionId) external payable {
-        require(msg.value == PRICE_PER_MESSAGE, "Incorrect payment amount");
+
+    /// @notice Pay to submit a message
+    function payForMessage(string memory sessionId)
+        external
+        payable
+        whenNotPaused
+        nonReentrant
+    {
+        require(msg.value == pricePerMessage, "Incorrect payment amount");
+        require(bytes(sessionId).length > 0, "Session ID required");
+
         emit PaymentReceived(msg.sender, msg.value, sessionId);
     }
-    
-    function withdraw() external {
-        require(msg.sender == owner, "Only owner can withdraw");
-        payable(owner).transfer(address(this).balance);
+
+    /// @notice Withdraw accumulated ETH to owner
+    function withdraw() external onlyOwner nonReentrant {
+        uint256 amount = address(this).balance;
+        require(amount > 0, "No balance to withdraw");
+        payable(owner).transfer(amount);
+        emit Withdrawn(owner, amount);
     }
-} 
+
+    /// @notice Update the price per message
+    function setPrice(uint256 newPrice) external onlyOwner {
+        require(newPrice > 0, "Price must be positive");
+        uint256 oldPrice = pricePerMessage;
+        pricePerMessage = newPrice;
+        emit PriceUpdated(oldPrice, newPrice);
+    }
+
+    /// @notice Pause the contract (disables payForMessage)
+    function pause() external onlyOwner {
+        _pause(); // Emits Paused event
+    }
+
+    /// @notice Unpause the contract
+    function unpause() external onlyOwner {
+        _unpause(); // Emits Unpaused event
+    }
+
+    /// @notice Prevent accidental ETH sends
+    receive() external payable {
+        revert("Use payForMessage");
+    }
+
+    fallback() external payable {
+        revert("Invalid function call");
+    }
+}
