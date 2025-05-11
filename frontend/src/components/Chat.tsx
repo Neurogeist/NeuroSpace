@@ -67,7 +67,6 @@ export default function Chat() {
     const [isApproving, setIsApproving] = useState(false);
     const [tokenPrice] = useState<string>('1');
     const [tokenBalance, setTokenBalance] = useState<string>('0');
-    const [setIsLoadingBalance] = useState(false);
     const [isApproved, setIsApproved] = useState(false);
 
     const bgColor = useColorModeValue('gray.50', 'gray.900');
@@ -154,14 +153,11 @@ export default function Chat() {
         const fetchTokenBalance = async () => {
             if (!userAddress || paymentMethod !== 'NEURO') return;
             
-            setIsLoadingBalance(true);
             try {
                 const balance = await getTokenBalance(userAddress);
                 setTokenBalance(balance);
             } catch (error) {
                 console.error('Error fetching token balance:', error);
-            } finally {
-                setIsLoadingBalance(false);
             }
         };
 
@@ -358,32 +354,6 @@ export default function Chat() {
         }
         return name;
     };
-
-    const refreshBalance = async () => {
-        if (!userAddress) return;
-        
-        setIsLoadingBalance(true);
-        try {
-            const balance = await getTokenBalance(userAddress);
-            setTokenBalance(balance);
-        } catch (error) {
-            console.error('Error refreshing token balance:', error);
-            toast({
-                title: "Error",
-                description: "Failed to refresh balance. Please try again.",
-                status: "error",
-                duration: 3000,
-                isClosable: true,
-            });
-        } finally {
-            setIsLoadingBalance(false);
-        }
-    };
-
-    useEffect(() => {
-        if (!userAddress || paymentMethod !== 'NEURO') return;
-        refreshBalance();
-    }, [userAddress, paymentMethod]);
 
     return (
         <Flex h="100vh" bg={bgColor} position="relative">
