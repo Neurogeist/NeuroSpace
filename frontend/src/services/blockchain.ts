@@ -10,6 +10,7 @@ declare global {
 
 const PAYMENT_CONTRACT_ADDRESS = import.meta.env.VITE_PAYMENT_CONTRACT_ADDRESS;
 const NEUROCOIN_PAYMENT_CONTRACT_ADDRESS = import.meta.env.VITE_NEUROCOIN_PAYMENT_CONTRACT_ADDRESS;
+const NEUROCOIN_ADDRESS = import.meta.env.VITE_NEUROCOIN_ADDRESS;
 const ENVIRONMENT = import.meta.env.VITE_ENVIRONMENT || 'development';
 
 const NETWORK_CONFIG = {
@@ -236,17 +237,11 @@ export const getNeuroCoinContract = async () => {
     const provider = new ethers.BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
     
-    // Get the payment contract first
-    const paymentContract = await getPaymentContract('NEURO');
-    
-    try {
-        // Get the token address from the payment contract
-        const tokenAddress = await paymentContract.neuroCoin();
-        return new ethers.Contract(tokenAddress, NEUROCOIN_TOKEN_ABI, signer);
-    } catch (error) {
-        console.error('Error getting token address:', error);
-        throw new Error('Failed to get NeuroCoin token address from payment contract');
+    if (!NEUROCOIN_ADDRESS) {
+        throw new Error('NeuroCoin address not configured');
     }
+    
+    return new ethers.Contract(NEUROCOIN_ADDRESS, NEUROCOIN_TOKEN_ABI, signer);
 };
 
 export const getTokenBalance = async (userAddress: string): Promise<string> => {
