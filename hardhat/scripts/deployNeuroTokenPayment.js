@@ -3,7 +3,7 @@ const hre = require("hardhat");
 async function main() {
   const [deployer] = await hre.ethers.getSigners();
 
-  const neuroCoinAddress = "0x298F2AE94754B188DDfd7f8fFd05e40f51D14c60"; // Deployed NeuroCoin
+  const neuroCoinAddress = "0x8Cb45bf3ECC760AEC9b4F575FB351Ad197580Ea3"; // Deployed NeuroCoin
   const feeReceiver = deployer.address;
 
   console.log("🚀 Deploying NeuroTokenPayment with account:", deployer.address);

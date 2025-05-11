@@ -1,13 +1,14 @@
 require("@nomicfoundation/hardhat-toolbox");
+require("@nomicfoundation/hardhat-verify");
 require("dotenv").config();
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
   solidity: "0.8.20",
   paths: {
-    sources: "./contracts",      // Points to root contracts folder
-    artifacts: "./artifacts",     // Keep artifacts in hardhat folder
-    cache: "./cache"             // Keep cache in hardhat folder
+    sources: "./contracts",
+    artifacts: "./artifacts",
+    cache: "./cache"
   },
   networks: {
     baseSepolia: {
@@ -20,5 +21,10 @@ module.exports = {
       accounts: [process.env.PRIVATE_KEY],
       chainId: 8453,
     }
-  }
+  },
+  etherscan: {
+    apiKey: {
+      base: process.env.BASESCAN_API_KEY,
+    },
+  },
 };
