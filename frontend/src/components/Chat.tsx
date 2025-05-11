@@ -65,7 +65,7 @@ export default function Chat() {
     const toast = useToast();
     const [paymentMethod, setPaymentMethod] = useState<'ETH' | 'NEURO'>('ETH');
     const [isApproving, setIsApproving] = useState(false);
-    const [tokenPrice, setTokenPrice] = useState<string>('1');
+    const [tokenPrice] = useState<string>('1');
     const [tokenBalance, setTokenBalance] = useState<string>('0');
     const [isLoadingBalance, setIsLoadingBalance] = useState(false);
     const [isApproved, setIsApproved] = useState(false);
