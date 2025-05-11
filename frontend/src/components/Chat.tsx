@@ -33,7 +33,7 @@ import Sidebar from './Sidebar';
 import ChatMessageComponent from './ChatMessage';
 import { useApp } from '../context/AppContext';
 import { payForMessage, checkTokenAllowance, approveToken, getTokenBalance } from '../services/blockchain';
-import { FiMoon, FiSun, FiHome, FiRefreshCw } from 'react-icons/fi';
+import { FiMoon, FiSun, FiHome } from 'react-icons/fi';
 import { Link as RouterLink } from 'react-router-dom';
 
 export default function Chat() {
@@ -67,7 +67,6 @@ export default function Chat() {
     const [isApproving, setIsApproving] = useState(false);
     const [tokenPrice] = useState<string>('1');
     const [tokenBalance, setTokenBalance] = useState<string>('0');
-    const [isLoadingBalance, setIsLoadingBalance] = useState(false);
     const [isApproved, setIsApproved] = useState(false);
 
     const bgColor = useColorModeValue('gray.50', 'gray.900');
@@ -154,14 +153,11 @@ export default function Chat() {
         const fetchTokenBalance = async () => {
             if (!userAddress || paymentMethod !== 'NEURO') return;
             
-            setIsLoadingBalance(true);
             try {
                 const balance = await getTokenBalance(userAddress);
                 setTokenBalance(balance);
             } catch (error) {
                 console.error('Error fetching token balance:', error);
-            } finally {
-                setIsLoadingBalance(false);
             }
         };
 
@@ -282,17 +278,6 @@ export default function Chat() {
             await tx.wait();
             console.log("✅ Payment confirmed on chain");
 
-            // Refresh token balance after successful payment
-            if (paymentMethod === 'NEURO') {
-                try {
-                    const newBalance = await getTokenBalance(userAddress);
-                    setTokenBalance(newBalance);
-                    console.log("💰 Updated token balance:", newBalance);
-                } catch (error) {
-                    console.error('Error refreshing token balance:', error);
-                }
-            }
-
             setThinkingStatus("Thinking...");
 
             await submitPrompt(
@@ -303,16 +288,16 @@ export default function Chat() {
                 tx.hash,
                 paymentMethod
             );
-    
+
             await refreshSessions();
             const session = await getSession(sessionId);
             setMessages(session.messages);
-    
+
             if (createdNewSession) {
                 setActiveSessionId(sessionId);
                 localStorage.setItem('activeSessionId', sessionId);
             }
-    
+
         } catch (err) {
             const error = err as any;
             console.error('Error during prompt submission:', error);
@@ -369,32 +354,6 @@ export default function Chat() {
         }
         return name;
     };
-
-    const refreshBalance = async () => {
-        if (!userAddress) return;
-        
-        setIsLoadingBalance(true);
-        try {
-            const balance = await getTokenBalance(userAddress);
-            setTokenBalance(balance);
-        } catch (error) {
-            console.error('Error refreshing token balance:', error);
-            toast({
-                title: "Error",
-                description: "Failed to refresh balance. Please try again.",
-                status: "error",
-                duration: 3000,
-                isClosable: true,
-            });
-        } finally {
-            setIsLoadingBalance(false);
-        }
-    };
-
-    useEffect(() => {
-        if (!userAddress || paymentMethod !== 'NEURO') return;
-        refreshBalance();
-    }, [userAddress, paymentMethod]);
 
     return (
         <Flex h="100vh" bg={bgColor} position="relative">
@@ -596,25 +555,6 @@ export default function Chat() {
                                             <Radio value="ETH">Pay with ETH (0.00001 ETH)</Radio>
                                             <Radio value="NEURO">
                                                 Pay with NeuroCoin ({tokenPrice} NSPACE)
-                                                {paymentMethod === 'NEURO' && (
-                                                    <HStack spacing={2} ml={2}>
-                                                        <Text fontSize="sm" color="gray.500">
-                                                            Balance: {isLoadingBalance ? (
-                                                                <Spinner size="xs" />
-                                                            ) : (
-                                                                `${tokenBalance} NSPACE`
-                                                            )}
-                                                        </Text>
-                                                        <IconButton
-                                                            aria-label="Refresh balance"
-                                                            icon={<FiRefreshCw />}
-                                                            size="xs"
-                                                            variant="ghost"
-                                                            onClick={refreshBalance}
-                                                            isLoading={isLoadingBalance}
-                                                        />
-                                                    </HStack>
-                                                )}
                                             </Radio>
                                         </Stack>
                                     </RadioGroup>
