@@ -170,9 +170,6 @@ const NEUROCOIN_TOKEN_ABI = [
     }
 ];
 
-let lastBalanceCheck = 0;
-const BALANCE_CHECK_COOLDOWN = 5000; // 5 seconds between balance checks
-
 export const connectWallet = async (): Promise<string> => {
     if (!window.ethereum) {
         throw new Error('MetaMask is not installed');
