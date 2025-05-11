@@ -240,6 +240,8 @@ export const getNeuroCoinContract = async () => {
     if (!NEUROCOIN_ADDRESS) {
         throw new Error('NeuroCoin address not configured');
     }
+
+    console.log("NeuroCoin Address:", NEUROCOIN_ADDRESS);
     
     return new ethers.Contract(NEUROCOIN_ADDRESS, NEUROCOIN_TOKEN_ABI, signer);
 };
