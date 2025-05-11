@@ -213,33 +213,32 @@ class PaymentService:
         except Exception as e:
             logger.error(f"Error verifying ETH payment: {str(e)}")
             return False
-
+        
     def _verify_neurocoin_payment(self, session_id: str, user_address: str) -> bool:
         """Verify NeuroCoin payment"""
         try:
+            logger.info(f"🔍 Verifying NeuroCoin payment for session_id={session_id}, user_address={user_address}")
+            
             # Check if contract is paused
-            is_paused = self.neurocoin_contract.functions.paused().call()
+            try:
+                logger.info("📡 Calling paused()...")
+                is_paused = self.neurocoin_contract.functions.paused().call()
+                logger.info(f"✅ paused() returned: {is_paused}")
+            except Exception as e:
+                logger.error(f"🚨 Failed to call paused(): {str(e)}", exc_info=True)
+                raise
+            
             if is_paused:
-                logger.error("NeuroCoin payment contract is paused")
+                logger.error("🚫 NeuroCoin payment contract is paused")
                 return False
 
             latest_block = self.w3.eth.block_number
-            from_block = max(latest_block - 100, 0)  # Ensure we don't go below block 0
+            from_block = max(latest_block - 100, 0)
+            logger.info(f"🔎 Searching logs from block {from_block} to latest")
 
-            # Get the event signature hash
-            event_abi = {
-                "anonymous": False,
-                "inputs": [
-                    {"indexed": True, "name": "sender", "type": "address"},
-                    {"indexed": False, "name": "amount", "type": "uint256"},
-                    {"indexed": False, "name": "sessionId", "type": "string"}
-                ],
-                "name": "PaymentReceived",
-                "type": "event"
-            }
             event_signature = self.w3.keccak(text="PaymentReceived(address,uint256,string)").hex()
+            logger.info(f"🔑 Event signature: {event_signature}")
 
-            # Create the filter parameters
             filter_params = {
                 "fromBlock": from_block,
                 "toBlock": "latest",
@@ -248,33 +247,30 @@ class PaymentService:
             }
 
             try:
-                # Try to get logs directly
                 logs = self.w3.eth.get_logs(filter_params)
-                logger.info(f"Found {len(logs)} payment events")
-                
-                # Process logs
+                logger.info(f"📦 Found {len(logs)} PaymentReceived logs")
+
                 for log in logs:
                     try:
-                        # Decode the log data using the contract's event interface
                         event = self.neurocoin_contract.events.PaymentReceived().process_log(log)
-                        
-                        # Check if this is the payment we're looking for
+                        logger.info(f"🔍 Checking event: sender={event.args.sender}, sessionId={event.args.sessionId}")
+
                         if (event.args.sender.lower() == user_address.lower() and
                             event.args.sessionId == session_id):
-                            logger.info(f"Found matching payment event for session {session_id}")
+                            logger.info(f"✅ Found matching payment event for session {session_id}")
                             return True
                     except Exception as e:
-                        logger.warning(f"Error processing log: {str(e)}")
+                        logger.warning(f"⚠️ Error processing log: {str(e)}", exc_info=True)
                         continue
-                
-                logger.warning(f"No matching payment found for session {session_id}")
+
+                logger.warning(f"❌ No matching payment found for session {session_id}")
                 return False
 
             except Exception as e:
-                logger.error(f"Error getting logs: {str(e)}")
+                logger.error(f"🚨 Error getting logs: {str(e)}", exc_info=True)
                 return False
 
         except Exception as e:
-            logger.error(f"Error verifying NeuroCoin payment: {str(e)}")
+            logger.error(f"❗ Error verifying NeuroCoin payment: {str(e)}", exc_info=True)
             return False
 
