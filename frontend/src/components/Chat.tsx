@@ -21,7 +21,10 @@ import {
     AlertTitle,
     AlertDescription,
     useToast,
-    useColorMode
+    useColorMode,
+    Radio,
+    RadioGroup,
+    Stack
 } from '@chakra-ui/react';
 import { ChevronLeftIcon, ChevronRightIcon } from '@chakra-ui/icons';
 import { ChatMessage } from '../types/chat';
@@ -29,8 +32,8 @@ import { submitPrompt, getSession, createSession } from '../services/api';
 import Sidebar from './Sidebar';
 import ChatMessageComponent from './ChatMessage';
 import { useApp } from '../context/AppContext';
-import { payForMessage } from '../services/blockchain';
-import { FiMoon, FiSun, FiHome } from 'react-icons/fi';
+import { payForMessage, checkTokenAllowance, approveToken, getTokenBalance } from '../services/blockchain';
+import { FiMoon, FiSun, FiHome, FiRefreshCw } from 'react-icons/fi';
 import { Link as RouterLink } from 'react-router-dom';
 
 export default function Chat() {
@@ -60,6 +63,12 @@ export default function Chat() {
         defaultIsOpen: window.innerWidth >= 768
     });
     const toast = useToast();
+    const [paymentMethod, setPaymentMethod] = useState<'ETH' | 'NEURO'>('ETH');
+    const [isApproving, setIsApproving] = useState(false);
+    const [tokenPrice] = useState<string>('1');
+    const [tokenBalance, setTokenBalance] = useState<string>('0');
+    const [isLoadingBalance, setIsLoadingBalance] = useState(false);
+    const [isApproved, setIsApproved] = useState(false);
 
     const bgColor = useColorModeValue('gray.50', 'gray.900');
     const borderColor = useColorModeValue('gray.200', 'gray.700');
@@ -141,6 +150,99 @@ export default function Chat() {
         return () => window.removeEventListener('resize', handleResize);
     }, [isSidebarOpen, toggleSidebar]);
 
+    useEffect(() => {
+        const fetchTokenBalance = async () => {
+            if (!userAddress || paymentMethod !== 'NEURO') return;
+            
+            setIsLoadingBalance(true);
+            try {
+                const balance = await getTokenBalance(userAddress);
+                setTokenBalance(balance);
+            } catch (error) {
+                console.error('Error fetching token balance:', error);
+            } finally {
+                setIsLoadingBalance(false);
+            }
+        };
+
+        fetchTokenBalance();
+    }, [userAddress, paymentMethod]);
+
+    useEffect(() => {
+        const checkApprovalStatus = async () => {
+            if (!userAddress || paymentMethod !== 'NEURO') {
+                setIsApproved(false);
+                return;
+            }
+            
+            try {
+                const approved = await checkTokenAllowance(userAddress);
+                setIsApproved(approved);
+            } catch (error) {
+                console.error('Error checking approval status:', error);
+                setIsApproved(false);
+            }
+        };
+
+        checkApprovalStatus();
+    }, [userAddress, paymentMethod]);
+
+    const handlePaymentMethodChange = async (value: 'ETH' | 'NEURO') => {
+        setPaymentMethod(value);
+        if (value === 'NEURO' && userAddress) {
+            try {
+                const isApproved = await checkTokenAllowance(userAddress);
+                if (!isApproved) {
+                    toast({
+                        title: "Token Approval Required",
+                        description: "Please approve tokens before sending messages",
+                        status: "info",
+                        duration: 5000,
+                        isClosable: true,
+                    });
+                }
+            } catch (error) {
+                console.error('Error checking token allowance:', error);
+                toast({
+                    title: "Error",
+                    description: "Failed to check token allowance. Please try again.",
+                    status: "error",
+                    duration: 3000,
+                    isClosable: true,
+                });
+            }
+        }
+    };
+
+    const handleApproveTokens = async () => {
+        if (!userAddress) return;
+        
+        setIsApproving(true);
+        try {
+            const tx = await approveToken();
+            await tx.wait();
+            setIsApproved(true);
+            toast({
+                title: "Approval Successful",
+                description: "You can now send messages using NeuroCoin",
+                status: "success",
+                duration: 3000,
+                isClosable: true,
+            });
+        } catch (error: any) {
+            console.error('Error approving tokens:', error);
+            toast({
+                title: "Approval Failed",
+                description: error.message || "Failed to approve tokens",
+                status: "error",
+                duration: 3000,
+                isClosable: true,
+            });
+        } finally {
+            setIsApproving(false);
+        }
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         if (!input.trim() || thinkingStatus) return;
 
@@ -167,11 +269,29 @@ export default function Chat() {
                 console.log("🆕 Created new session:", sessionId);
             }
 
-            const tx = await payForMessage(sessionId);
+            if (paymentMethod === 'NEURO') {
+                const isApproved = await checkTokenAllowance(userAddress);
+                if (!isApproved) {
+                    throw new Error('Token approval required. Please approve tokens first.');
+                }
+            }
+
+            const tx = await payForMessage(sessionId, paymentMethod);
             console.log("💵 Payment transaction hash:", tx.hash);
 
             await tx.wait();
             console.log("✅ Payment confirmed on chain");
+
+            // Refresh token balance after successful payment
+            if (paymentMethod === 'NEURO') {
+                try {
+                    const newBalance = await getTokenBalance(userAddress);
+                    setTokenBalance(newBalance);
+                    console.log("💰 Updated token balance:", newBalance);
+                } catch (error) {
+                    console.error('Error refreshing token balance:', error);
+                }
+            }
 
             setThinkingStatus("Thinking...");
 
@@ -180,7 +300,8 @@ export default function Chat() {
                 selectedModel,
                 userAddress,
                 sessionId,
-                tx.hash
+                tx.hash,
+                paymentMethod
             );
     
             await refreshSessions();
@@ -199,7 +320,11 @@ export default function Chat() {
             let errorMessage = "An unexpected error occurred.";
             if (error?.code === "ACTION_REJECTED") {
                 errorMessage = "Payment cancelled.";
-            } else if (error instanceof Error) {
+            } else if (error.message?.includes('Token approval required')) {
+                errorMessage = "Please approve tokens before sending messages.";
+            } else if (error.response?.data?.detail) {
+                errorMessage = error.response.data.detail;
+            } else if (error.message) {
                 errorMessage = error.message;
             }
         
@@ -207,6 +332,8 @@ export default function Chat() {
                 title: "Submission Error",
                 description: errorMessage,
                 status: "error",
+                duration: 5000,
+                isClosable: true,
             });
         
             if (error?.code === "ACTION_REJECTED") {
@@ -242,6 +369,32 @@ export default function Chat() {
         }
         return name;
     };
+
+    const refreshBalance = async () => {
+        if (!userAddress) return;
+        
+        setIsLoadingBalance(true);
+        try {
+            const balance = await getTokenBalance(userAddress);
+            setTokenBalance(balance);
+        } catch (error) {
+            console.error('Error refreshing token balance:', error);
+            toast({
+                title: "Error",
+                description: "Failed to refresh balance. Please try again.",
+                status: "error",
+                duration: 3000,
+                isClosable: true,
+            });
+        } finally {
+            setIsLoadingBalance(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!userAddress || paymentMethod !== 'NEURO') return;
+        refreshBalance();
+    }, [userAddress, paymentMethod]);
 
     return (
         <Flex h="100vh" bg={bgColor} position="relative">
@@ -434,43 +587,98 @@ export default function Chat() {
                             </Button>
                         ) : (
                             <form onSubmit={handleSubmit}>
-                                <HStack spacing={2}>
-                                    <FormControl>
-                                        <Textarea
-                                            ref={inputRef}
-                                            value={input}
-                                            onChange={(e) => setInput(e.target.value)}
-                                            placeholder="Type your message..."
-                                            size={{ base: 'sm', md: 'md' }}
-                                            resize="none"
-                                            minH="40px"
-                                            maxH="150px"
-                                            overflowY="auto"
-                                            bg={inputBgColor}
-                                            borderColor={inputBorderColor}
-                                            color={inputTextColor}
-                                            _hover={{ borderColor: buttonBgColor }}
-                                            _focus={{ borderColor: buttonBgColor, boxShadow: 'none' }}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter' && !e.shiftKey) {
-                                                    e.preventDefault();
-                                                    handleSubmit(e);
-                                                }
-                                            }}
-                                        />
-                                    </FormControl>
-                                    <Button
-                                        type="submit"
-                                        colorScheme="blue"
-                                        isLoading={!!thinkingStatus}
-                                        isDisabled={!input.trim()}
-                                        px={{ base: 4, md: 6 }}
-                                        size={{ base: 'sm', md: 'md' }}
+                                <VStack spacing={4}>
+                                    <RadioGroup 
+                                        value={paymentMethod} 
+                                        onChange={(value: 'ETH' | 'NEURO') => handlePaymentMethodChange(value)}
                                     >
-                                        <Text display={{ base: 'none', sm: 'block' }}>Send (0.00001 ETH)</Text>
-                                        <Text display={{ base: 'block', sm: 'none' }}>Send</Text>
-                                    </Button>
-                                </HStack>
+                                        <Stack direction="row" spacing={4}>
+                                            <Radio value="ETH">Pay with ETH (0.00001 ETH)</Radio>
+                                            <Radio value="NEURO">
+                                                Pay with NeuroCoin ({tokenPrice} NSPACE)
+                                                {paymentMethod === 'NEURO' && (
+                                                    <HStack spacing={2} ml={2}>
+                                                        <Text fontSize="sm" color="gray.500">
+                                                            Balance: {isLoadingBalance ? (
+                                                                <Spinner size="xs" />
+                                                            ) : (
+                                                                `${tokenBalance} NSPACE`
+                                                            )}
+                                                        </Text>
+                                                        <IconButton
+                                                            aria-label="Refresh balance"
+                                                            icon={<FiRefreshCw />}
+                                                            size="xs"
+                                                            variant="ghost"
+                                                            onClick={refreshBalance}
+                                                            isLoading={isLoadingBalance}
+                                                        />
+                                                    </HStack>
+                                                )}
+                                            </Radio>
+                                        </Stack>
+                                    </RadioGroup>
+
+                                    {paymentMethod === 'NEURO' && (
+                                        <HStack spacing={2}>
+                                            {!isApproved ? (
+                                                <Button
+                                                    onClick={handleApproveTokens}
+                                                    isLoading={isApproving}
+                                                    colorScheme="blue"
+                                                    variant="outline"
+                                                    size="sm"
+                                                >
+                                                    Approve NeuroCoin
+                                                </Button>
+                                            ) : (
+                                                <Text color="green.500" fontSize="sm">
+                                                    ✓ NeuroCoin Approved
+                                                </Text>
+                                            )}
+                                        </HStack>
+                                    )}
+
+                                    <HStack spacing={2} w="100%">
+                                        <FormControl>
+                                            <Textarea
+                                                ref={inputRef}
+                                                value={input}
+                                                onChange={(e) => setInput(e.target.value)}
+                                                placeholder="Type your message..."
+                                                size={{ base: 'sm', md: 'md' }}
+                                                resize="none"
+                                                minH="40px"
+                                                maxH="150px"
+                                                overflowY="auto"
+                                                bg={inputBgColor}
+                                                borderColor={inputBorderColor}
+                                                color={inputTextColor}
+                                                _hover={{ borderColor: buttonBgColor }}
+                                                _focus={{ borderColor: buttonBgColor, boxShadow: 'none' }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                                        e.preventDefault();
+                                                        handleSubmit(e);
+                                                    }
+                                                }}
+                                            />
+                                        </FormControl>
+                                        <Button
+                                            type="submit"
+                                            colorScheme="blue"
+                                            isLoading={!!thinkingStatus}
+                                            isDisabled={!input.trim() || (paymentMethod === 'NEURO' && (!isApproved || parseFloat(tokenBalance) < parseFloat(tokenPrice)))}
+                                            px={{ base: 4, md: 6 }}
+                                            size={{ base: 'sm', md: 'md' }}
+                                        >
+                                            <Text display={{ base: 'none', sm: 'block' }}>
+                                                Send ({paymentMethod === 'ETH' ? '0.00001 ETH' : `${tokenPrice} NSPACE`})
+                                            </Text>
+                                            <Text display={{ base: 'block', sm: 'none' }}>Send</Text>
+                                        </Button>
+                                    </HStack>
+                                </VStack>
                             </form>
                         )}
                     </Container>

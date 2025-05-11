@@ -10,8 +10,10 @@ load_dotenv()
 class PaymentService:
     def __init__(self):
         self.w3 = Web3(Web3.HTTPProvider(os.getenv('BASE_RPC_URL')))
-        self.contract_address = os.getenv('PAYMENT_CONTRACT_ADDRESS')
-        self.contract_abi = [
+        
+        # ETH Payment Contract
+        self.eth_contract_address = os.getenv('PAYMENT_CONTRACT_ADDRESS')
+        self.eth_contract_abi = [
             {
                 "inputs": [
                     {
@@ -52,55 +54,227 @@ class PaymentService:
             }
         ]
         
+        # NeuroCoin Payment Contract
+        self.neurocoin_contract_address = os.getenv('NEUROCOIN_PAYMENT_CONTRACT_ADDRESS')
+        self.neurocoin_contract_abi = [
+            {
+                "inputs": [
+                    {
+                        "internalType": "string",
+                        "name": "sessionId",
+                        "type": "string"
+                    }
+                ],
+                "name": "payForMessage",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "anonymous": False,
+                "inputs": [
+                    {
+                        "indexed": True,
+                        "internalType": "address",
+                        "name": "sender",
+                        "type": "address"
+                    },
+                    {
+                        "indexed": False,
+                        "internalType": "uint256",
+                        "name": "amount",
+                        "type": "uint256"
+                    },
+                    {
+                        "indexed": False,
+                        "internalType": "string",
+                        "name": "sessionId",
+                        "type": "string"
+                    }
+                ],
+                "name": "PaymentReceived",
+                "type": "event"
+            },
+            {
+                "inputs": [],
+                "name": "pricePerMessage",
+                "outputs": [
+                    {
+                        "internalType": "uint256",
+                        "name": "",
+                        "type": "uint256"
+                    }
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "paused",
+                "outputs": [
+                    {
+                        "internalType": "bool",
+                        "name": "",
+                        "type": "bool"
+                    }
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            }
+        ]
+        
         if not self.w3.is_connected():
             raise Exception("Failed to connect to Base RPC node")
             
-        if not self.contract_address:
+        if not self.eth_contract_address:
             raise Exception("PAYMENT_CONTRACT_ADDRESS not set in environment variables")
             
-        self.contract = self.w3.eth.contract(
-            address=self.contract_address,
-            abi=self.contract_abi
+        if not self.neurocoin_contract_address:
+            raise Exception("NEUROCOIN_PAYMENT_CONTRACT_ADDRESS not set in environment variables")
+            
+        self.eth_contract = self.w3.eth.contract(
+            address=self.eth_contract_address,
+            abi=self.eth_contract_abi
+        )
+        
+        self.neurocoin_contract = self.w3.eth.contract(
+            address=self.neurocoin_contract_address,
+            abi=self.neurocoin_contract_abi
         )
 
-    def verify_payment(self, session_id: str, user_address: str) -> bool:
+    def verify_payment(self, session_id: str, user_address: str, payment_method: str = 'ETH') -> bool:
         """Verify if payment was made for a specific session"""
         try:
-            latest_block = self.w3.eth.block_number
-
-            try:
-                event_filter = self.contract.events.PaymentReceived.create_filter(
-                    fromBlock=latest_block - 100,
-                    toBlock='latest'
-                )
-            except Exception as e:
-                logger.error(f"Error creating event filter: {str(e)}")
-                # If filter creation fails due to ephemeral filter issues, fallback to getting logs manually
-                logs = self.w3.eth.get_logs({
-                    "fromBlock": latest_block - 100,
-                    "toBlock": "latest",
-                    "address": self.contract_address,
-                    "topics": [self.contract.events.PaymentReceived().abi['signature']]
-                })
-                # Manually decode logs
-                for log in logs:
-                    event = self.contract.events.PaymentReceived().process_log(log)
-                    if (event.args.sender.lower() == user_address.lower() and
-                        event.args.sessionId == session_id):
-                        return True
+            if payment_method == 'ETH':
+                return self._verify_eth_payment(session_id, user_address)
+            elif payment_method == 'NEURO':
+                return self._verify_neurocoin_payment(session_id, user_address)
+            else:
+                logger.error(f"Invalid payment method: {payment_method}")
                 return False
-
-            # Normal event fetching if filter worked
-            events = event_filter.get_all_entries()
-            for event in events:
-                if (event.args.sender.lower() == user_address.lower() and
-                    event.args.sessionId == session_id):
-                    return True
-
-            return False
-
         except Exception as e:
             logger.error(f"Error verifying payment: {str(e)}")
-            # Safe fallback (optional: you could fail hard in production)
-            return True
+            return False
+
+    def _verify_eth_payment(self, session_id: str, user_address: str) -> bool:
+        """Verify ETH payment"""
+        try:
+            latest_block = self.w3.eth.block_number
+            from_block = max(latest_block - 100, 0)  # Ensure we don't go below block 0
+
+            # Get the event signature hash
+            event_abi = {
+                "anonymous": False,
+                "inputs": [
+                    {"indexed": True, "name": "sender", "type": "address"},
+                    {"indexed": False, "name": "amount", "type": "uint256"},
+                    {"indexed": False, "name": "sessionId", "type": "string"}
+                ],
+                "name": "PaymentReceived",
+                "type": "event"
+            }
+            event_signature = self.w3.keccak(text="PaymentReceived(address,uint256,string)").hex()
+
+            # Create the filter parameters
+            filter_params = {
+                "fromBlock": from_block,
+                "toBlock": "latest",
+                "address": self.eth_contract_address,
+                "topics": [event_signature]
+            }
+
+            try:
+                # Try to get logs directly
+                logs = self.w3.eth.get_logs(filter_params)
+                logger.info(f"Found {len(logs)} ETH payment events")
+                
+                # Process logs
+                for log in logs:
+                    try:
+                        # Decode the log data using the contract's event interface
+                        event = self.eth_contract.events.PaymentReceived().process_log(log)
+                        
+                        # Check if this is the payment we're looking for
+                        if (event.args.sender.lower() == user_address.lower() and
+                            event.args.sessionId == session_id):
+                            logger.info(f"Found matching ETH payment event for session {session_id}")
+                            return True
+                    except Exception as e:
+                        logger.warning(f"Error processing ETH log: {str(e)}")
+                        continue
+                
+                logger.warning(f"No matching ETH payment found for session {session_id}")
+                return False
+
+            except Exception as e:
+                logger.error(f"Error getting ETH logs: {str(e)}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error verifying ETH payment: {str(e)}")
+            return False
+
+    def _verify_neurocoin_payment(self, session_id: str, user_address: str) -> bool:
+        """Verify NeuroCoin payment"""
+        try:
+            # Check if contract is paused
+            is_paused = self.neurocoin_contract.functions.paused().call()
+            if is_paused:
+                logger.error("NeuroCoin payment contract is paused")
+                return False
+
+            latest_block = self.w3.eth.block_number
+            from_block = max(latest_block - 100, 0)  # Ensure we don't go below block 0
+
+            # Get the event signature hash
+            event_abi = {
+                "anonymous": False,
+                "inputs": [
+                    {"indexed": True, "name": "sender", "type": "address"},
+                    {"indexed": False, "name": "amount", "type": "uint256"},
+                    {"indexed": False, "name": "sessionId", "type": "string"}
+                ],
+                "name": "PaymentReceived",
+                "type": "event"
+            }
+            event_signature = self.w3.keccak(text="PaymentReceived(address,uint256,string)").hex()
+
+            # Create the filter parameters
+            filter_params = {
+                "fromBlock": from_block,
+                "toBlock": "latest",
+                "address": self.neurocoin_contract_address,
+                "topics": [event_signature]
+            }
+
+            try:
+                # Try to get logs directly
+                logs = self.w3.eth.get_logs(filter_params)
+                logger.info(f"Found {len(logs)} payment events")
+                
+                # Process logs
+                for log in logs:
+                    try:
+                        # Decode the log data using the contract's event interface
+                        event = self.neurocoin_contract.events.PaymentReceived().process_log(log)
+                        
+                        # Check if this is the payment we're looking for
+                        if (event.args.sender.lower() == user_address.lower() and
+                            event.args.sessionId == session_id):
+                            logger.info(f"Found matching payment event for session {session_id}")
+                            return True
+                    except Exception as e:
+                        logger.warning(f"Error processing log: {str(e)}")
+                        continue
+                
+                logger.warning(f"No matching payment found for session {session_id}")
+                return False
+
+            except Exception as e:
+                logger.error(f"Error getting logs: {str(e)}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error verifying NeuroCoin payment: {str(e)}")
+            return False
 

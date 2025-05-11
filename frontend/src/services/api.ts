@@ -96,18 +96,20 @@ export const submitPrompt = async (
     model: string,
     userAddress: string,
     sessionId?: string,
-    txHash?: string   // <-- NEW optional argument
+    txHash?: string,
+    paymentMethod: 'ETH' | 'NEURO' = 'ETH'
 ): Promise<PromptResponse> => {
     try {
         const requestBody: any = {
             prompt,
             model,
             user_address: userAddress,
-            session_id: sessionId
+            session_id: sessionId,
+            payment_method: paymentMethod
         };
 
         if (txHash) {
-            requestBody.tx_hash = txHash;   // <-- attach only if exists
+            requestBody.tx_hash = txHash;
         }
 
         const response = await axios.post(`${API_BASE_URL}/submit_prompt`, requestBody);
