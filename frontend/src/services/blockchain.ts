@@ -170,9 +170,6 @@ const NEUROCOIN_TOKEN_ABI = [
     }
 ];
 
-let lastBalanceCheck = 0;
-const BALANCE_CHECK_COOLDOWN = 5000; // 5 seconds between balance checks
-
 export const connectWallet = async (): Promise<string> => {
     if (!window.ethereum) {
         throw new Error('MetaMask is not installed');
@@ -245,15 +242,8 @@ export const getNeuroCoinContract = async () => {
 
 export const getTokenBalance = async (userAddress: string): Promise<string> => {
     try {
-        const now = Date.now();
-        if (now - lastBalanceCheck < BALANCE_CHECK_COOLDOWN) {
-            console.log('Skipping balance check - too soon since last check');
-            return '0';
-        }
-        
         const tokenContract = await getNeuroCoinContract();
         const balance = await tokenContract.balanceOf(userAddress);
-        lastBalanceCheck = now;
         return ethers.formatEther(balance);
     } catch (error) {
         console.error('Error getting token balance:', error);
@@ -315,10 +305,7 @@ export const payForMessage = async (sessionId: string, paymentMethod: 'ETH' | 'N
                 throw new Error('Contract is currently paused. Please try again later.');
             }
             
-            const tx = await contract.payForMessage(sessionId);
-            // Update balance after successful transaction
-            await getTokenBalance(userAddress[0]);
-            return tx;
+            return contract.payForMessage(sessionId);
         }
     } catch (error) {
         console.error('Error in payForMessage:', error);
