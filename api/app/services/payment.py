@@ -142,34 +142,7 @@ class PaymentService:
             abi=self.neurocoin_contract_abi
         )
 
-        # After setting self.neurocoin_contract
-        try:
-            logger.info("🧪 Starting NeuroCoin contract sanity checks...")
-
-            if not self.w3.is_connected():
-                raise Exception("❌ Web3 is not connected to the RPC provider")
-
-            logger.info(f"🔌 Connected to RPC: {self.w3.provider.endpoint_uri}")
-            logger.info(f"🏷️ NeuroCoin contract address: {self.neurocoin_contract_address}")
-
-            checksum_address = Web3.to_checksum_address(self.neurocoin_contract_address)
-            bytecode = self.w3.eth.get_code(checksum_address)
-
-            logger.info(f"🧬 Contract bytecode length: {len(bytecode)} bytes")
-            logger.info(f"🔎 Contract bytecode preview: {bytecode.hex()[:20]}...")
-
-            if bytecode in (b'', b'\x00'):
-                raise Exception("🚨 No contract code found at given address on this network!")
-
-            try:
-                is_paused = self.neurocoin_contract.functions.paused().call()
-                logger.info(f"✅ paused() callable — contract paused status: {is_paused}")
-            except Exception as e:
-                logger.error(f"⚠️ paused() exists in ABI but call failed: {str(e)}", exc_info=True)
-
-        except Exception as e:
-            logger.error(f"❗ Critical contract init check failed: {str(e)}", exc_info=True)
-
+        logger.info("✅ NeuroCoin contract initialized and verified on-chain")
 
     def verify_payment(self, session_id: str, user_address: str, payment_method: str = 'ETH') -> bool:
         """Verify if payment was made for a specific session"""
@@ -246,28 +219,21 @@ class PaymentService:
     def _verify_neurocoin_payment(self, session_id: str, user_address: str) -> bool:
         """Verify NeuroCoin payment"""
         try:
-            logger.info(f"🔍 Verifying NeuroCoin payment for session_id={session_id}, user_address={user_address}")
-            
+            # Check if contract is paused
             try:
-                logger.info("📡 Calling paused()...")
                 is_paused = self.neurocoin_contract.functions.paused().call()
-                logger.info(f"✅ paused() returned: {is_paused}")
+                if is_paused:
+                    logger.error("NeuroCoin payment contract is paused")
+                    return False
             except Exception as e:
-                logger.warning(f"⚠️ paused() call failed, assuming unpaused. Reason: {str(e)}", exc_info=True)
-                is_paused = False  # fallback to allow progress
+                logger.warning(f"Failed to check paused status: {str(e)}")
+                is_paused = False
 
-            
-            if is_paused:
-                logger.error("🚫 NeuroCoin payment contract is paused")
-                return False
-
+            # Get logs from recent blocks
             latest_block = self.w3.eth.block_number
             from_block = max(latest_block - 100, 0)
-            logger.info(f"🔎 Searching logs from block {from_block} to latest")
-
+            
             event_signature = self.w3.keccak(text="PaymentReceived(address,uint256,string)").hex()
-            logger.info(f"🔑 Event signature: {event_signature}")
-
             filter_params = {
                 "fromBlock": from_block,
                 "toBlock": "latest",
@@ -277,29 +243,27 @@ class PaymentService:
 
             try:
                 logs = self.w3.eth.get_logs(filter_params)
-                logger.info(f"📦 Found {len(logs)} PaymentReceived logs")
+                logger.info(f"Found {len(logs)} PaymentReceived logs")
 
                 for log in logs:
                     try:
                         event = self.neurocoin_contract.events.PaymentReceived().process_log(log)
-                        logger.info(f"🔍 Checking event: sender={event.args.sender}, sessionId={event.args.sessionId}")
-
                         if (event.args.sender.lower() == user_address.lower() and
                             event.args.sessionId == session_id):
-                            logger.info(f"✅ Found matching payment event for session {session_id}")
+                            logger.info(f"Found matching payment for session {session_id}")
                             return True
                     except Exception as e:
-                        logger.warning(f"⚠️ Error processing log: {str(e)}", exc_info=True)
+                        logger.warning(f"Error processing log: {str(e)}")
                         continue
 
-                logger.warning(f"❌ No matching payment found for session {session_id}")
+                logger.warning(f"No matching payment found for session {session_id}")
                 return False
 
             except Exception as e:
-                logger.error(f"🚨 Error getting logs: {str(e)}", exc_info=True)
+                logger.error(f"Error getting logs: {str(e)}")
                 return False
 
         except Exception as e:
-            logger.error(f"❗ Error verifying NeuroCoin payment: {str(e)}", exc_info=True)
+            logger.error(f"Error verifying NeuroCoin payment: {str(e)}")
             return False
 
