@@ -135,8 +135,6 @@ class LLMService:
                         raise Exception("No fallback local model available")
                 else:
                     raise
-
-            logger.info(f"Response: {response}")
             
             # Clean the response
             cleaned_response = self._clean_response(response, formatted_prompt)
