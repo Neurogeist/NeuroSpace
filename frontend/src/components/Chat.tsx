@@ -33,7 +33,7 @@ import Sidebar from './Sidebar';
 import ChatMessageComponent from './ChatMessage';
 import { useApp } from '../context/AppContext';
 import { payForMessage, checkTokenAllowance, approveToken, getTokenBalance } from '../services/blockchain';
-import { FiMoon, FiSun, FiHome, FiRefreshCw } from 'react-icons/fi';
+import { FiMoon, FiSun, FiHome } from 'react-icons/fi';
 import { Link as RouterLink } from 'react-router-dom';
 
 export default function Chat() {
@@ -67,7 +67,7 @@ export default function Chat() {
     const [isApproving, setIsApproving] = useState(false);
     const [tokenPrice] = useState<string>('1');
     const [tokenBalance, setTokenBalance] = useState<string>('0');
-    const [isLoadingBalance, setIsLoadingBalance] = useState(false);
+    const [setIsLoadingBalance] = useState(false);
     const [isApproved, setIsApproved] = useState(false);
 
     const bgColor = useColorModeValue('gray.50', 'gray.900');
