@@ -3,10 +3,9 @@ import { MetaMaskInpageProvider } from '@metamask/providers';
 
 declare global {
   interface Window {
-    ethereum?: MetaMaskInpageProvider | any; // 'any' ensures compatibility
+    ethereum?: MetaMaskInpageProvider | any;
   }
 }
-
 
 const PAYMENT_CONTRACT_ADDRESS = import.meta.env.VITE_PAYMENT_CONTRACT_ADDRESS;
 const NEUROCOIN_PAYMENT_CONTRACT_ADDRESS = import.meta.env.VITE_NEUROCOIN_PAYMENT_CONTRACT_ADDRESS;
@@ -15,13 +14,13 @@ const ENVIRONMENT = import.meta.env.VITE_ENVIRONMENT || 'development';
 
 const NETWORK_CONFIG = {
     development: {
-        chainId: '0x14a34', // Base Sepolia
+        chainId: '0x14a34',
         chainName: 'Base Sepolia',
         rpcUrl: 'https://sepolia.base.org',
         blockExplorerUrl: 'https://sepolia.basescan.org'
     },
     production: {
-        chainId: '0x2105', // Base Mainnet
+        chainId: '0x2105',
         chainName: 'Base',
         rpcUrl: 'https://mainnet.base.org',
         blockExplorerUrl: 'https://basescan.org'
@@ -171,15 +170,16 @@ const NEUROCOIN_TOKEN_ABI = [
     }
 ];
 
+let lastBalanceCheck = 0;
+const BALANCE_CHECK_COOLDOWN = 5000; // 5 seconds between balance checks
+
 export const connectWallet = async (): Promise<string> => {
     if (!window.ethereum) {
         throw new Error('MetaMask is not installed');
     }
 
-    // Request account access
     const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
     
-    // Check if we're on the correct network
     const chainId = await window.ethereum.request({ method: 'eth_chainId' });
     if (chainId !== currentNetwork.chainId) {
         try {
@@ -189,7 +189,6 @@ export const connectWallet = async (): Promise<string> => {
             });
         } catch (error: any) {
             if (error.code === 4902) {
-                // Chain not added to MetaMask
                 await window.ethereum.request({
                     method: 'wallet_addEthereumChain',
                     params: [{
@@ -240,20 +239,25 @@ export const getNeuroCoinContract = async () => {
     if (!NEUROCOIN_ADDRESS) {
         throw new Error('NeuroCoin address not configured');
     }
-
-    console.log("NeuroCoin Address:", NEUROCOIN_ADDRESS);
     
     return new ethers.Contract(NEUROCOIN_ADDRESS, NEUROCOIN_TOKEN_ABI, signer);
 };
 
 export const getTokenBalance = async (userAddress: string): Promise<string> => {
     try {
+        const now = Date.now();
+        if (now - lastBalanceCheck < BALANCE_CHECK_COOLDOWN) {
+            console.log('Skipping balance check - too soon since last check');
+            return '0';
+        }
+        
         const tokenContract = await getNeuroCoinContract();
         const balance = await tokenContract.balanceOf(userAddress);
+        lastBalanceCheck = now;
         return ethers.formatEther(balance);
     } catch (error) {
         console.error('Error getting token balance:', error);
-        throw new Error('Failed to get token balance');
+        return '0';
     }
 };
 
@@ -261,12 +265,14 @@ export const checkTokenAllowance = async (userAddress: string): Promise<boolean>
     try {
         const tokenContract = await getNeuroCoinContract();
         const paymentContract = await getPaymentContract('NEURO');
-        const allowance = await tokenContract.allowance(userAddress, NEUROCOIN_PAYMENT_CONTRACT_ADDRESS);
-        const price = await paymentContract.pricePerMessage();
+        const [allowance, price] = await Promise.all([
+            tokenContract.allowance(userAddress, NEUROCOIN_PAYMENT_CONTRACT_ADDRESS),
+            paymentContract.pricePerMessage()
+        ]);
         return allowance >= price;
     } catch (error) {
         console.error('Error checking token allowance:', error);
-        throw new Error('Failed to check token allowance');
+        return false;
     }
 };
 
@@ -275,7 +281,6 @@ export const approveToken = async () => {
         const tokenContract = await getNeuroCoinContract();
         const paymentContract = await getPaymentContract('NEURO');
         const price = await paymentContract.pricePerMessage();
-        // Approve 10x the price to avoid frequent approvals
         const approvalAmount = price * BigInt(10);
         const tx = await tokenContract.approve(NEUROCOIN_PAYMENT_CONTRACT_ADDRESS, approvalAmount);
         return tx;
@@ -298,7 +303,6 @@ export const payForMessage = async (sessionId: string, paymentMethod: 'ETH' | 'N
                 value: ethers.parseEther('0.00001')
             });
         } else {
-            // For NeuroCoin, we need to ensure approval first
             const userAddress = await window.ethereum.request({ method: 'eth_requestAccounts' });
             const isApproved = await checkTokenAllowance(userAddress[0]);
             
@@ -306,13 +310,15 @@ export const payForMessage = async (sessionId: string, paymentMethod: 'ETH' | 'N
                 throw new Error('Token approval required. Please approve tokens first.');
             }
 
-            // Check if contract is paused
             const isPaused = await contract.paused();
             if (isPaused) {
                 throw new Error('Contract is currently paused. Please try again later.');
             }
             
-            return contract.payForMessage(sessionId);
+            const tx = await contract.payForMessage(sessionId);
+            // Update balance after successful transaction
+            await getTokenBalance(userAddress[0]);
+            return tx;
         }
     } catch (error) {
         console.error('Error in payForMessage:', error);
