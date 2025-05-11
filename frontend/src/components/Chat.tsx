@@ -282,17 +282,6 @@ export default function Chat() {
             await tx.wait();
             console.log("✅ Payment confirmed on chain");
 
-            // Refresh token balance after successful payment
-            if (paymentMethod === 'NEURO') {
-                try {
-                    const newBalance = await getTokenBalance(userAddress);
-                    setTokenBalance(newBalance);
-                    console.log("💰 Updated token balance:", newBalance);
-                } catch (error) {
-                    console.error('Error refreshing token balance:', error);
-                }
-            }
-
             setThinkingStatus("Thinking...");
 
             await submitPrompt(
@@ -303,16 +292,16 @@ export default function Chat() {
                 tx.hash,
                 paymentMethod
             );
-    
+
             await refreshSessions();
             const session = await getSession(sessionId);
             setMessages(session.messages);
-    
+
             if (createdNewSession) {
                 setActiveSessionId(sessionId);
                 localStorage.setItem('activeSessionId', sessionId);
             }
-    
+
         } catch (err) {
             const error = err as any;
             console.error('Error during prompt submission:', error);
@@ -596,25 +585,6 @@ export default function Chat() {
                                             <Radio value="ETH">Pay with ETH (0.00001 ETH)</Radio>
                                             <Radio value="NEURO">
                                                 Pay with NeuroCoin ({tokenPrice} NSPACE)
-                                                {paymentMethod === 'NEURO' && (
-                                                    <HStack spacing={2} ml={2}>
-                                                        <Text fontSize="sm" color="gray.500">
-                                                            Balance: {isLoadingBalance ? (
-                                                                <Spinner size="xs" />
-                                                            ) : (
-                                                                `${tokenBalance} NSPACE`
-                                                            )}
-                                                        </Text>
-                                                        <IconButton
-                                                            aria-label="Refresh balance"
-                                                            icon={<FiRefreshCw />}
-                                                            size="xs"
-                                                            variant="ghost"
-                                                            onClick={refreshBalance}
-                                                            isLoading={isLoadingBalance}
-                                                        />
-                                                    </HStack>
-                                                )}
                                             </Radio>
                                         </Stack>
                                     </RadioGroup>
