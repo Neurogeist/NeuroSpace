@@ -28,7 +28,7 @@ import {
 } from '@chakra-ui/react';
 import { ChevronLeftIcon, ChevronRightIcon } from '@chakra-ui/icons';
 import { ChatMessage } from '../types/chat';
-import { submitPrompt, getSession, createSession } from '../services/api';
+import { submitPrompt, getSession, createSession, deleteSession } from '../services/api';
 import Sidebar from './Sidebar';
 import ChatMessageComponent from './ChatMessage';
 import { useApp } from '../context/AppContext';
@@ -303,27 +303,59 @@ export default function Chat() {
             console.error('Error during prompt submission:', error);
         
             let errorMessage = "An unexpected error occurred.";
+            let errorTitle = "Submission Error";
+            let errorAction = null;
+            
             if (error?.code === "ACTION_REJECTED") {
                 errorMessage = "Payment cancelled.";
             } else if (error.message?.includes('Token approval required')) {
                 errorMessage = "Please approve tokens before sending messages.";
+            } else if (error.message?.includes('Insufficient ETH balance')) {
+                errorTitle = "Insufficient ETH Balance";
+                errorMessage = "You need ETH on Base to send messages. Please bridge ETH from Ethereum mainnet.";
+                errorAction = (
+                    <Button
+                        as="a"
+                        href="https://bridge.base.org"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        colorScheme="blue"
+                        size="sm"
+                        mt={2}
+                    >
+                        Bridge ETH to Base
+                    </Button>
+                );
             } else if (error.response?.data?.detail) {
                 errorMessage = error.response.data.detail;
             } else if (error.message) {
                 errorMessage = error.message;
             }
+
+            // Clean up the session if it was newly created
+            if (createdNewSession && sessionId) {
+                try {
+                    await deleteSession(sessionId);
+                    console.log("🧹 Cleaned up failed session:", sessionId);
+                } catch (deleteError) {
+                    console.error('Error cleaning up failed session:', deleteError);
+                }
+            }
         
             toast({
-                title: "Submission Error",
-                description: errorMessage,
+                title: errorTitle,
+                description: (
+                    <VStack align="start" spacing={2}>
+                        <Text>{errorMessage}</Text>
+                        {errorAction}
+                    </VStack>
+                ),
                 status: "error",
-                duration: 5000,
+                duration: 8000,
                 isClosable: true,
             });
         
-            if (error?.code === "ACTION_REJECTED") {
-                setMessages(prev => prev.slice(0, -1));
-            }
+            setMessages(prev => prev.slice(0, -1));
         } finally {
             setThinkingStatus(null);
         }

@@ -280,6 +280,17 @@ export const approveToken = async () => {
     }
 };
 
+export const getEthBalance = async (userAddress: string): Promise<string> => {
+    try {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const balance = await provider.getBalance(userAddress);
+        return ethers.formatEther(balance);
+    } catch (error) {
+        console.error('Error getting ETH balance:', error);
+        return '0';
+    }
+};
+
 export const payForMessage = async (sessionId: string, paymentMethod: 'ETH' | 'NEURO' = 'ETH') => {
     if (!window.ethereum) {
         throw new Error('MetaMask is not installed');
@@ -289,8 +300,16 @@ export const payForMessage = async (sessionId: string, paymentMethod: 'ETH' | 'N
         const contract = await getPaymentContract(paymentMethod);
         
         if (paymentMethod === 'ETH') {
+            const userAddress = await window.ethereum.request({ method: 'eth_requestAccounts' });
+            const balance = await getEthBalance(userAddress[0]);
+            const requiredAmount = '0.00001';
+            
+            if (parseFloat(balance) < parseFloat(requiredAmount)) {
+                throw new Error('Insufficient ETH balance. Please bridge ETH to Base using https://bridge.base.org');
+            }
+            
             return contract.payForMessage(sessionId, {
-                value: ethers.parseEther('0.00001')
+                value: ethers.parseEther(requiredAmount)
             });
         } else {
             const userAddress = await window.ethereum.request({ method: 'eth_requestAccounts' });
