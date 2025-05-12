@@ -28,7 +28,7 @@ import {
 } from '@chakra-ui/react';
 import { ChevronLeftIcon, ChevronRightIcon } from '@chakra-ui/icons';
 import { ChatMessage } from '../types/chat';
-import { submitPrompt, getSession, createSession } from '../services/api';
+import { submitPrompt, getSession, createSession, deleteSession } from '../services/api';
 import Sidebar from './Sidebar';
 import ChatMessageComponent from './ChatMessage';
 import { useApp } from '../context/AppContext';
@@ -330,6 +330,16 @@ export default function Chat() {
                 errorMessage = error.response.data.detail;
             } else if (error.message) {
                 errorMessage = error.message;
+            }
+
+            // Clean up the session if it was newly created
+            if (createdNewSession && sessionId) {
+                try {
+                    await deleteSession(sessionId);
+                    console.log("🧹 Cleaned up failed session:", sessionId);
+                } catch (deleteError) {
+                    console.error('Error cleaning up failed session:', deleteError);
+                }
             }
         
             toast({
