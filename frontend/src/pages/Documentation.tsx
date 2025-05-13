@@ -490,18 +490,6 @@ const Documentation = () => {
               </Box>
             </VStack>
           </Section>
-
-          {/* Whitepaper Section */}
-          <Section title="Whitepaper" icon={FaFileAlt}>
-            <VStack align="stretch" spacing={4}>
-              <Text color={textColor}>
-                For a detailed technical and tokenomics breakdown, view the NeuroSpace whitepaper.
-              </Text>
-              <Button colorScheme="blue" leftIcon={<FaFileAlt />} onClick={onOpen}>
-                View Whitepaper
-              </Button>
-            </VStack>
-          </Section>
         </VStack>
       </Container>
 

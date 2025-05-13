@@ -12,10 +12,18 @@ import {
   Flex,
   Image,
   Stack,
-  Badge
+  Badge,
+  useDisclosure,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalCloseButton,
+  ModalFooter,
 } from '@chakra-ui/react'
 import { useNavigate } from 'react-router-dom'
-import { FaRobot, FaDatabase, FaShieldAlt, FaCheckCircle, FaNetworkWired, FaCoins, FaEdit, FaMagic, FaKey, FaLink } from 'react-icons/fa'
+import { FaRobot, FaDatabase, FaShieldAlt, FaCheckCircle, FaNetworkWired, FaCoins, FaEdit, FaMagic, FaKey, FaLink, FaFileAlt } from 'react-icons/fa'
 
 const Feature = ({ title, text, icon }: { title: string; text: string; icon: any }) => {
   return (
@@ -104,6 +112,7 @@ const LandingPage = () => {
   const textColor = useColorModeValue('gray.600', 'gray.400')
   const headingColor = useColorModeValue('gray.800', 'white')
   const accentColor = useColorModeValue('blue.500', 'blue.300')
+  const { isOpen, onOpen, onClose } = useDisclosure()
 
   return (
     <Box bg={bgColor}>
@@ -138,7 +147,7 @@ const LandingPage = () => {
               Experience the future of AI-powered blockchain interactions. 
               Chat with advanced AI models and explore our powerful RAG system.
             </Text>
-            <HStack spacing={4}>
+            <HStack spacing={4} wrap="wrap">
               <Button
                 colorScheme="blue"
                 size="lg"
@@ -156,6 +165,16 @@ const LandingPage = () => {
                 _hover={{ transform: 'translateY(-2px)', shadow: 'lg' }}
               >
                 Explore RAG
+              </Button>
+              <Button
+                colorScheme="teal"
+                size="lg"
+                onClick={onOpen}
+                leftIcon={<FaFileAlt />}
+                px={8}
+                _hover={{ transform: 'translateY(-2px)', shadow: 'lg' }}
+              >
+                Read Whitepaper
               </Button>
             </HStack>
           </Stack>
@@ -369,6 +388,27 @@ const LandingPage = () => {
           </Stack>
         </Container>
       </Box>
+
+      {/* Whitepaper Modal */}
+      <Modal isOpen={isOpen} onClose={onClose} size="full">
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>NeuroSpace Whitepaper</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody p={0}>
+            <iframe
+              src="/NeuroSpace_Whitepaper.pdf"
+              style={{ width: '100%', height: '100vh', border: 'none' }}
+              title="NeuroSpace Whitepaper"
+            />
+          </ModalBody>
+          <ModalFooter>
+            <Button colorScheme="blue" mr={3} onClick={onClose}>
+              Close
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </Box>
   )
 }
