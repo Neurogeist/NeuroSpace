@@ -20,10 +20,14 @@ import {
   ModalHeader,
   ModalBody,
   ModalCloseButton,
-  ModalFooter
+  ModalFooter,
+  SimpleGrid,
+  Alert,
+  AlertIcon,
+  AlertTitle,
+  AlertDescription,
 } from '@chakra-ui/react'
-import { FaBook, FaRocket, FaShieldAlt, FaDatabase, FaFileAlt, FaCheckCircle, FaWallet, FaRobot, FaLock, FaLink } from 'react-icons/fa'
-import { Link as RouterLink } from 'react-router-dom'
+import { FaRocket, FaShieldAlt, FaDatabase, FaFileAlt, FaCheckCircle, FaWallet, FaRobot, FaLock, FaLink, FaQuestionCircle, FaCode, FaThumbsUp, FaVoteYea, FaCoins, FaExclamationTriangle, FaStar, FaLightbulb } from 'react-icons/fa'
 
 const Section = ({ title, icon, children }: { title: string; icon: any; children: React.ReactNode }) => {
   const bgColor = useColorModeValue('white', 'gray.800')
@@ -57,178 +61,430 @@ const Documentation = () => {
     <Box bg={bgColor} minH="100vh" py={10}>
       <Container maxW="container.xl">
         <VStack spacing={8} align="stretch">
+          {/* Page Header */}
           <Stack spacing={4}>
-            <Heading color={headingColor}>Documentation</Heading>
+            <Heading color={headingColor}>NeuroSpace Documentation</Heading>
             <Text fontSize="lg" color={textColor}>
-              Learn about NeuroSpace's architecture, features, and how to get started.
+              Everything you need to know to get started and understand how NeuroSpace works.
             </Text>
+            <Button colorScheme="blue" leftIcon={<FaFileAlt />} onClick={onOpen}>
+              Read the Whitepaper
+            </Button>
           </Stack>
 
-          {/* Overview Section */}
-          <Section title="Overview" icon={FaBook}>
-            <VStack align="stretch" spacing={4}>
-              <Box>
-                <Heading size="sm" mb={2}>What is NeuroSpace?</Heading>
-                <Text color={textColor}>
-                  NeuroSpace is a verifiable AI platform that combines advanced language models with blockchain technology.
-                  It ensures transparency and trust in AI interactions through cryptographic verification and decentralized storage.
-                </Text>
-              </Box>
-              
-              <Box>
-                <Heading size="sm" mb={2}>What problems does it solve?</Heading>
-                <List spacing={2}>
-                  <ListItem>
-                    <ListIcon as={FaCheckCircle} color="blue.500" />
-                    <Text as="span" color={textColor}>Black-box AI interactions</Text>
-                  </ListItem>
-                  <ListItem>
-                    <ListIcon as={FaCheckCircle} color="blue.500" />
-                    <Text as="span" color={textColor}>Lack of auditability in AI responses</Text>
-                  </ListItem>
-                  <ListItem>
-                    <ListIcon as={FaCheckCircle} color="blue.500" />
-                    <Text as="span" color={textColor}>Centralized control of AI systems</Text>
-                  </ListItem>
-                </List>
-              </Box>
-
-              <Box>
-                <Heading size="sm" mb={2}>Architecture Summary</Heading>
-                <List spacing={2}>
-                  <ListItem>
-                    <ListIcon as={FaLock} color="blue.500" />
-                    <Text as="span" color={textColor}>Cryptographic hashing of all interactions</Text>
-                  </ListItem>
-                  <ListItem>
-                    <ListIcon as={FaWallet} color="blue.500" />
-                    <Text as="span" color={textColor}>Ethereum wallet signing for verification</Text>
-                  </ListItem>
-                  <ListItem>
-                    <ListIcon as={FaDatabase} color="blue.500" />
-                    <Text as="span" color={textColor}>IPFS for decentralized storage</Text>
-                  </ListItem>
-                  <ListItem>
-                    <ListIcon as={FaLink} color="blue.500" />
-                    <Text as="span" color={textColor}>Smart contracts for on-chain commitments</Text>
-                  </ListItem>
-                </List>
-              </Box>
-            </VStack>
-          </Section>
-
-          {/* Getting Started Section */}
+          {/* Quick Start */}
           <Section title="Getting Started" icon={FaRocket}>
             <VStack align="stretch" spacing={4}>
+              <Text color={textColor}>
+                NeuroSpace lets you interact with AI verifiably. You can start for free or choose to pay using ETH or NeuroCoin.
+              </Text>
+
               <Box>
-                <Heading size="sm" mb={2}>Requirements</Heading>
+                <Heading size="sm" mb={2}>Option 1: Free Usage (Best for New Users)</Heading>
                 <List spacing={2}>
                   <ListItem>
-                    <ListIcon as={FaWallet} color="blue.500" />
-                    <Text as="span" color={textColor}>MetaMask or compatible Ethereum wallet</Text>
+                    <ListIcon as={FaCheckCircle} color="blue.500" />
+                    Connect your wallet.
                   </ListItem>
                   <ListItem>
-                    <ListIcon as={FaRobot} color="blue.500" />
-                    <Text as="span" color={textColor}>Web3-enabled browser</Text>
+                    <ListIcon as={FaCheckCircle} color="blue.500" />
+                    Enjoy <strong>10 free messages</strong>. No gas, no tokens needed.
+                  </ListItem>
+                  <ListItem>
+                    <ListIcon as={FaCheckCircle} color="blue.500" />
+                    Free messages are off-chain (not stored on blockchain).
                   </ListItem>
                 </List>
               </Box>
 
               <Box>
-                <Heading size="sm" mb={2}>How to Try</Heading>
+                <Heading size="sm" mb={2}>Option 2: Pay with ETH</Heading>
                 <List spacing={2}>
                   <ListItem>
                     <ListIcon as={FaCheckCircle} color="blue.500" />
-                    <Text as="span" color={textColor}>
-                      <Link as={RouterLink} to="/chat" color="blue.500">Chat</Link> - Connect your wallet and start chatting
-                    </Text>
+                    Connect MetaMask or compatible wallet.
                   </ListItem>
                   <ListItem>
                     <ListIcon as={FaCheckCircle} color="blue.500" />
-                    <Text as="span" color={textColor}>
-                      <Link as={RouterLink} to="/rag" color="blue.500">RAG</Link> - Upload documents and ask questions
-                    </Text>
+                    Make sure you have ETH on <strong>Base Network</strong>.{' '}
+                    <Link href="https://bridge.base.org" color="blue.500" isExternal>
+                      Bridge ETH here.
+                    </Link>
+                  </ListItem>
+                  <ListItem>
+                    <ListIcon as={FaCheckCircle} color="blue.500" />
+                    Pay per message directly in the app.
                   </ListItem>
                 </List>
               </Box>
-            </VStack>
-          </Section>
-
-          {/* Verifiability Section */}
-          <Section title="Verifiability" icon={FaShieldAlt}>
-            <VStack align="stretch" spacing={4}>
-              <Box>
-                <Heading size="sm" mb={2}>Message Signing</Heading>
-                <Text color={textColor}>
-                  Every interaction is signed using your Ethereum wallet's private key. This creates a cryptographic proof
-                  that you were the originator of the message.
-                </Text>
-              </Box>
 
               <Box>
-                <Heading size="sm" mb={2}>Hash Computation</Heading>
-                <Text color={textColor}>
-                  Messages are hashed using SHA-256, creating a unique fingerprint of the content. This hash is then
-                  signed to create a verifiable proof of authenticity.
-                </Text>
-              </Box>
-
-              <Box>
-                <Heading size="sm" mb={2}>Verification Process</Heading>
+                <Heading size="sm" mb={2}>Option 3: Pay with NeuroCoin (Coming Soon)</Heading>
                 <List spacing={2}>
                   <ListItem>
                     <ListIcon as={FaCheckCircle} color="blue.500" />
-                    <Text as="span" color={textColor}>Retrieve the message hash from IPFS</Text>
+                    Buy NeuroCoin (soon on Uniswap Base).
                   </ListItem>
                   <ListItem>
                     <ListIcon as={FaCheckCircle} color="blue.500" />
-                    <Text as="span" color={textColor}>Verify the signature using the signer's public key</Text>
+                    Approve NeuroCoin in the app.
                   </ListItem>
                   <ListItem>
                     <ListIcon as={FaCheckCircle} color="blue.500" />
-                    <Text as="span" color={textColor}>Confirm the message hasn't been tampered with</Text>
+                    Pay per message using NeuroCoin (no ETH needed).
                   </ListItem>
                 </List>
               </Box>
             </VStack>
           </Section>
 
-          {/* IPFS & On-Chain Storage Section */}
-          <Section title="IPFS & On-Chain Storage" icon={FaDatabase}>
-            <VStack align="stretch" spacing={4}>
-              <Box>
-                <Heading size="sm" mb={2}>Content Storage</Heading>
-                <Text color={textColor}>
-                  All interactions are stored on IPFS, providing decentralized and permanent storage. The IPFS Content
-                  Identifier (CID) is then committed to the blockchain for additional security.
-                </Text>
-              </Box>
-
-              <Box>
-                <Heading size="sm" mb={2}>Example</Heading>
-                <Text color={textColor}>
-                  CID: <code>QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco</code>
-                </Text>
-                <Text color={textColor} mt={2}>
-                  Smart Contract: <code>0x1234...5678</code>
-                </Text>
-              </Box>
-            </VStack>
-          </Section>
-
-          {/* Whitepaper Section */}
-          <Section title="Whitepaper" icon={FaFileAlt}>
+          {/* Overview Section */}
+          <Section title="What is NeuroSpace?" icon={FaQuestionCircle}>
             <VStack align="stretch" spacing={4}>
               <Text color={textColor}>
-                For a detailed technical overview of NeuroSpace's architecture and tokenomics, please refer to our whitepaper.
+                NeuroSpace is a decentralized protocol for verifiable AI that makes AI outputs transparent, 
+                traceable, and tamper-evident through a combination of blockchain technology and cryptographic proofs.
               </Text>
-              <Button
-                colorScheme="blue"
-                leftIcon={<FaFileAlt />}
-                onClick={onOpen}
-              >
-                View Whitepaper
-              </Button>
+              
+              <Box>
+                <Heading size="sm" mb={2}>Core Components</Heading>
+                <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                  <Box p={4} borderWidth="1px" borderRadius="lg">
+                    <HStack mb={2}>
+                      <Icon as={FaLock} color="blue.500" />
+                      <Text fontWeight="bold">Cryptographic Security</Text>
+                    </HStack>
+                    <Text fontSize="sm">SHA-256 hashing for message integrity</Text>
+                  </Box>
+                  <Box p={4} borderWidth="1px" borderRadius="lg">
+                    <HStack mb={2}>
+                      <Icon as={FaWallet} color="blue.500" />
+                      <Text fontWeight="bold">Wallet Signatures</Text>
+                    </HStack>
+                    <Text fontSize="sm">EIP-191 compatible Ethereum signatures</Text>
+                  </Box>
+                  <Box p={4} borderWidth="1px" borderRadius="lg">
+                    <HStack mb={2}>
+                      <Icon as={FaDatabase} color="blue.500" />
+                      <Text fontWeight="bold">Decentralized Storage</Text>
+                    </HStack>
+                    <Text fontSize="sm">IPFS for content persistence</Text>
+                  </Box>
+                  <Box p={4} borderWidth="1px" borderRadius="lg">
+                    <HStack mb={2}>
+                      <Icon as={FaLink} color="blue.500" />
+                      <Text fontWeight="bold">Smart Contracts</Text>
+                    </HStack>
+                    <Text fontSize="sm">Base chain commitments</Text>
+                  </Box>
+                </SimpleGrid>
+              </Box>
+            </VStack>
+          </Section>
+
+          {/* Problems We Solve Section */}
+          <Section title="Problems We Solve" icon={FaShieldAlt}>
+            <VStack align="stretch" spacing={6}>
+              <Box p={4} borderWidth="1px" borderRadius="lg">
+                <Heading size="sm" mb={2}>1. Opaque, Black-Box AI Systems</Heading>
+                <Text color={textColor}>
+                  Today's AI platforms hide the models, infrastructure, and parameters behind closed APIs. 
+                  Users have no way to inspect, verify, or audit how answers are generated—or by whom. 
+                  NeuroSpace replaces this with fully transparent, verifiable, and auditable AI outputs 
+                  where every detail is open and provable.
+                </Text>
+              </Box>
+
+              <Box p={4} borderWidth="1px" borderRadius="lg">
+                <Heading size="sm" mb={2}>2. Zero Accountability for AI Outputs</Heading>
+                <Text color={textColor}>
+                  When an AI makes a mistake, spreads misinformation, or behaves badly, there's no way to 
+                  prove what happened—or who's responsible. NeuroSpace creates immutable, on-chain records 
+                  tied to cryptographically provable wallet signatures, ensuring every response is 
+                  attributable and accountable.
+                </Text>
+              </Box>
+
+              <Box p={4} borderWidth="1px" borderRadius="lg">
+                <Heading size="sm" mb={2}>3. Unverifiable Document Sources (RAG)</Heading>
+                <Text color={textColor}>
+                  Most Retrieval-Augmented Generation (RAG) systems give you citations you can't trust. 
+                  Documents might change, disappear, or be misrepresented. NeuroSpace makes every source 
+                  document immutable and traceable on IPFS, guaranteeing that citations are real, fixed, 
+                  and tamper-proof.
+                </Text>
+              </Box>
+
+              <Box p={4} borderWidth="1px" borderRadius="lg">
+                <Heading size="sm" mb={2}>4. Invisible Agent Reasoning and Conversations</Heading>
+                <Text color={textColor}>
+                  Complex AI agents and chat sessions often perform multi-step reasoning—but there's no 
+                  way to see their thought process. NeuroSpace introduces verifiable session and agent 
+                  traceability, where every step, tool call, and action is logged, signed, and stored, 
+                  creating a complete audit trail.
+                </Text>
+              </Box>
+
+              <Box p={4} borderWidth="1px" borderRadius="lg">
+                <Heading size="sm" mb={2}>5. Closed, Centralized Model Evaluation Systems</Heading>
+                <Text color={textColor}>
+                  Model evaluation today is siloed and controlled by the same companies running the models. 
+                  NeuroSpace opens the door to community-driven, transparent model benchmarking and feedback 
+                  systems, enabling truly open AI reputation markets, leaderboards, and decentralized model alignment.
+                </Text>
+              </Box>
+            </VStack>
+          </Section>
+
+          {/* Traditional AI Problems Section */}
+          <Section title="The Problem with Traditional AI Platforms" icon={FaExclamationTriangle}>
+            <VStack align="stretch" spacing={4}>
+              <Alert status="warning" variant="subtle" borderRadius="md">
+                <AlertIcon />
+                <Box>
+                  <AlertTitle>Closed Black Boxes</AlertTitle>
+                  <AlertDescription>
+                    Most AI platforms today operate as closed systems where trust is entirely dependent on the platform operator.
+                  </AlertDescription>
+                </Box>
+              </Alert>
+
+              <List spacing={3}>
+                <ListItem>
+                  <ListIcon as={FaExclamationTriangle} color="orange.500" />
+                  <strong>Hidden Configuration:</strong> You can't see how the model was configured
+                </ListItem>
+                <ListItem>
+                  <ListIcon as={FaExclamationTriangle} color="orange.500" />
+                  <strong>No Audit Trail:</strong> You can't verify response sources or integrity
+                </ListItem>
+                <ListItem>
+                  <ListIcon as={FaExclamationTriangle} color="orange.500" />
+                  <strong>Opaque Processing:</strong> No insight into data processing or tool usage
+                </ListItem>
+                <ListItem>
+                  <ListIcon as={FaExclamationTriangle} color="orange.500" />
+                  <strong>Blind Trust:</strong> Forced to trust providers without proof or accountability
+                </ListItem>
+              </List>
+            </VStack>
+          </Section>
+
+          {/* Trust-First AI Section */}
+          <Section title="How NeuroSpace is Different" icon={FaStar}>
+            <VStack align="stretch" spacing={4}>
+              <Text color={textColor} fontSize="lg" fontWeight="medium">
+                We're building the first fully decentralized, verifiable AI platform where trust is built into the protocol itself.
+              </Text>
+
+              <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                <Box p={4} borderWidth="1px" borderRadius="lg" bg={useColorModeValue('blue.50', 'blue.900')}>
+                  <HStack mb={2}>
+                    <Icon as={FaLock} color="blue.500" />
+                    <Text fontWeight="bold">Complete Transparency</Text>
+                  </HStack>
+                  <Text fontSize="sm">Every interaction is hashed, signed, stored on IPFS, and committed on-chain</Text>
+                </Box>
+                <Box p={4} borderWidth="1px" borderRadius="lg" bg={useColorModeValue('blue.50', 'blue.900')}>
+                  <HStack mb={2}>
+                    <Icon as={FaShieldAlt} color="blue.500" />
+                    <Text fontWeight="bold">Public Parameters</Text>
+                  </HStack>
+                  <Text fontSize="sm">Model parameters, session metadata, and document sources are fully public and tamper-evident</Text>
+                </Box>
+                <Box p={4} borderWidth="1px" borderRadius="lg" bg={useColorModeValue('blue.50', 'blue.900')}>
+                  <HStack mb={2}>
+                    <Icon as={FaWallet} color="blue.500" />
+                    <Text fontWeight="bold">User Control</Text>
+                  </HStack>
+                  <Text fontSize="sm">Users, not providers, control the conversation, the data, and the proofs</Text>
+                </Box>
+                <Box p={4} borderWidth="1px" borderRadius="lg" bg={useColorModeValue('blue.50', 'blue.900')}>
+                  <HStack mb={2}>
+                    <Icon as={FaLink} color="blue.500" />
+                    <Text fontWeight="bold">Transparent Infrastructure</Text>
+                  </HStack>
+                  <Text fontSize="sm">All API interactions and infrastructure components are verifiable and auditable</Text>
+                </Box>
+              </SimpleGrid>
+            </VStack>
+          </Section>
+
+          {/* Future Vision Section */}
+          <Section title="The Future We Can Build Together" icon={FaLightbulb}>
+            <VStack align="stretch" spacing={4}>
+              <Text color={textColor}>
+                NeuroSpace is more than a chat app—it's the foundation for the next generation of transparent, 
+                accountable AI infrastructure.
+              </Text>
+
+              <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                <Box p={4} borderWidth="1px" borderRadius="lg">
+                  <HStack mb={2}>
+                    <Icon as={FaCheckCircle} color="green.500" />
+                    <Text fontWeight="bold">Verifiable Model Benchmarking</Text>
+                  </HStack>
+                  <Text fontSize="sm">Compare models in a fully auditable, tamper-proof way</Text>
+                </Box>
+                <Box p={4} borderWidth="1px" borderRadius="lg">
+                  <HStack mb={2}>
+                    <Icon as={FaVoteYea} color="green.500" />
+                    <Text fontWeight="bold">Open Model Evaluation</Text>
+                  </HStack>
+                  <Text fontSize="sm">Build trustless leaderboards and feedback systems</Text>
+                </Box>
+                <Box p={4} borderWidth="1px" borderRadius="lg">
+                  <HStack mb={2}>
+                    <Icon as={FaShieldAlt} color="green.500" />
+                    <Text fontWeight="bold">Decentralized AI Governance</Text>
+                  </HStack>
+                  <Text fontSize="sm">Protocol-driven moderation and model alignment</Text>
+                </Box>
+                <Box p={4} borderWidth="1px" borderRadius="lg">
+                  <HStack mb={2}>
+                    <Icon as={FaRobot} color="green.500" />
+                    <Text fontWeight="bold">Agent Traceability</Text>
+                  </HStack>
+                  <Text fontSize="sm">Transparent multi-step reasoning and execution traces</Text>
+                </Box>
+              </SimpleGrid>
+
+              <Box mt={4} p={4} borderWidth="1px" borderRadius="lg" bg={useColorModeValue('green.50', 'green.900')}>
+                <Text fontWeight="bold" color={useColorModeValue('green.800', 'green.100')}>
+                  This is the beginning of provable AI for everyone—not just companies, but communities, 
+                  regulators, and users around the world.
+                </Text>
+              </Box>
+            </VStack>
+          </Section>
+
+          {/* Technical Deep Dive */}
+          <Section title="Technical Deep Dive" icon={FaCode}>
+            <VStack align="stretch" spacing={6}>
+              <Box>
+                <Heading size="sm" mb={2}>Verifiability Process</Heading>
+                <VStack align="stretch" spacing={4}>
+                  <Box p={4} borderWidth="1px" borderRadius="lg">
+                    <HStack mb={2}>
+                      <Icon as={FaFileAlt} color="blue.500" />
+                      <Text fontWeight="bold">1. Message Serialization</Text>
+                    </HStack>
+                    <Text fontSize="sm">Every prompt, response, and metadata is converted into a deterministic object format.</Text>
+                  </Box>
+                  
+                  <Box p={4} borderWidth="1px" borderRadius="lg">
+                    <HStack mb={2}>
+                      <Icon as={FaLock} color="blue.500" />
+                      <Text fontWeight="bold">2. Hash Generation</Text>
+                    </HStack>
+                    <Text fontSize="sm">The serialized object is hashed using SHA-256 to create a unique fingerprint.</Text>
+                  </Box>
+
+                  <Box p={4} borderWidth="1px" borderRadius="lg">
+                    <HStack mb={2}>
+                      <Icon as={FaWallet} color="blue.500" />
+                      <Text fontWeight="bold">3. Wallet Signing</Text>
+                    </HStack>
+                    <Text fontSize="sm">Users sign the hash with their Ethereum wallet (EIP-191 compatible).</Text>
+                  </Box>
+
+                  <Box p={4} borderWidth="1px" borderRadius="lg">
+                    <HStack mb={2}>
+                      <Icon as={FaLink} color="blue.500" />
+                      <Text fontWeight="bold">4. On-Chain Commitment</Text>
+                    </HStack>
+                    <Text fontSize="sm">The signature and hash are submitted to the NeuroSpace smart contract on Base chain.</Text>
+                  </Box>
+
+                  <Box p={4} borderWidth="1px" borderRadius="lg">
+                    <HStack mb={2}>
+                      <Icon as={FaDatabase} color="blue.500" />
+                      <Text fontWeight="bold">5. IPFS Storage</Text>
+                    </HStack>
+                    <Text fontSize="sm">Full content is stored on IPFS, referenced by Content Identifier (CID).</Text>
+                  </Box>
+                </VStack>
+              </Box>
+
+              <Box>
+                <Heading size="sm" mb={2}>Key Guarantees</Heading>
+                <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                  <Box p={4} borderWidth="1px" borderRadius="lg">
+                    <HStack mb={2}>
+                      <Icon as={FaLock} color="blue.500" />
+                      <Text fontWeight="bold">Integrity</Text>
+                    </HStack>
+                    <Text fontSize="sm">Messages cannot be forged without breaking their hash</Text>
+                  </Box>
+                  <Box p={4} borderWidth="1px" borderRadius="lg">
+                    <HStack mb={2}>
+                      <Icon as={FaShieldAlt} color="blue.500" />
+                      <Text fontWeight="bold">Non-repudiation</Text>
+                    </HStack>
+                    <Text fontSize="sm">Authors cannot deny their messages due to signed hashes</Text>
+                  </Box>
+                  <Box p={4} borderWidth="1px" borderRadius="lg">
+                    <HStack mb={2}>
+                      <Icon as={FaDatabase} color="blue.500" />
+                      <Text fontWeight="bold">Immutability</Text>
+                    </HStack>
+                    <Text fontSize="sm">On-chain records cannot be deleted or altered</Text>
+                  </Box>
+                  <Box p={4} borderWidth="1px" borderRadius="lg">
+                    <HStack mb={2}>
+                      <Icon as={FaShieldAlt} color="blue.500" />
+                      <Text fontWeight="bold">Censorship Resistance</Text>
+                    </HStack>
+                    <Text fontSize="sm">Content remains accessible through IPFS</Text>
+                  </Box>
+                </SimpleGrid>
+              </Box>
+            </VStack>
+          </Section>
+
+          {/* Decentralized Feedback Section */}
+          <Section title="Decentralized Feedback & Reputation" icon={FaThumbsUp}>
+            <VStack align="stretch" spacing={4}>
+              <Text color={textColor}>
+                NeuroSpace implements a decentralized feedback system that allows the community to participate in 
+                model quality assessment and protocol governance.
+              </Text>
+
+              <Box>
+                <Heading size="sm" mb={2}>Feedback Mechanisms</Heading>
+                <List spacing={2}>
+                  <ListItem>
+                    <ListIcon as={FaThumbsUp} color="blue.500" />
+                    <strong>Quality Ratings:</strong> Users can rate AI responses based on accuracy and relevance
+                  </ListItem>
+                  <ListItem>
+                    <ListIcon as={FaVoteYea} color="blue.500" />
+                    <strong>Community Voting:</strong> Stakeholders participate in model quality assessment
+                  </ListItem>
+                  <ListItem>
+                    <ListIcon as={FaCoins} color="blue.500" />
+                    <strong>Staking Rewards:</strong> Earn rewards for providing valuable feedback
+                  </ListItem>
+                </List>
+              </Box>
+
+              <Box>
+                <Heading size="sm" mb={2}>Reputation System</Heading>
+                <List spacing={2}>
+                  <ListItem>
+                    <ListIcon as={FaCheckCircle} color="blue.500" />
+                    <strong>Feedback Weight:</strong> Reputation score influences voting power
+                  </ListItem>
+                  <ListItem>
+                    <ListIcon as={FaCheckCircle} color="blue.500" />
+                    <strong>Staking Tiers:</strong> Higher stakes provide greater influence
+                  </ListItem>
+                  <ListItem>
+                    <ListIcon as={FaCheckCircle} color="blue.500" />
+                    <strong>Quality Metrics:</strong> Track model performance over time
+                  </ListItem>
+                </List>
+              </Box>
             </VStack>
           </Section>
         </VStack>
@@ -237,50 +493,17 @@ const Documentation = () => {
       {/* Whitepaper Modal */}
       <Modal isOpen={isOpen} onClose={onClose} size="full">
         <ModalOverlay />
-        <ModalContent 
-          w="100vw"
-          h="100vh"
-          m={0}
-          p={0}
-          display="flex"
-          flexDirection="column"
-        >
-          <ModalHeader 
-            py={2} 
-            px={4}
-            bg={useColorModeValue('white', 'gray.800')}
-            borderBottomWidth="1px"
-            borderColor={useColorModeValue('gray.200', 'gray.700')}
-          >
-            NeuroSpace Whitepaper
-          </ModalHeader>
+        <ModalContent>
+          <ModalHeader>NeuroSpace Whitepaper</ModalHeader>
           <ModalCloseButton />
-          <ModalBody 
-            p={0} 
-            flex="1"
-            position="relative"
-            h="calc(100vh - 120px)"
-          >
+          <ModalBody p={0}>
             <iframe
               src="/NeuroSpace_Whitepaper.pdf"
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                border: 'none'
-              }}
+              style={{ width: '100%', height: '100vh', border: 'none' }}
               title="NeuroSpace Whitepaper"
             />
           </ModalBody>
-          <ModalFooter 
-            py={2}
-            px={4}
-            bg={useColorModeValue('white', 'gray.800')}
-            borderTopWidth="1px"
-            borderColor={useColorModeValue('gray.200', 'gray.700')}
-          >
+          <ModalFooter>
             <Button colorScheme="blue" mr={3} onClick={onClose}>
               Close
             </Button>
@@ -291,4 +514,4 @@ const Documentation = () => {
   )
 }
 
-export default Documentation 
+export default Documentation
