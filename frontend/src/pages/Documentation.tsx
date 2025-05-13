@@ -21,16 +21,13 @@ import {
   ModalBody,
   ModalCloseButton,
   ModalFooter,
-  Divider,
   SimpleGrid,
-  Badge,
   Alert,
   AlertIcon,
   AlertTitle,
   AlertDescription,
 } from '@chakra-ui/react'
-import { FaBook, FaRocket, FaShieldAlt, FaDatabase, FaFileAlt, FaCheckCircle, FaWallet, FaRobot, FaLock, FaLink, FaQuestionCircle, FaCode, FaThumbsUp, FaVoteYea, FaCoins, FaExclamationTriangle, FaStar, FaLightbulb } from 'react-icons/fa'
-import { Link as RouterLink } from 'react-router-dom'
+import { FaRocket, FaShieldAlt, FaDatabase, FaFileAlt, FaCheckCircle, FaWallet, FaRobot, FaLock, FaLink, FaQuestionCircle, FaCode, FaThumbsUp, FaVoteYea, FaCoins, FaExclamationTriangle, FaStar, FaLightbulb } from 'react-icons/fa'
 
 const Section = ({ title, icon, children }: { title: string; icon: any; children: React.ReactNode }) => {
   const bgColor = useColorModeValue('white', 'gray.800')
