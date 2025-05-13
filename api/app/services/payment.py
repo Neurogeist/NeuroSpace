@@ -3,6 +3,9 @@ from typing import Optional, Dict
 import os
 from dotenv import load_dotenv
 import logging
+from ..models.database import SessionLocal
+from ..models.free_request import FreeRequest
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 load_dotenv()
@@ -142,9 +145,6 @@ class PaymentService:
             abi=self.neurocoin_contract_abi
         )
 
-        # In-memory storage for free requests
-        self.free_requests: Dict[str, int] = {}
-
         logger.info("✅ Payment service initialized")
 
     def verify_payment(self, session_id: str, user_address: str, payment_method: str = 'ETH') -> bool:
@@ -171,25 +171,55 @@ class PaymentService:
     def _has_free_request(self, user_address: str) -> bool:
         """Check if user has free requests and use one if available"""
         user_address = user_address.lower()
+        db = SessionLocal()
         
-        # Initialize with 5 free requests for new users
-        if user_address not in self.free_requests:
-            self.free_requests[user_address] = 5
-            logger.info(f"Initialized free requests for new user {user_address}")
-        
-        # Use a free request if available
-        if self.free_requests[user_address] > 0:
-            self.free_requests[user_address] -= 1
-            logger.info(f"Used free request for user {user_address}. {self.free_requests[user_address]} remaining")
-            return True
+        try:
+            # Get or create free request record
+            free_request = db.query(FreeRequest).filter(FreeRequest.wallet_address == user_address).first()
             
-        logger.info(f"No free requests remaining for user {user_address}")
-        return False
+            if not free_request:
+                free_request = FreeRequest(wallet_address=user_address, remaining_requests=10)
+                db.add(free_request)
+                db.commit()
+                logger.info(f"Initialized free requests for new user {user_address}")
+            
+            # Use a free request if available
+            if free_request.remaining_requests > 0:
+                free_request.remaining_requests -= 1
+                db.commit()
+                logger.info(f"Used free request for user {user_address}. {free_request.remaining_requests} remaining")
+                return True
+                
+            logger.info(f"No free requests remaining for user {user_address}")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error managing free request: {str(e)}")
+            db.rollback()
+            return False
+        finally:
+            db.close()
 
     def get_remaining_free_requests(self, user_address: str) -> int:
         """Get the number of remaining free requests for a user"""
         user_address = user_address.lower()
-        return self.free_requests.get(user_address, 5)  # New users get 5 free requests
+        db = SessionLocal()
+        
+        try:
+            free_request = db.query(FreeRequest).filter(FreeRequest.wallet_address == user_address).first()
+            if not free_request:
+                # Create new record with 10 free requests
+                free_request = FreeRequest(wallet_address=user_address, remaining_requests=10)
+                db.add(free_request)
+                db.commit()
+                return 10
+            return free_request.remaining_requests
+        except Exception as e:
+            logger.error(f"Error getting remaining free requests: {str(e)}")
+            db.rollback()
+            return 0
+        finally:
+            db.close()
 
     def _verify_eth_payment(self, session_id: str, user_address: str) -> bool:
         """Verify ETH payment"""

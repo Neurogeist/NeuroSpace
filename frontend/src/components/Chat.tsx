@@ -222,6 +222,22 @@ export default function Chat() {
                     isClosable: true,
                 });
             }
+        } else if (value === 'FREE' && userAddress) {
+            try {
+                const remaining = await getRemainingFreeRequests(userAddress);
+                if (remaining === 0) {
+                    toast({
+                        title: "No Free Requests",
+                        description: "You have no free requests remaining. Please choose another payment method.",
+                        status: "warning",
+                        duration: 5000,
+                        isClosable: true,
+                    });
+                    setPaymentMethod('ETH'); // Switch to ETH as default
+                }
+            } catch (error) {
+                console.error('Error checking free requests:', error);
+            }
         }
     };
 
@@ -605,7 +621,11 @@ export default function Chat() {
                                         onChange={(value: 'ETH' | 'NEURO' | 'FREE') => handlePaymentMethodChange(value)}
                                     >
                                         <Stack direction="row" spacing={4}>
-                                            <Radio value="FREE" isDisabled={remainingFreeRequests === 0}>
+                                            <Radio 
+                                                value="FREE" 
+                                                isDisabled={remainingFreeRequests === 0}
+                                                colorScheme={remainingFreeRequests === 0 ? "gray" : "blue"}
+                                            >
                                                 Use Free Request ({remainingFreeRequests} left)
                                             </Radio>
                                             <Radio value="ETH">Pay with ETH (0.00001 ETH)</Radio>
