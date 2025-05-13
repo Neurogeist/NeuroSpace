@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { ethers } from 'ethers';
 import { getRemainingFreeRequests, payForMessage, getEthBalance, getTokenBalance, checkTokenAllowance, approveToken } from '../services/blockchain';
 import { useApp } from '../context/AppContext';
 
