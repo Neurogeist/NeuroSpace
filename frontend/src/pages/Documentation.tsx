@@ -305,9 +305,9 @@ const Documentation = () => {
                 <Box p={4} borderWidth="1px" borderRadius="lg" bg={useColorModeValue('blue.50', 'blue.900')}>
                   <HStack mb={2}>
                     <Icon as={FaLink} color="blue.500" />
-                    <Text fontWeight="bold">No Walled Gardens</Text>
+                    <Text fontWeight="bold">Transparent Infrastructure</Text>
                   </HStack>
-                  <Text fontSize="sm">No part of the infrastructure is hidden behind proprietary APIs</Text>
+                  <Text fontSize="sm">All API interactions and infrastructure components are verifiable and auditable</Text>
                 </Box>
               </SimpleGrid>
             </VStack>
