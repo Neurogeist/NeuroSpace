@@ -681,3 +681,32 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         status_code=422,
         content={"detail": exc.errors()}
     )
+
+class FreeRequestRequest(BaseModel):
+    sessionId: str
+    userAddress: str
+
+@app.get("/free-requests/{user_address}")
+async def get_free_requests(user_address: str):
+    """Get the number of remaining free requests for a user."""
+    try:
+        remaining_requests = payment_service.get_remaining_free_requests(user_address)
+        return {"remaining_requests": remaining_requests}
+    except Exception as e:
+        logger.error(f"Error getting free requests: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/use-free-request")
+async def use_free_request(request: FreeRequestRequest):
+    """Use a free request for a user."""
+    try:
+        if payment_service._has_free_request(request.userAddress):
+            remaining = payment_service.get_remaining_free_requests(request.userAddress)
+            return {
+                "success": True,
+                "remaining_requests": remaining
+            }
+        raise HTTPException(status_code=400, detail="No free requests remaining")
+    except Exception as e:
+        logger.error(f"Error using free request: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))

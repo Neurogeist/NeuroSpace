@@ -291,16 +291,57 @@ export const getEthBalance = async (userAddress: string): Promise<string> => {
     }
 };
 
-export const payForMessage = async (sessionId: string, paymentMethod: 'ETH' | 'NEURO' = 'ETH') => {
+export const getRemainingFreeRequests = async (userAddress: string): Promise<number> => {
+    try {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/free-requests/${userAddress}`);
+        if (!response.ok) {
+            throw new Error('Failed to fetch free requests');
+        }
+        const data = await response.json();
+        return data.remaining_requests;
+    } catch (error) {
+        console.error('Error getting free requests:', error);
+        return 0;
+    }
+};
+
+export const payForMessage = async (sessionId: string, paymentMethod: 'ETH' | 'NEURO' | 'FREE' = 'ETH') => {
     if (!window.ethereum) {
         throw new Error('MetaMask is not installed');
     }
 
     try {
+        const userAddress = await window.ethereum.request({ method: 'eth_requestAccounts' });
+
+        if (paymentMethod === 'FREE') {
+            // Use free request
+            const response = await fetch(`${import.meta.env.VITE_API_URL}/use-free-request`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    sessionId,
+                    userAddress: userAddress[0]
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to use free request');
+            }
+
+            // Return a transaction-like object for consistency
+            return {
+                hash: 'free-request',
+                wait: async () => Promise.resolve(), // Add a no-op wait function
+                remainingFreeRequests: (await getRemainingFreeRequests(userAddress[0])) - 1
+            };
+        }
+
+        // If not using free request, proceed with normal payment
         const contract = await getPaymentContract(paymentMethod);
         
         if (paymentMethod === 'ETH') {
-            const userAddress = await window.ethereum.request({ method: 'eth_requestAccounts' });
             const balance = await getEthBalance(userAddress[0]);
             const requiredAmount = '0.00001';
             
@@ -312,7 +353,6 @@ export const payForMessage = async (sessionId: string, paymentMethod: 'ETH' | 'N
                 value: ethers.parseEther(requiredAmount)
             });
         } else {
-            const userAddress = await window.ethereum.request({ method: 'eth_requestAccounts' });
             const isApproved = await checkTokenAllowance(userAddress[0]);
             
             if (!isApproved) {

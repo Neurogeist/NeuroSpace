@@ -97,7 +97,7 @@ export const submitPrompt = async (
     userAddress: string,
     sessionId?: string,
     txHash?: string,
-    paymentMethod: 'ETH' | 'NEURO' = 'ETH'
+    paymentMethod: 'ETH' | 'NEURO' | 'FREE' = 'ETH'
 ): Promise<PromptResponse> => {
     try {
         const requestBody: any = {
