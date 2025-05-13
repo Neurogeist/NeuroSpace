@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { getRemainingFreeRequests, payForMessage, getEthBalance, getTokenBalance, checkTokenAllowance, approveToken } from '../services/blockchain';
-import { useWallet } from '../contexts/WalletContext';
+import { useApp } from '../context/AppContext';
 
 interface PaymentModalProps {
     isOpen: boolean;
@@ -17,17 +17,17 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, onSuccess,
     const [ethBalance, setEthBalance] = useState<string>('0');
     const [tokenBalance, setTokenBalance] = useState<string>('0');
     const [remainingFreeRequests, setRemainingFreeRequests] = useState<number>(0);
-    const { address } = useWallet();
+    const { userAddress } = useApp();
 
     useEffect(() => {
-        if (isOpen && address) {
+        if (isOpen && userAddress) {
             const checkBalances = async () => {
                 try {
-                    console.log('Checking balances for address:', address);
+                    console.log('Checking balances for address:', userAddress);
                     const [eth, neuro, free] = await Promise.all([
-                        getEthBalance(address),
-                        getTokenBalance(address),
-                        getRemainingFreeRequests(address)
+                        getEthBalance(userAddress),
+                        getTokenBalance(userAddress),
+                        getRemainingFreeRequests(userAddress)
                     ]);
                     console.log('Free requests:', free);
                     setEthBalance(eth);
@@ -39,10 +39,10 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, onSuccess,
             };
             checkBalances();
         }
-    }, [isOpen, address]);
+    }, [isOpen, userAddress]);
 
     const handlePayment = async () => {
-        if (!address) return;
+        if (!userAddress) return;
         
         setIsLoading(true);
         setError(null);
@@ -62,7 +62,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, onSuccess,
             }
 
             if (paymentMethod === 'NEURO') {
-                const isApproved = await checkTokenAllowance(address);
+                const isApproved = await checkTokenAllowance(userAddress);
                 if (!isApproved) {
                     const tx = await approveToken();
                     await tx.wait();

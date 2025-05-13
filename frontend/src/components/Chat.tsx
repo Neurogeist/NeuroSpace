@@ -291,8 +291,8 @@ export default function Chat() {
             console.log("💵 Payment transaction hash:", tx.hash);
 
             if (paymentMethod !== 'FREE') {
-                await tx.wait();
-                console.log("✅ Payment confirmed on chain");
+            await tx.wait();
+            console.log("✅ Payment confirmed on chain");
             }
 
             setThinkingStatus("Thinking...");
