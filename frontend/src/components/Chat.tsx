@@ -32,7 +32,7 @@ import { submitPrompt, getSession, createSession, deleteSession } from '../servi
 import Sidebar from './Sidebar';
 import ChatMessageComponent from './ChatMessage';
 import { useApp } from '../context/AppContext';
-import { payForMessage, checkTokenAllowance, approveToken, getTokenBalance } from '../services/blockchain';
+import { payForMessage, checkTokenAllowance, approveToken, getTokenBalance, getRemainingFreeRequests } from '../services/blockchain';
 import { FiMoon, FiSun, FiHome } from 'react-icons/fi';
 import { Link as RouterLink } from 'react-router-dom';
 
@@ -63,11 +63,12 @@ export default function Chat() {
         defaultIsOpen: window.innerWidth >= 768
     });
     const toast = useToast();
-    const [paymentMethod, setPaymentMethod] = useState<'ETH' | 'NEURO'>('ETH');
+    const [paymentMethod, setPaymentMethod] = useState<'ETH' | 'NEURO' | 'FREE'>('ETH');
     const [isApproving, setIsApproving] = useState(false);
     const [tokenPrice] = useState<string>('1');
     const [tokenBalance, setTokenBalance] = useState<string>('0');
     const [isApproved, setIsApproved] = useState(false);
+    const [remainingFreeRequests, setRemainingFreeRequests] = useState<number>(0);
 
     const bgColor = useColorModeValue('gray.50', 'gray.900');
     const borderColor = useColorModeValue('gray.200', 'gray.700');
@@ -183,7 +184,21 @@ export default function Chat() {
         checkApprovalStatus();
     }, [userAddress, paymentMethod]);
 
-    const handlePaymentMethodChange = async (value: 'ETH' | 'NEURO') => {
+    useEffect(() => {
+        const fetchFreeRequests = async () => {
+            if (!userAddress) return;
+            try {
+                const remaining = await getRemainingFreeRequests(userAddress);
+                setRemainingFreeRequests(remaining);
+            } catch (error) {
+                console.error('Error fetching free requests:', error);
+            }
+        };
+
+        fetchFreeRequests();
+    }, [userAddress]);
+
+    const handlePaymentMethodChange = async (value: 'ETH' | 'NEURO' | 'FREE') => {
         setPaymentMethod(value);
         if (value === 'NEURO' && userAddress) {
             try {
@@ -275,8 +290,10 @@ export default function Chat() {
             const tx = await payForMessage(sessionId, paymentMethod);
             console.log("💵 Payment transaction hash:", tx.hash);
 
-            await tx.wait();
-            console.log("✅ Payment confirmed on chain");
+            if (paymentMethod !== 'FREE') {
+                await tx.wait();
+                console.log("✅ Payment confirmed on chain");
+            }
 
             setThinkingStatus("Thinking...");
 
@@ -288,6 +305,10 @@ export default function Chat() {
                 tx.hash,
                 paymentMethod
             );
+
+            if (paymentMethod === 'FREE') {
+                setRemainingFreeRequests(prev => prev - 1);
+            }
 
             await refreshSessions();
             const session = await getSession(sessionId);
@@ -581,9 +602,12 @@ export default function Chat() {
                                 <VStack spacing={4}>
                                     <RadioGroup 
                                         value={paymentMethod} 
-                                        onChange={(value: 'ETH' | 'NEURO') => handlePaymentMethodChange(value)}
+                                        onChange={(value: 'ETH' | 'NEURO' | 'FREE') => handlePaymentMethodChange(value)}
                                     >
                                         <Stack direction="row" spacing={4}>
+                                            <Radio value="FREE" isDisabled={remainingFreeRequests === 0}>
+                                                Use Free Request ({remainingFreeRequests} left)
+                                            </Radio>
                                             <Radio value="ETH">Pay with ETH (0.00001 ETH)</Radio>
                                             <Radio value="NEURO">
                                                 Pay with NeuroCoin ({tokenPrice} NSPACE)
@@ -640,12 +664,19 @@ export default function Chat() {
                                             type="submit"
                                             colorScheme="blue"
                                             isLoading={!!thinkingStatus}
-                                            isDisabled={!input.trim() || (paymentMethod === 'NEURO' && (!isApproved || parseFloat(tokenBalance) < parseFloat(tokenPrice)))}
+                                            isDisabled={
+                                                !input.trim() || 
+                                                (paymentMethod === 'NEURO' && (!isApproved || parseFloat(tokenBalance) < parseFloat(tokenPrice))) ||
+                                                (paymentMethod === 'FREE' && remainingFreeRequests === 0)
+                                            }
                                             px={{ base: 4, md: 6 }}
                                             size={{ base: 'sm', md: 'md' }}
                                         >
                                             <Text display={{ base: 'none', sm: 'block' }}>
-                                                Send ({paymentMethod === 'ETH' ? '0.00001 ETH' : `${tokenPrice} NSPACE`})
+                                                {paymentMethod === 'FREE' 
+                                                    ? 'Use Free Request' 
+                                                    : `Send (${paymentMethod === 'ETH' ? '0.00001 ETH' : `${tokenPrice} NSPACE`})`
+                                                }
                                             </Text>
                                             <Text display={{ base: 'block', sm: 'none' }}>Send</Text>
                                         </Button>

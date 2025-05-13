@@ -1,5 +1,5 @@
 from web3 import Web3
-from typing import Optional
+from typing import Optional, Dict
 import os
 from dotenv import load_dotenv
 import logging
@@ -142,12 +142,22 @@ class PaymentService:
             abi=self.neurocoin_contract_abi
         )
 
-        logger.info("✅ NeuroCoin contract initialized and verified on-chain")
+        # In-memory storage for free requests
+        self.free_requests: Dict[str, int] = {}
+
+        logger.info("✅ Payment service initialized")
 
     def verify_payment(self, session_id: str, user_address: str, payment_method: str = 'ETH') -> bool:
         """Verify if payment was made for a specific session"""
         try:
-            if payment_method == 'ETH':
+            # Verify payment based on method
+            if payment_method == 'FREE':
+                if self._has_free_request(user_address):
+                    logger.info(f"Using free request for user {user_address}")
+                    return True
+                logger.error(f"No free requests remaining for user {user_address}")
+                return False
+            elif payment_method == 'ETH':
                 return self._verify_eth_payment(session_id, user_address)
             elif payment_method == 'NEURO':
                 return self._verify_neurocoin_payment(session_id, user_address)
@@ -157,6 +167,29 @@ class PaymentService:
         except Exception as e:
             logger.error(f"Error verifying payment: {str(e)}")
             return False
+
+    def _has_free_request(self, user_address: str) -> bool:
+        """Check if user has free requests and use one if available"""
+        user_address = user_address.lower()
+        
+        # Initialize with 5 free requests for new users
+        if user_address not in self.free_requests:
+            self.free_requests[user_address] = 5
+            logger.info(f"Initialized free requests for new user {user_address}")
+        
+        # Use a free request if available
+        if self.free_requests[user_address] > 0:
+            self.free_requests[user_address] -= 1
+            logger.info(f"Used free request for user {user_address}. {self.free_requests[user_address]} remaining")
+            return True
+            
+        logger.info(f"No free requests remaining for user {user_address}")
+        return False
+
+    def get_remaining_free_requests(self, user_address: str) -> int:
+        """Get the number of remaining free requests for a user"""
+        user_address = user_address.lower()
+        return self.free_requests.get(user_address, 5)  # New users get 5 free requests
 
     def _verify_eth_payment(self, session_id: str, user_address: str) -> bool:
         """Verify ETH payment"""
