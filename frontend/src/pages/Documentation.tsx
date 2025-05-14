@@ -498,15 +498,9 @@ const Documentation = () => {
           <ModalCloseButton />
           <ModalBody p={0}>
             <iframe
-              src="/NeuroSpace_Whitepaper.pdf#toolbar=0&navpanes=0"
-              style={{ 
-                width: '100%', 
-                height: '100vh', 
-                border: 'none',
-                WebkitOverflowScrolling: 'touch' // Enable smooth scrolling on iOS
-              }}
+              src="/NeuroSpace_Whitepaper.pdf"
+              style={{ width: '100%', height: '100vh', border: 'none' }}
               title="NeuroSpace Whitepaper"
-              sandbox="allow-same-origin allow-scripts allow-forms"
             />
           </ModalBody>
           <ModalFooter>
