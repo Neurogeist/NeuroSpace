@@ -1,20 +1,18 @@
 import axios from 'axios';
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL;
-console.log('Loaded API_BASE_URL:', API_BASE_URL);
 
 // Configure axios defaults
 axios.defaults.withCredentials = false;
 axios.defaults.headers.common['Content-Type'] = 'application/json';
-axios.defaults.headers.common['X-User-Address'] = '0x1234567890123456789012345678901234567890';
 
 // Add response interceptor for better error handling
 axios.interceptors.response.use(
   response => response,
   error => {
-    console.error('API Error:', error);
+    console.error('API Error:', error.message);
     if (error.response) {
-      console.error('Response data:', error.response.data);
+      console.error('Response status:', error.response.status);
     }
     return Promise.reject(error);
   }
@@ -108,15 +106,15 @@ export const submitPrompt = async (
             payment_method: paymentMethod
         };
 
-        if (txHash) {
+        // Only include tx_hash if it's a valid transaction hash (not a free request)
+        if (txHash && txHash !== 'free-request') {
             requestBody.tx_hash = txHash;
         }
 
         const response = await axios.post(`${API_BASE_URL}/submit_prompt`, requestBody);
-        console.log('Prompt response:', response.data);
         return response.data;
     } catch (error) {
-        console.error('Error submitting prompt:', error);
+        console.error('Error submitting prompt:', error instanceof Error ? error.message : 'Unknown error');
         throw error;
     }
 };
