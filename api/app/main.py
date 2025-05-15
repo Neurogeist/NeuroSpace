@@ -524,7 +524,7 @@ async def verify_hash(hash: str):
 
 # File upload configuration
 UPLOAD_CONFIG = {
-    "max_file_size": 10 * 1024 * 1024,  # 10MB
+    "max_file_size": 5 * 1024 * 1024,  # 5MB
     "allowed_types": {
         ".pdf": b"%PDF-",  # PDF signature
         ".txt": None,  # No specific signature for text files
@@ -533,7 +533,7 @@ UPLOAD_CONFIG = {
         ".md": None,  # No specific signature for markdown
         ".csv": None,  # No specific signature for CSV
     },
-    "max_files_per_wallet": 50,
+    "max_files_per_wallet": 5,  # Maximum 5 files per wallet
     "upload_dir": "uploads",
     "temp_dir": "temp_uploads"
 }
@@ -610,7 +610,12 @@ async def upload_document(
         if current_uploads >= UPLOAD_CONFIG["max_files_per_wallet"]:
             raise HTTPException(
                 status_code=400,
-                detail=f"Maximum upload limit of {UPLOAD_CONFIG['max_files_per_wallet']} files reached for this wallet"
+                detail={
+                    "error": "Upload limit reached",
+                    "message": f"You have reached the maximum limit of {UPLOAD_CONFIG['max_files_per_wallet']} files. Please delete some existing files before uploading more.",
+                    "current_uploads": current_uploads,
+                    "max_allowed": UPLOAD_CONFIG["max_files_per_wallet"]
+                }
             )
         
         # Read file content
@@ -618,16 +623,30 @@ async def upload_document(
         
         # Check file size
         if len(content) > UPLOAD_CONFIG["max_file_size"]:
+            file_size_mb = len(content) / (1024 * 1024)
+            max_size_mb = UPLOAD_CONFIG["max_file_size"] / (1024 * 1024)
             raise HTTPException(
                 status_code=400,
-                detail=f"File size exceeds maximum limit of {UPLOAD_CONFIG['max_file_size'] / 1024 / 1024}MB"
+                detail={
+                    "error": "File too large",
+                    "message": f"File size ({file_size_mb:.1f}MB) exceeds the maximum allowed size of {max_size_mb}MB",
+                    "file_size": file_size_mb,
+                    "max_size": max_size_mb
+                }
             )
         
         # Validate file type
         try:
             validate_file_type(content, file.filename)
         except FileUploadError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Invalid file type",
+                    "message": str(e),
+                    "allowed_types": list(UPLOAD_CONFIG["allowed_types"].keys())
+                }
+            )
         
         # Generate secure filename
         secure_name = secure_filename(file.filename)
