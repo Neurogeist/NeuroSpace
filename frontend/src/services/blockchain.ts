@@ -330,9 +330,8 @@ export const payForMessage = async (sessionId: string, paymentMethod: 'ETH' | 'N
                 throw new Error('Failed to use free request');
             }
 
-            // Return a transaction-like object for consistency
+            // Return a transaction-like object for consistency, but without a hash
             return {
-                hash: 'free-request',
                 wait: async () => Promise.resolve(), // Add a no-op wait function
                 remainingFreeRequests: (await getRemainingFreeRequests(userAddress[0])) - 1
             };
@@ -367,7 +366,7 @@ export const payForMessage = async (sessionId: string, paymentMethod: 'ETH' | 'N
             return contract.payForMessage(sessionId);
         }
     } catch (error) {
-        console.error('Error in payForMessage:', error);
+        console.error('Error in payForMessage:', error instanceof Error ? error.message : 'Unknown error');
         throw error;
     }
 };

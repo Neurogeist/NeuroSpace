@@ -84,9 +84,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    console.log(`Context: Attempting to load sessions for ${address}`);
+    // Remove sensitive address logging
+    // console.log(`Context: Attempting to load sessions for ${address}`);
     setIsLoadingSessions(true);
-    setError(null); // Clear previous session errors
+    setError(null);
     try {
       // CORRECTED: Pass the address to getSessions
       const sessionsData = await getSessions(address);
@@ -99,8 +100,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (!sessionExists) {
           console.log(`Context: Active session ${activeSessionId} not found in loaded sessions, clearing local storage.`);
           localStorage.removeItem('activeSessionId');
-          // Consider clearing selectedModel too if it's session-dependent
-          // localStorage.removeItem('selectedModel');
         }
       } else if (activeSessionId) {
          // Clear if there are no sessions but local storage still has an ID
@@ -108,11 +107,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
     } catch (err) {
-      console.error('Error loading sessions in context:', err);
+      console.error('Error loading sessions in context:', err instanceof Error ? err.message : 'Unknown error');
       setError(err instanceof Error ? err.message : 'Failed to load sessions');
       setSessions([]); // Clear sessions on error
-      // Optionally clear local storage on error too
-      // localStorage.removeItem('activeSessionId');
     } finally {
       setIsLoadingSessions(false);
     }

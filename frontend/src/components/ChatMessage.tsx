@@ -141,12 +141,6 @@ export default function ChatMessageComponent({ message, isSidebarOpen = false }:
                     return;
                 }
 
-                console.log('Verifying message:', {
-                    verification_hash: metadata.verification_hash,
-                    signature: metadata.signature,
-                    messageId: message.timestamp
-                });
-
                 const result = await verifyMessage(
                     metadata.verification_hash!,
                     metadata.signature!,
@@ -160,7 +154,7 @@ export default function ChatMessageComponent({ message, isSidebarOpen = false }:
                 sessionStorage.setItem(key, JSON.stringify(result));
             } catch (error) {
                 if (isMounted) {
-                    console.error('Error verifying message:', error);
+                    console.error('Error verifying message:', error instanceof Error ? error.message : 'Unknown error');
                     setVerificationError('Failed to verify message');
                 }
             } finally {
