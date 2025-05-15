@@ -31,6 +31,9 @@ from .services.flagging import FlaggingService
 from sqlalchemy.orm import Session
 from pydantic import validator
 from fastapi.exceptions import RequestValidationError
+from sqlalchemy import func
+from pathlib import Path
+import shutil
 
 # Configure logging
 logging.basicConfig(
@@ -85,8 +88,8 @@ request_stats: Dict[str, Any] = {
     "average_response_time": 0
 }
 
-# Temporarily disable rate limiting
-# app.add_middleware(RateLimitMiddleware)
+# Enable rate limiting middleware
+app.add_middleware(RateLimitMiddleware)
 
 # Add request tracking middleware second
 @app.middleware("http")
@@ -519,26 +522,169 @@ async def verify_hash(hash: str):
         logger.error(f"Error verifying hash: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/rag/upload")
-async def upload_document(file: UploadFile = File(...), wallet_address: str = Header(...)):
-    """Upload a document for RAG."""
+# File upload configuration
+UPLOAD_CONFIG = {
+    "max_file_size": 5 * 1024 * 1024,  # 5MB
+    "allowed_types": {
+        ".pdf": b"%PDF-",  # PDF signature
+        ".txt": None,  # No specific signature for text files
+        ".doc": b"\xD0\xCF\x11\xE0",  # DOC signature
+        ".docx": b"PK\x03\x04",  # DOCX signature (ZIP)
+        ".md": None,  # No specific signature for markdown
+        ".csv": None,  # No specific signature for CSV
+    },
+    "max_files_per_wallet": 5,  # Maximum 5 files per wallet
+    "upload_dir": "uploads",
+    "temp_dir": "temp_uploads"
+}
+
+class FileUploadError(Exception):
+    """Custom exception for file upload errors."""
+    pass
+
+def validate_file_type(content: bytes, filename: str) -> bool:
+    """Validate file type using file extension and content inspection."""
     try:
-        # Save the uploaded file
-        file_path = f"uploads/{file.filename}"
-        os.makedirs("uploads", exist_ok=True)
+        # Get file extension
+        ext = os.path.splitext(filename)[1].lower()
         
-        with open(file_path, "wb") as buffer:
-            content = await file.read()
+        # Check if extension is allowed
+        if ext not in UPLOAD_CONFIG["allowed_types"]:
+            raise FileUploadError(f"File extension {ext} not allowed")
+        
+        # Get expected signature for this file type
+        expected_signature = UPLOAD_CONFIG["allowed_types"][ext]
+        
+        # If no signature is defined for this type, accept it
+        if expected_signature is None:
+            return True
+            
+        # Check file signature
+        if not content.startswith(expected_signature):
+            raise FileUploadError(f"File content does not match expected format for {ext}")
+            
+        return True
+    except Exception as e:
+        raise FileUploadError(f"File type validation failed: {str(e)}")
+
+def get_wallet_upload_count(wallet_address: str, db: Session) -> int:
+    """Get the number of files uploaded by a wallet."""
+    return db.query(func.count(DocumentUpload.id)).filter(
+        DocumentUpload.wallet_address == wallet_address
+    ).scalar()
+
+def secure_filename(filename: str) -> str:
+    """Generate a secure filename."""
+    # Remove any directory components
+    filename = os.path.basename(filename)
+    # Remove any non-alphanumeric characters except for . and -
+    filename = re.sub(r'[^a-zA-Z0-9.-]', '_', filename)
+    # Add timestamp to prevent collisions
+    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+    name, ext = os.path.splitext(filename)
+    return f"{name}_{timestamp}{ext}"
+
+# Database dependency
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+@app.post("/rag/upload")
+async def upload_document(
+    file: UploadFile = File(...),
+    wallet_address: str = Header(...),
+    db: Session = Depends(get_db)
+):
+    """Upload a document for RAG with security measures."""
+    temp_path = None
+    try:
+        # Create upload directories if they don't exist
+        os.makedirs(UPLOAD_CONFIG["upload_dir"], exist_ok=True)
+        os.makedirs(UPLOAD_CONFIG["temp_dir"], exist_ok=True)
+        
+        # Check wallet upload limit
+        current_uploads = get_wallet_upload_count(wallet_address, db)
+        if current_uploads >= UPLOAD_CONFIG["max_files_per_wallet"]:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Upload limit reached",
+                    "message": f"You have reached the maximum limit of {UPLOAD_CONFIG['max_files_per_wallet']} files. Please delete some existing files before uploading more.",
+                    "current_uploads": current_uploads,
+                    "max_allowed": UPLOAD_CONFIG["max_files_per_wallet"]
+                }
+            )
+        
+        # Read file content
+        content = await file.read()
+        
+        # Check file size
+        if len(content) > UPLOAD_CONFIG["max_file_size"]:
+            file_size_mb = len(content) / (1024 * 1024)
+            max_size_mb = UPLOAD_CONFIG["max_file_size"] / (1024 * 1024)
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "File too large",
+                    "message": f"File size ({file_size_mb:.1f}MB) exceeds the maximum allowed size of {max_size_mb}MB",
+                    "file_size": file_size_mb,
+                    "max_size": max_size_mb
+                }
+            )
+        
+        # Validate file type
+        try:
+            validate_file_type(content, file.filename)
+        except FileUploadError as e:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Invalid file type",
+                    "message": str(e),
+                    "allowed_types": list(UPLOAD_CONFIG["allowed_types"].keys())
+                }
+            )
+        
+        # Generate secure filename
+        secure_name = secure_filename(file.filename)
+        temp_path = os.path.join(UPLOAD_CONFIG["temp_dir"], secure_name)
+        final_path = os.path.join(UPLOAD_CONFIG["upload_dir"], secure_name)
+        
+        # Save to temporary location first
+        with open(temp_path, "wb") as buffer:
             buffer.write(content)
         
-        # Process the document
-        result = await rag_service.upload_document(file_path, wallet_address)
-        
-        return result
-        
+        try:
+            # Process the document
+            result = await rag_service.upload_document(temp_path, wallet_address)
+            
+            # Move to final location if processing successful
+            if os.path.exists(temp_path):
+                shutil.move(temp_path, final_path)
+            
+            return result
+            
+        except Exception as e:
+            # Clean up temp file if processing fails
+            if temp_path and os.path.exists(temp_path):
+                os.remove(temp_path)
+            raise e
+            
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error uploading document: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # Clean up temp file if it still exists
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception as e:
+                logger.error(f"Error cleaning up temporary file: {str(e)}")
 
 
 class RAGQueryRequest(BaseModel):
