@@ -22,14 +22,13 @@ import ipaddress
 import asyncio
 from fastapi import BackgroundTasks
 from .services.model_registry import ModelRegistry
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator, constr
 from .services.payment import PaymentService
 from .services.rag import RAGService
 from .models.database import SessionLocal, engine
 from .models.document import DocumentChunk, DocumentUpload, Base
 from .services.flagging import FlaggingService
 from sqlalchemy.orm import Session
-from pydantic import validator
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy import func
 from pathlib import Path
@@ -175,13 +174,53 @@ async def health_check():
         logger.error(f"Health check failed: {str(e)}")
         raise HTTPException(status_code=500, detail="Service unhealthy")
 
+# Validation constants
+WALLET_ADDRESS_PATTERN = r'^0x[a-fA-F0-9]{40}$'
+MAX_PROMPT_LENGTH = 4000
+MAX_QUERY_LENGTH = 1000
+MAX_FILENAME_LENGTH = 255
+MIN_TOP_K = 1
+MAX_TOP_K = 10
+
+def validate_wallet_address(v: str) -> str:
+    """Validate Ethereum wallet address format."""
+    if not isinstance(v, str):
+        raise ValueError('Wallet address must be a string')
+    if not re.match(WALLET_ADDRESS_PATTERN, v):
+        raise ValueError('Invalid wallet address format')
+    return v.lower()
+
 class PromptRequest(BaseModel):
-    prompt: str
+    prompt: constr(min_length=1, max_length=MAX_PROMPT_LENGTH)
     model: str
-    user_address: str
+    user_address: str = Field(..., description="Ethereum wallet address")
     session_id: Optional[str] = None
     tx_hash: Optional[str] = None
-    payment_method: str = 'ETH'  # Default to ETH for backward compatibility
+    payment_method: str = 'ETH'
+
+    @validator('user_address')
+    def validate_wallet_address(cls, v):
+        return validate_wallet_address(v)
+
+    @validator('model')
+    def validate_model(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Model name cannot be empty')
+        return v.strip()
+
+    @validator('payment_method')
+    def validate_payment_method(cls, v):
+        valid_methods = {'ETH', 'NEURO', 'FREE'}
+        if v not in valid_methods:
+            raise ValueError(f'Invalid payment method. Must be one of: {", ".join(valid_methods)}')
+        return v
+
+    @validator('tx_hash')
+    def validate_tx_hash(cls, v):
+        if v is not None:
+            if not re.match(r'^0x[a-fA-F0-9]{64}$', v):
+                raise ValueError('Invalid transaction hash format')
+        return v
 
 @app.post("/submit_prompt")
 async def submit_prompt(request: PromptRequest):
@@ -398,12 +437,16 @@ async def delete_session(session_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 class CreateSessionRequest(BaseModel):
-    wallet_address: str = Field(..., description="The wallet address of the user")
+    wallet_address: str = Field(..., description="Ethereum wallet address")
+
+    @validator('wallet_address')
+    def validate_wallet_address(cls, v):
+        return validate_wallet_address(v)
 
 class CreateSessionResponse(BaseModel):
-    session_id: str = Field(..., description="The unique identifier for the chat session")
-    created_at: datetime = Field(..., description="When the session was created")
-    updated_at: datetime = Field(..., description="When the session was last updated")
+    session_id: str
+    created_at: datetime
+    updated_at: datetime
 
     class Config:
         json_encoders = {
@@ -458,9 +501,15 @@ async def get_prompt(prompt_id: str):
     return prompts[prompt_id]
 
 class VerificationRequest(BaseModel):
-    verification_hash: str
-    signature: str
+    verification_hash: constr(min_length=64, max_length=64)
+    signature: constr(min_length=130, max_length=132)
     expected_address: Optional[str] = None
+
+    @validator('expected_address')
+    def validate_wallet_address(cls, v):
+        if v is not None:
+            return validate_wallet_address(v)
+        return v
 
 class VerificationResponse(BaseModel):
     is_valid: bool
@@ -595,12 +644,25 @@ def get_db():
 @app.post("/rag/upload")
 async def upload_document(
     file: UploadFile = File(...),
-    wallet_address: str = Header(...),
+    wallet_address: str = Header(..., description="Ethereum wallet address"),
     db: Session = Depends(get_db)
 ):
     """Upload a document for RAG with security measures."""
     temp_path = None
     try:
+        # Validate wallet address
+        wallet_address = validate_wallet_address(wallet_address)
+
+        # Validate filename
+        if len(file.filename) > MAX_FILENAME_LENGTH:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Invalid filename",
+                    "message": f"Filename length exceeds maximum allowed length of {MAX_FILENAME_LENGTH} characters"
+                }
+            )
+
         # Create upload directories if they don't exist
         os.makedirs(UPLOAD_CONFIG["upload_dir"], exist_ok=True)
         os.makedirs(UPLOAD_CONFIG["temp_dir"], exist_ok=True)
@@ -688,9 +750,13 @@ async def upload_document(
 
 
 class RAGQueryRequest(BaseModel):
-    query: str
-    wallet_address: str
-    top_k: int = 3
+    query: constr(min_length=1, max_length=MAX_QUERY_LENGTH)
+    wallet_address: str = Field(..., description="Ethereum wallet address")
+    top_k: int = Field(default=3, ge=MIN_TOP_K, le=MAX_TOP_K)
+
+    @validator('wallet_address')
+    def validate_wallet_address(cls, v):
+        return validate_wallet_address(v)
 
 @app.post("/rag/query")
 async def query_documents(request: RAGQueryRequest):
@@ -766,6 +832,12 @@ class FlagMessageRequest(BaseModel):
             raise ValueError(f"Invalid reason. Must be one of: {', '.join(valid_reasons)}")
         return v
 
+    @validator('note')
+    def validate_note(cls, v):
+        if v is not None and len(v) > 1000:
+            raise ValueError('Note must be less than 1000 characters')
+        return v
+
     class Config:
         json_encoders = {
             uuid.UUID: str
@@ -830,7 +902,18 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 class FreeRequestRequest(BaseModel):
     sessionId: str
-    userAddress: str
+    userAddress: str = Field(..., description="Ethereum wallet address")
+
+    @validator('userAddress')
+    def validate_wallet_address(cls, v):
+        return validate_wallet_address(v)
+
+    @validator('sessionId')
+    def validate_session_id(cls, v):
+        try:
+            return uuid.UUID(v)
+        except ValueError as e:
+            raise ValueError('Invalid session ID format')
 
 @app.get("/free-requests/{user_address}")
 async def get_free_requests(user_address: str):
