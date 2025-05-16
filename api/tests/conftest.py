@@ -10,16 +10,19 @@ import uuid
 import logging
 import asyncio
 
-from api.app.main import app
-from api.app.models.database import Base, get_db
-from api.app.services.blockchain import BlockchainService
-from api.app.services.ipfs import IPFSService
-from api.app.services.llm import LLMService
-from api.app.services.chat_session import ChatSessionService
-from api.app.services.model_registry import ModelRegistry
-from api.app.services.payment import PaymentService
-from api.app.services.rag import RAGService
-from api.app.services.flagging import FlaggingService
+# Mock transformers before importing app
+with patch('transformers.AutoModelForCausalLM'), \
+     patch('transformers.AutoTokenizer'):
+    from api.app.main import app
+    from api.app.models.database import Base, get_db
+    from api.app.services.blockchain import BlockchainService
+    from api.app.services.ipfs import IPFSService
+    from api.app.services.llm import LLMService
+    from api.app.services.chat_session import ChatSessionService
+    from api.app.services.model_registry import ModelRegistry
+    from api.app.services.payment import PaymentService
+    from api.app.services.rag import RAGService
+    from api.app.services.flagging import FlaggingService
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -58,85 +61,164 @@ def db_session():
 def mock_blockchain_service():
     """Mock blockchain service for testing."""
     logger.debug("Setting up mock blockchain service")
-    with patch('api.app.main.blockchain_service') as mock:
-        mock.web3 = Mock()
-        mock.sign_message = AsyncMock(return_value="0x" + "1" * 130)
-        mock.verify_signature = AsyncMock(return_value=True)
-        mock.verify_hash = AsyncMock(return_value=True)
-        mock.get_signer_address = AsyncMock(return_value="0x1234567890123456789012345678901234567890")
-        yield mock
-
-@pytest.fixture(scope="function")
-def mock_ipfs_service():
-    """Mock IPFS service for testing."""
-    logger.debug("Setting up mock IPFS service")
-    with patch('api.app.main.ipfs_service') as mock:
-        mock.client = Mock()
-        mock.upload_file = AsyncMock(return_value="QmTestHash")
-        mock.get_file = AsyncMock(return_value=b"test content")
-        yield mock
-
-@pytest.fixture(scope="function")
-def mock_llm_service():
-    """Mock LLM service for testing."""
-    logger.debug("Setting up mock LLM service")
-    with patch('api.app.main.llm_service') as mock:
-        mock.model = Mock()
-        mock.tokenizer = Mock()
-        mock.generate_response = AsyncMock(return_value={
-            "response": "Test response",
-            "model_name": "test-model",
-            "model_id": "test-model-id"
-        })
-        yield mock
+    mock = Mock(spec=BlockchainService)
+    
+    # Mock web3 and its required attributes
+    mock_web3 = Mock()
+    mock_web3.is_connected = Mock(return_value=True)
+    mock_web3.eth = Mock()
+    mock_web3.eth.chain_id = 1
+    mock.web3 = mock_web3
+    
+    # Mock account
+    mock_account = Mock()
+    mock_account.address = "0x1234567890123456789012345678901234567890"
+    mock.account = mock_account
+    
+    # Mock other required methods
+    mock.verify_signature = AsyncMock(return_value={
+        "is_valid": True,
+        "recovered_address": mock_account.address,
+        "matches_expected": True
+    })
+    mock.sign_message = AsyncMock(return_value="0x" + "1" * 130)
+    
+    return mock
 
 @pytest.fixture(scope="function")
 def mock_model_registry():
     """Mock model registry for testing."""
     logger.debug("Setting up mock model registry")
-    with patch('api.app.main.model_registry') as mock:
-        mock.get_available_models = AsyncMock(return_value={
-            "mixtral-8x7b-instruct": "mistralai/Mixtral-8x7B-Instruct-v0.1",
-            "gemma-2-27b-it": "google/gemma-2-27b-it"
-        })
-        yield mock
+    mock = Mock(spec=ModelRegistry)
+    mock.get_available_models = Mock(return_value={
+        "mixtral-8x7b-instruct": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+        "gemma-2-27b-it": "google/gemma-2-27b-it"
+    })
+    return mock
+
+@pytest.fixture(scope="function")
+def mock_llm_service(mock_model_registry):
+    """Mock LLM service for testing."""
+    logger.debug("Setting up mock LLM service")
+    mock = Mock(spec=LLMService)
+    mock.model = Mock()
+    mock.tokenizer = Mock()
+    mock.model_registry = mock_model_registry
+    mock.get_available_models = Mock(return_value={
+        "mixtral-8x7b-instruct": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+        "gemma-2-27b-it": "google/gemma-2-27b-it"
+    })
+    return mock
+
+@pytest.fixture(scope="function")
+def mock_ipfs_service():
+    """Mock IPFS service for testing."""
+    logger.debug("Setting up mock IPFS service")
+    mock = Mock(spec=IPFSService)
+    mock.client = Mock()
+    mock.upload_file = AsyncMock(return_value="QmTestHash")
+    mock.get_file = AsyncMock(return_value=b"test content")
+    return mock
 
 @pytest.fixture(scope="function")
 def mock_payment_service():
     """Mock payment service for testing."""
     logger.debug("Setting up mock payment service")
-    with patch('api.app.main.payment_service') as mock:
-        mock.verify_payment = AsyncMock(return_value=True)
-        mock.get_free_requests = AsyncMock(return_value=5)
-        yield mock
+    mock = Mock(spec=PaymentService)
+    mock.verify_payment = AsyncMock(return_value=True)
+    mock.get_free_requests = AsyncMock(return_value=5)
+    return mock
 
 @pytest.fixture(scope="function")
 def mock_rag_service():
     """Mock RAG service for testing."""
     logger.debug("Setting up mock RAG service")
-    with patch('api.app.main.rag_service') as mock:
-        mock.query_documents = AsyncMock(return_value={
-            "response": "Test RAG response",
-            "sources": ["source1", "source2"]
-        })
-        yield mock
+    mock = Mock(spec=RAGService)
+    mock.query_documents = AsyncMock(return_value={
+        "response": "Test RAG response",
+        "sources": ["source1", "source2"]
+    })
+    return mock
 
 @pytest.fixture(scope="function")
-def client(db_session, mock_blockchain_service, mock_ipfs_service, 
-           mock_llm_service, mock_model_registry, mock_payment_service, 
-           mock_rag_service):
+def mock_chat_session_service():
+    """Mock chat session service for testing."""
+    logger.debug("Setting up mock chat session service")
+    mock = Mock(spec=ChatSessionService)
+    mock.create_session = AsyncMock(return_value="test-session-id")
+    mock.get_session = AsyncMock(return_value="test-session-id")
+    mock.get_all_sessions = AsyncMock(return_value=["test-session-id"])
+    mock.get_session_history = AsyncMock(return_value=["test-message"])
+    mock.get_session_summary = AsyncMock(return_value="test-summary")
+    mock.get_session_status = AsyncMock(return_value="completed")
+    mock.update_session_status = AsyncMock(return_value=True)
+    mock.update_session_history = AsyncMock(return_value=True)
+    mock.update_session_summary = AsyncMock(return_value=True)
+    mock.delete_session = AsyncMock(return_value=True)
+    return mock
+
+@pytest.fixture(scope="function")
+def mock_flagging_service():
+    """Mock flagging service for testing."""
+    logger.debug("Setting up mock flagging service")
+    mock = Mock(spec=FlaggingService)
+    mock.flag_content = AsyncMock(return_value=True)
+    mock.unflag_content = AsyncMock(return_value=True)
+    mock.get_flagged_contents = AsyncMock(return_value=["test-content"])
+    mock.get_flagged_contents_count = AsyncMock(return_value=1)
+    return mock
+
+@pytest.fixture(scope="function")
+def client(
+    mock_blockchain_service,
+    mock_ipfs_service,
+    mock_llm_service,
+    mock_model_registry,
+    mock_payment_service,
+    mock_rag_service,
+    mock_chat_session_service,
+    mock_flagging_service,
+    db_session
+):
     """Create a test client with mocked services."""
     logger.debug("Setting up test client")
+    
+    # Override the database dependency
     def override_get_db():
         try:
             yield db_session
         finally:
-            db_session.close()
+            pass
     
-    app.dependency_overrides[get_db] = override_get_db
+    # Reset app state
+    app.dependency_overrides = {}
+    
+    # Override services
+    app.blockchain_service = mock_blockchain_service
+    app.ipfs_service = mock_ipfs_service
+    app.llm_service = mock_llm_service
+    app.model_registry = mock_model_registry
+    app.payment_service = mock_payment_service
+    app.rag_service = mock_rag_service
+    app.chat_session_service = mock_chat_session_service
+    app.flagging_service = mock_flagging_service
+    
+    # Ensure blockchain service is properly initialized
+    if not hasattr(app.blockchain_service, 'web3'):
+        mock_web3 = Mock()
+        mock_web3.is_connected = Mock(return_value=True)
+        mock_web3.eth = Mock()
+        mock_web3.eth.chain_id = 1
+        app.blockchain_service.web3 = mock_web3
+    
+    # Override database dependency
+    app.dependency_overrides["get_db"] = override_get_db
+    
     with TestClient(app) as test_client:
         yield test_client
-    app.dependency_overrides.clear()
+    
+    # Clean up
+    app.dependency_overrides = {}
 
 @pytest.fixture
 def test_wallet_address():

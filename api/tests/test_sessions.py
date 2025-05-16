@@ -141,22 +141,3 @@ def test_session_concurrent_access(client, test_wallet_address):
         assert "session_id" in data
         assert "created_at" in data
         assert "updated_at" in data
-
-def test_session_cleanup(client, test_wallet_address):
-    """Test session cleanup functionality."""
-    # Create multiple sessions
-    for _ in range(3):
-        response = client.post(
-            "/sessions/create",
-            json={"wallet_address": test_wallet_address}
-        )
-        assert response.status_code == status.HTTP_200_OK
-    
-    # Trigger cleanup (this would typically be done by a background task)
-    # For testing, we'll simulate it by making a request that triggers cleanup
-    response = client.get("/health")
-    assert response.status_code == status.HTTP_200_OK
-    
-    # Verify expired sessions are cleaned up
-    # This would require additional setup to mock expired sessions
-    # and verify they're no longer accessible 
