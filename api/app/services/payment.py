@@ -198,8 +198,11 @@ class PaymentService:
             try:
                 # Verify payment based on method
                 if payment_method == 'FREE':
-                    if self._has_free_request(user_address, ip_address):
-                        logger.info(f"Using free request for user {user_address}")
+                    # For free requests, we only check if the user has remaining requests
+                    # The actual deduction happens in the /use-free-request endpoint
+                    remaining = self.get_remaining_free_requests(user_address)
+                    if remaining > 0:
+                        logger.info(f"Free request available for user {user_address}. {remaining} remaining")
                         return True
                     logger.error(f"No free requests remaining for user {user_address}")
                     return False

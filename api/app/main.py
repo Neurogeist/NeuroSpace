@@ -243,6 +243,8 @@ async def submit_prompt(request: PromptRequest, request_obj: Request):
         if not client_ip:
             logger.warning("Could not determine client IP address")
             client_ip = "unknown"
+
+        logger.info(f"Client IP: {client_ip}")
             
         # Retry payment verification 2-3 times if needed
         max_retries = 3
