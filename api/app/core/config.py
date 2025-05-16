@@ -76,6 +76,8 @@ class Settings(BaseSettings):
     
     # Database Configuration (optional for in-memory storage)
     DATABASE_URL: Optional[str] = None
+
+    REDIS_URL: Optional[str] = None
     
     @property
     def is_production(self) -> bool:

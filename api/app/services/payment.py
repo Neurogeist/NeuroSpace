@@ -6,6 +6,8 @@ import logging
 from ..models.database import SessionLocal
 from ..models.free_request import FreeRequest
 from sqlalchemy.orm import Session
+import redis
+import time
 
 logger = logging.getLogger(__name__)
 load_dotenv()
@@ -13,6 +15,26 @@ load_dotenv()
 class PaymentService:
     def __init__(self):
         self.w3 = Web3(Web3.HTTPProvider(os.getenv('BASE_RPC_URL')))
+        
+        # Initialize Redis client
+        redis_url = os.getenv("REDIS_URL") or os.getenv("RAILWAY_REDIS_URL")
+        if redis_url:
+            self.redis_client = redis.from_url(
+                redis_url,
+                decode_responses=True,
+                socket_timeout=5,
+                socket_connect_timeout=5,
+                retry_on_timeout=True
+            )
+            try:
+                self.redis_client.ping()
+                logger.info("✅ Redis client initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize Redis: {str(e)}")
+                self.redis_client = None
+        else:
+            self.redis_client = None
+            logger.warning("No Redis URL provided, falling back to non-atomic verification")
         
         # ETH Payment Contract
         self.eth_contract_address = os.getenv('PAYMENT_CONTRACT_ADDRESS')
@@ -150,20 +172,44 @@ class PaymentService:
     def verify_payment(self, session_id: str, user_address: str, payment_method: str = 'ETH') -> bool:
         """Verify if payment was made for a specific session"""
         try:
-            # Verify payment based on method
-            if payment_method == 'FREE':
-                if self._has_free_request(user_address):
-                    logger.info(f"Using free request for user {user_address}")
-                    return True
-                logger.error(f"No free requests remaining for user {user_address}")
-                return False
-            elif payment_method == 'ETH':
-                return self._verify_eth_payment(session_id, user_address)
-            elif payment_method == 'NEURO':
-                return self._verify_neurocoin_payment(session_id, user_address)
-            else:
-                logger.error(f"Invalid payment method: {payment_method}")
-                return False
+            # Create a unique lock key for this payment verification attempt
+            timestamp = int(time.time() * 1000)  # Millisecond precision
+            lock_key = f"payment_verification:{session_id}:{user_address}:{payment_method}:{timestamp}"
+            
+            # Try to acquire lock with Redis if available
+            if self.redis_client:
+                # Try to set the lock with a 10-second expiration
+                acquired = self.redis_client.set(
+                    lock_key,
+                    "1",
+                    ex=10,
+                    nx=True  # Only set if key doesn't exist
+                )
+                
+                if not acquired:
+                    logger.warning(f"Payment verification already in progress for {session_id}")
+                    return False
+            
+            try:
+                # Verify payment based on method
+                if payment_method == 'FREE':
+                    if self._has_free_request(user_address):
+                        logger.info(f"Using free request for user {user_address}")
+                        return True
+                    logger.error(f"No free requests remaining for user {user_address}")
+                    return False
+                elif payment_method == 'ETH':
+                    return self._verify_eth_payment(session_id, user_address)
+                elif payment_method == 'NEURO':
+                    return self._verify_neurocoin_payment(session_id, user_address)
+                else:
+                    logger.error(f"Invalid payment method: {payment_method}")
+                    return False
+            finally:
+                # Release the lock if we have Redis
+                if self.redis_client:
+                    self.redis_client.delete(lock_key)
+                    
         except Exception as e:
             logger.error(f"Error verifying payment: {str(e)}")
             return False
