@@ -172,8 +172,9 @@ class PaymentService:
     def verify_payment(self, session_id: str, user_address: str, payment_method: str = 'ETH') -> bool:
         """Verify if payment was made for a specific session"""
         try:
-            # Create a unique lock key for this payment verification
-            lock_key = f"payment_verification:{session_id}:{user_address}:{payment_method}"
+            # Create a unique lock key for this payment verification attempt
+            timestamp = int(time.time() * 1000)  # Millisecond precision
+            lock_key = f"payment_verification:{session_id}:{user_address}:{payment_method}:{timestamp}"
             
             # Try to acquire lock with Redis if available
             if self.redis_client:
