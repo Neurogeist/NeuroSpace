@@ -8,6 +8,7 @@ from ..models.free_request import FreeRequest
 from sqlalchemy.orm import Session
 import redis
 import time
+import ipaddress
 
 logger = logging.getLogger(__name__)
 load_dotenv()
@@ -35,6 +36,10 @@ class PaymentService:
         else:
             self.redis_client = None
             logger.warning("No Redis URL provided, falling back to non-atomic verification")
+        
+        # Free request rate limiting settings
+        self.FREE_REQUESTS_PER_IP = 10  # Maximum free requests per IP
+        self.FREE_REQUESTS_WINDOW = 86400  # 24 hours in seconds
         
         # ETH Payment Contract
         self.eth_contract_address = os.getenv('PAYMENT_CONTRACT_ADDRESS')
@@ -169,7 +174,7 @@ class PaymentService:
 
         logger.info("✅ Payment service initialized")
 
-    def verify_payment(self, session_id: str, user_address: str, payment_method: str = 'ETH') -> bool:
+    def verify_payment(self, session_id: str, user_address: str, payment_method: str = 'ETH', ip_address: Optional[str] = None) -> bool:
         """Verify if payment was made for a specific session"""
         try:
             # Create a unique lock key for this payment verification attempt
@@ -193,8 +198,11 @@ class PaymentService:
             try:
                 # Verify payment based on method
                 if payment_method == 'FREE':
-                    if self._has_free_request(user_address):
-                        logger.info(f"Using free request for user {user_address}")
+                    # For free requests, we only check if the user has remaining requests
+                    # The actual deduction happens in the /use-free-request endpoint
+                    remaining = self.get_remaining_free_requests(user_address)
+                    if remaining > 0:
+                        logger.info(f"Free request available for user {user_address}. {remaining} remaining")
                         return True
                     logger.error(f"No free requests remaining for user {user_address}")
                     return False
@@ -214,12 +222,35 @@ class PaymentService:
             logger.error(f"Error verifying payment: {str(e)}")
             return False
 
-    def _has_free_request(self, user_address: str) -> bool:
+    def _has_free_request(self, user_address: str, ip_address: Optional[str] = None) -> bool:
         """Check if user has free requests and use one if available"""
         user_address = user_address.lower()
         db = SessionLocal()
         
         try:
+            # Check IP-based rate limit if IP is provided
+            if ip_address and self.redis_client:
+                # Normalize IP address (handle both IPv4 and IPv6)
+                try:
+                    ip = ipaddress.ip_address(ip_address)
+                    ip_key = f"free_requests_ip:{ip.compressed}"
+                    
+                    # Get current count for this IP
+                    current_count = self.redis_client.get(ip_key)
+                    if current_count is None:
+                        # First request from this IP
+                        self.redis_client.setex(ip_key, self.FREE_REQUESTS_WINDOW, 1)
+                    else:
+                        current_count = int(current_count)
+                        if current_count >= self.FREE_REQUESTS_PER_IP:
+                            logger.warning(f"IP {ip_address} has exceeded free request limit")
+                            return False
+                        # Increment counter
+                        self.redis_client.incr(ip_key)
+                except ValueError as e:
+                    logger.error(f"Invalid IP address {ip_address}: {str(e)}")
+                    return False
+            
             # Get or create free request record
             free_request = db.query(FreeRequest).filter(FreeRequest.wallet_address == user_address).first()
             

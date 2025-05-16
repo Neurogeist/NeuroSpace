@@ -223,14 +223,34 @@ class PromptRequest(BaseModel):
         return v
 
 @app.post("/submit_prompt")
-async def submit_prompt(request: PromptRequest):
+async def submit_prompt(request: PromptRequest, request_obj: Request):
     """Submit a prompt and get a response."""
     try:
+        # Get client IP from various possible headers
+        client_ip = None
+        forwarded_for = request_obj.headers.get("X-Forwarded-For")
+        real_ip = request_obj.headers.get("X-Real-IP")
+        
+        if forwarded_for:
+            # Get the first IP in the chain (client IP)
+            client_ip = forwarded_for.split(",")[0].strip()
+        elif real_ip:
+            client_ip = real_ip
+        else:
+            # Fallback to direct client IP
+            client_ip = request_obj.client.host if request_obj.client else None
+            
+        if not client_ip:
+            logger.warning("Could not determine client IP address")
+            client_ip = "unknown"
+
+        logger.info(f"Client IP: {client_ip}")
+            
         # Retry payment verification 2-3 times if needed
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                if not payment_service.verify_payment(request.session_id or "new", request.user_address, request.payment_method):
+                if not payment_service.verify_payment(request.session_id or "new", request.user_address, request.payment_method, client_ip):
                     if attempt < max_retries - 1:
                         await asyncio.sleep(2)  # Wait 2 seconds and retry
                         continue
