@@ -1,6 +1,6 @@
 import axios, { AxiosHeaders } from 'axios';
 import { ethers } from 'ethers';
-import { getAuthHeaders, AuthHeaders } from './auth';
+import { getAuthHeaders, login, AuthHeaders } from './auth';
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL;
 
@@ -11,10 +11,26 @@ axios.defaults.headers.common['Content-Type'] = 'application/json';
 // Add response interceptor for better error handling
 axios.interceptors.response.use(
   response => response,
-  error => {
-    console.error('API Error:', error.message);
-    if (error.response) {
-      console.error('Response status:', error.response.status);
+  async error => {
+    if (error.response?.status === 401 && error.config) {
+      // Token expired, try to refresh
+      try {
+        const walletAddress = localStorage.getItem('wallet_address');
+        const provider = window.ethereum ? new ethers.BrowserProvider(window.ethereum) : null;
+        
+        if (walletAddress && provider) {
+          const newToken = await login(walletAddress, provider);
+          localStorage.setItem('jwt_token', newToken);
+          
+          // Retry the original request with new token
+          error.config.headers['Authorization'] = `Bearer ${newToken}`;
+          return axios(error.config);
+        }
+      } catch (refreshError) {
+        console.error('Token refresh failed:', refreshError);
+        // Clear invalid token
+        localStorage.removeItem('jwt_token');
+      }
     }
     return Promise.reject(error);
   }

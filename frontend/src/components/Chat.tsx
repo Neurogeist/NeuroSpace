@@ -85,7 +85,7 @@ export default function Chat() {
     const buttonHoverBgColor = useColorModeValue('blue.600', 'blue.500');
     const iconColor = useColorModeValue('gray.800', 'gray.200');
 
-    const maxMessageWidth = useBreakpointValue({ base: '100%', md: '800px', lg: '1000px' });
+    const maxMessageWidth = useBreakpointValue({ base: '100%', md: '800px' });
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

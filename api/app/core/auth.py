@@ -1,8 +1,14 @@
-from fastapi import HTTPException, Depends, Header, Request
+from fastapi import HTTPException, Depends, Header, Request, status
 from eth_account import Account
 from eth_account.messages import encode_defunct
 from typing import Optional
 import logging
+from datetime import datetime, timedelta
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import JWTError, jwt
+from pydantic import BaseModel
+from web3 import Web3
+from .config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +23,16 @@ class InvalidSignatureError(WalletAuthError):
 class MissingAuthHeadersError(WalletAuthError):
     """Raised when required auth headers are missing."""
     pass
+
+# Security scheme for JWT
+security = HTTPBearer()
+
+class TokenData(BaseModel):
+    wallet_address: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
 
 def verify_wallet_signature(wallet_address: str, signature: str, nonce: str) -> bool:
     """
@@ -92,4 +108,52 @@ async def require_wallet_auth(
         raise HTTPException(
             status_code=500,
             detail="Internal server error during authentication"
-        ) 
+        )
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    """Create a new JWT token."""
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=10)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(
+        to_encode, 
+        settings.JWT_SECRET, 
+        algorithm="HS256"
+    )
+    return encoded_jwt
+
+def verify_wallet_signature_for_login(wallet_address: str, signature: str, nonce: str) -> bool:
+    """Verify the Ethereum signature for login."""
+    try:
+        message = f"Login to NeuroSpace. Nonce: {nonce}"
+        message_hash = encode_defunct(text=message)
+        recovered_address = Web3().eth.account.recover_message(message_hash, signature=signature)
+        return recovered_address.lower() == wallet_address.lower()
+    except Exception as e:
+        logger.error(f"Signature verification failed: {str(e)}")
+        return False
+
+async def require_jwt_auth(credentials: HTTPAuthorizationCredentials = Depends(security)) -> TokenData:
+    """Dependency for JWT authentication."""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    try:
+        token = credentials.credentials
+        payload = jwt.decode(
+            token, 
+            settings.JWT_SECRET, 
+            algorithms=["HS256"]
+        )
+        wallet_address: str = payload.get("sub")
+        if wallet_address is None:
+            raise credentials_exception
+        return TokenData(wallet_address=wallet_address)
+    except JWTError:
+        raise credentials_exception 

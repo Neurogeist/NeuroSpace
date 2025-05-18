@@ -1,20 +1,28 @@
-from fastapi import FastAPI, HTTPException, Request, Depends, Header, File, UploadFile
+from fastapi import FastAPI, HTTPException, Request, Depends, Header, File, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import uuid
 from typing import Dict, Any, List, Optional
 from .models.prompt import PromptRequest, PromptResponse, SessionResponse
 from .services.blockchain import BlockchainService
 from .services.ipfs import IPFSService
 from .services.llm import LLMService
-from .core.config import get_settings
+from .core.config import get_settings, settings
 from .core.rate_limit import RateLimitMiddleware
 from .services.chat_session import ChatSessionService
 from .utils.verifiability import generate_verification_hash
-from .core.auth import require_wallet_auth, verify_wallet_signature
+from .core.auth import (
+    require_wallet_auth,
+    verify_wallet_signature,
+    create_access_token,
+    require_jwt_auth,
+    Token,
+    TokenData,
+    verify_wallet_signature_for_login
+)
 import logging
 import time
 import os
@@ -246,21 +254,55 @@ async def verify_auth(request: WalletAuthRequest):
         logger.error(f"Error verifying signature: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/submit_prompt")
+class LoginRequest(BaseModel):
+    wallet_address: str
+    signature: str
+    nonce: str
+
+@app.post("/auth/login", response_model=Token)
+async def login(request: LoginRequest):
+    """Login endpoint that verifies wallet signature and issues JWT."""
+    if not verify_wallet_signature_for_login(request.wallet_address, request.signature, request.nonce):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid signature",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": request.wallet_address},
+        expires_delta=access_token_expires
+    )
+    return Token(access_token=access_token, token_type="bearer")
+
+class PromptResponse(BaseModel):
+    response: str
+    session_id: str
+    model_id: str
+    model_name: str
+    metadata: Dict[str, Any]
+
+    class Config:
+        json_encoders = {
+            datetime: lambda dt: dt.isoformat()
+        }
+
+@app.post("/submit_prompt", response_model=PromptResponse)
 async def submit_prompt(
     request: PromptRequest,
     request_obj: Request,
-    wallet_address: str = Depends(require_wallet_auth)
+    token_data: TokenData = Depends(require_jwt_auth)
 ):
-    """Submit a prompt and get a response."""
+    """Submit a prompt to the LLM service with JWT authentication."""
+    # Verify the wallet address from JWT matches the request
+    if token_data.wallet_address.lower() != request.user_address.lower():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Wallet address mismatch"
+        )
+    
     try:
-        # Verify that the authenticated wallet matches the request wallet
-        if wallet_address.lower() != request.user_address.lower():
-            raise HTTPException(
-                status_code=403,
-                detail="Authenticated wallet does not match request wallet"
-            )
-            
         # Get client IP from various possible headers
         client_ip = None
         forwarded_for = request_obj.headers.get("X-Forwarded-For")
@@ -314,7 +356,7 @@ async def submit_prompt(
             prompt=request.prompt,
             system_prompt=None,
             temperature=model_config.temperature,
-            max_tokens=model_config.max_new_tokens,  # Use max_new_tokens instead of max_tokens
+            max_tokens=model_config.max_new_tokens,
             session_id=session_id
         )
         
@@ -332,12 +374,12 @@ async def submit_prompt(
             "model_id": model_config.model_id,
             "temperature": model_config.temperature,
             "max_tokens": model_config.max_new_tokens,
-            "system_prompt": None,  # Will fill later if applicable
+            "system_prompt": None,
             "timestamp": timestamp,
             "wallet_address": request.user_address,
             "session_id": session_id,
-            "rag_sources": [],  # placeholder
-            "tool_calls": []    # placeholder
+            "rag_sources": [],
+            "tool_calls": []
         }
 
         # Step 3: Hash
@@ -380,7 +422,7 @@ async def submit_prompt(
                 "model_name": request.model,
                 "model_id": model_config.model_id,
                 "temperature": model_config.temperature,
-                "max_tokens": model_config.max_new_tokens,  # Use max_new_tokens here too
+                "max_tokens": model_config.max_new_tokens,
                 "ipfs_cid": ipfs_cid,
                 "verification_hash": verification_hash,
                 "signature": signature,
@@ -402,7 +444,7 @@ async def submit_prompt(
                 "model_name": request.model,
                 "model_id": model_config.model_id,
                 "temperature": model_config.temperature,
-                "max_tokens": model_config.max_new_tokens,  # And here
+                "max_tokens": model_config.max_new_tokens,
                 "ipfs_cid": ipfs_cid,
                 "verification_hash": verification_hash,
                 "signature": signature,
@@ -417,9 +459,10 @@ async def submit_prompt(
             "response": response,
             "session_id": session_id,
             "model_id": model_config.model_id,
+            "model_name": request.model,
             "metadata": {
                 "temperature": model_config.temperature,
-                "max_tokens": model_config.max_new_tokens,  # And here
+                "max_tokens": model_config.max_new_tokens,
                 "top_p": model_config.top_p,
                 "do_sample": model_config.do_sample,
                 "num_beams": model_config.num_beams,

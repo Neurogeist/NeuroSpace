@@ -79,6 +79,11 @@ class Settings(BaseSettings):
 
     REDIS_URL: Optional[str] = None
     
+    # JWT Settings
+    JWT_SECRET: str = "supersecret"  # Fallback secret, should be overridden in production
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 10
+    
     @property
     def is_production(self) -> bool:
         """Check if the environment is production."""

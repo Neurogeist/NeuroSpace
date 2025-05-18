@@ -2,9 +2,7 @@ import { ethers } from 'ethers';
 import { AxiosHeaders } from 'axios';
 
 export type AuthHeaders = {
-    'wallet-address': string;
-    'wallet-signature': string;
-    'wallet-nonce': string;
+    'Authorization': string;
 };
 
 export const generateNonce = (): string => {
@@ -18,7 +16,7 @@ export const signMessage = async (
 ): Promise<string> => {
     try {
         const signer = await provider.getSigner();
-        const message = `Sign this message to authenticate with NeuroSpace. Nonce: ${nonce}`;
+        const message = `Login to NeuroSpace. Nonce: ${nonce}`;
         const signature = await signer.signMessage(message);
         return signature;
     } catch (error) {
@@ -27,16 +25,46 @@ export const signMessage = async (
     }
 };
 
+export const login = async (
+    walletAddress: string,
+    provider: ethers.BrowserProvider
+): Promise<string> => {
+    const nonce = generateNonce();
+    const signature = await signMessage(walletAddress, nonce, provider);
+    
+    const response = await fetch(`${import.meta.env.VITE_API_URL}/auth/login`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            wallet_address: walletAddress,
+            signature,
+            nonce
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error('Login failed');
+    }
+
+    const data = await response.json();
+    return data.access_token;
+};
+
 export const getAuthHeaders = async (
     walletAddress: string,
     provider: ethers.BrowserProvider
 ): Promise<AuthHeaders> => {
-    const nonce = generateNonce();
-    const signature = await signMessage(walletAddress, nonce, provider);
+    // Get token from localStorage or login if not present
+    let token = localStorage.getItem('jwt_token');
+    
+    if (!token) {
+        token = await login(walletAddress, provider);
+        localStorage.setItem('jwt_token', token);
+    }
     
     return {
-        'wallet-address': walletAddress,
-        'wallet-signature': signature,
-        'wallet-nonce': nonce
+        'Authorization': `Bearer ${token}`
     };
 }; 
