@@ -19,17 +19,22 @@ axios.interceptors.response.use(
         const provider = window.ethereum ? new ethers.BrowserProvider(window.ethereum) : null;
         
         if (walletAddress && provider) {
+          // Prompt user to sign a new message to get a fresh token
           const newToken = await login(walletAddress, provider);
-          localStorage.setItem('jwt_token', newToken);
-          
-          // Retry the original request with new token
-          error.config.headers['Authorization'] = `Bearer ${newToken}`;
-          return axios(error.config);
+          if (newToken) {
+            localStorage.setItem('jwt_token', newToken);
+            
+            // Retry the original request with new token
+            error.config.headers['Authorization'] = `Bearer ${newToken}`;
+            return axios(error.config);
+          }
         }
       } catch (refreshError) {
         console.error('Token refresh failed:', refreshError);
         // Clear invalid token
         localStorage.removeItem('jwt_token');
+        // Throw the original error to trigger the error handling in the component
+        throw error;
       }
     }
     return Promise.reject(error);

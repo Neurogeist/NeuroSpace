@@ -56,9 +56,10 @@ export const getAuthHeaders = async (
     walletAddress: string,
     provider: ethers.BrowserProvider
 ): Promise<AuthHeaders> => {
-    // Get token from localStorage or login if not present
+    // Get token from localStorage
     let token = localStorage.getItem('jwt_token');
     
+    // If no token exists, get a new one
     if (!token) {
         token = await login(walletAddress, provider);
         localStorage.setItem('jwt_token', token);
