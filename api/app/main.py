@@ -33,6 +33,9 @@ from fastapi.exceptions import RequestValidationError
 from sqlalchemy import func
 from pathlib import Path
 import shutil
+import magic
+import subprocess
+import tempfile
 
 # Configure logging
 logging.basicConfig(
@@ -612,29 +615,48 @@ class FileUploadError(Exception):
     pass
 
 def validate_file_type(content: bytes, filename: str) -> bool:
-    """Validate file type using file extension and content inspection."""
+    ext = os.path.splitext(filename)[1].lower()
+
+    allowed_extensions = {".pdf", ".txt", ".doc", ".docx", ".md", ".csv"}
+    if ext not in allowed_extensions:
+        raise FileUploadError(f"File extension {ext} not allowed")
+
+    # Use python-magic to check MIME type
+    mime = magic.from_buffer(content, mime=True)
+
+    expected_mimes = {
+        ".pdf": "application/pdf",
+        ".txt": "text/plain",
+        ".md": "text/plain",  # Markdown is treated as plain
+        ".doc": "application/msword",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".csv": "text/plain",
+    }
+
+    expected = expected_mimes.get(ext)
+    if expected and not mime.startswith(expected):
+        raise FileUploadError(f"Expected MIME type {expected}, got {mime}")
+
+    return True
+
+def scan_with_clamav(file_bytes: bytes, filename: str):
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        tmp.write(file_bytes)
+        tmp_path = tmp.name
+
     try:
-        # Get file extension
-        ext = os.path.splitext(filename)[1].lower()
-        
-        # Check if extension is allowed
-        if ext not in UPLOAD_CONFIG["allowed_types"]:
-            raise FileUploadError(f"File extension {ext} not allowed")
-        
-        # Get expected signature for this file type
-        expected_signature = UPLOAD_CONFIG["allowed_types"][ext]
-        
-        # If no signature is defined for this type, accept it
-        if expected_signature is None:
-            return True
-            
-        # Check file signature
-        if not content.startswith(expected_signature):
-            raise FileUploadError(f"File content does not match expected format for {ext}")
-            
-        return True
-    except Exception as e:
-        raise FileUploadError(f"File type validation failed: {str(e)}")
+        result = subprocess.run(
+            ["clamscan", tmp_path],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 1:
+            raise FileUploadError("Malicious file detected by ClamAV")
+        elif result.returncode > 1:
+            raise FileUploadError(f"ClamAV error: {result.stderr.strip()}")
+
+    finally:
+        os.remove(tmp_path)
 
 def get_wallet_upload_count(wallet_address: str, db: Session) -> int:
     """Get the number of files uploaded by a wallet."""
@@ -727,6 +749,18 @@ async def upload_document(
                     "error": "Invalid file type",
                     "message": str(e),
                     "allowed_types": list(UPLOAD_CONFIG["allowed_types"].keys())
+                }
+            )
+        
+        # Scan for malware
+        try:
+            scan_with_clamav(content, file.filename)
+        except FileUploadError as e:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Malware detected",
+                    "message": str(e)
                 }
             )
         
