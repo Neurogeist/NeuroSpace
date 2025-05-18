@@ -83,58 +83,61 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const loadModels = useCallback(async () => {
     setIsLoadingModels(true);
     try {
-      const modelsData = await getAvailableModels();
-      setModels(modelsData);
-      setError(null);
+        if (!userAddress || !provider) {
+            console.log('No user address or provider available, skipping model load');
+            setModels({});
+            return;
+        }
+
+        const modelsData = await getAvailableModels(userAddress, provider);
+        setModels(modelsData);
+        setError(null);
     } catch (err) {
-      console.error('Error loading models:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load models');
-      setModels({}); // Clear models on error
+        console.error('Error loading models:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load models');
+        setModels({}); // Clear models on error
     } finally {
-      setIsLoadingModels(false);
+        setIsLoadingModels(false);
     }
-  }, []); // No dependencies, models don't depend on user address
+}, [userAddress, provider]); // Add dependencies
 
   // --- Session Loading (Depends on userAddress) ---
   const loadSessions = useCallback(async (address: string | null) => {
-    // Only load if address is valid
-    if (!address) {
-      console.log("No address provided to loadSessions, clearing sessions.");
-      setSessions([]); // Clear sessions if no address
-      setIsLoadingSessions(false);
-      return;
+    // Only load if address is valid and provider is available
+    if (!address || !provider) {
+        console.log("No address or provider available, clearing sessions.");
+        setSessions([]); // Clear sessions if no address
+        setIsLoadingSessions(false);
+        return;
     }
 
-    // Remove sensitive address logging
-    // console.log(`Context: Attempting to load sessions for ${address}`);
     setIsLoadingSessions(true);
     setError(null);
     try {
-      // CORRECTED: Pass the address to getSessions
-      const sessionsData = await getSessions(address);
-      setSessions(sessionsData);
+        const sessionsData = await getSessions(address, provider);
+        setSessions(sessionsData);
 
-      // Validate active session (optional, but good practice)
-      const activeSessionId = localStorage.getItem('activeSessionId');
-      if (activeSessionId && sessionsData.length > 0) {
-        const sessionExists = sessionsData.some(session => session.session_id === activeSessionId);
-        if (!sessionExists) {
-          console.log(`Context: Active session ${activeSessionId} not found in loaded sessions, clearing local storage.`);
-          localStorage.removeItem('activeSessionId');
+        // Validate active session (optional, but good practice)
+        const activeSessionId = localStorage.getItem('activeSessionId');
+        if (activeSessionId && sessionsData.length > 0) {
+            const sessionExists = sessionsData.some(session => session.session_id === activeSessionId);
+            if (!sessionExists) {
+                console.log(`Context: Active session ${activeSessionId} not found in loaded sessions, clearing local storage.`);
+                localStorage.removeItem('activeSessionId');
+            }
+        } else if (activeSessionId) {
+            // Clear if there are no sessions but local storage still has an ID
+            localStorage.removeItem('activeSessionId');
         }
-      } else if (activeSessionId) {
-         // Clear if there are no sessions but local storage still has an ID
-         localStorage.removeItem('activeSessionId');
-      }
 
     } catch (err) {
-      console.error('Error loading sessions in context:', err instanceof Error ? err.message : 'Unknown error');
-      setError(err instanceof Error ? err.message : 'Failed to load sessions');
-      setSessions([]); // Clear sessions on error
+        console.error('Error loading sessions in context:', err instanceof Error ? err.message : 'Unknown error');
+        setError(err instanceof Error ? err.message : 'Failed to load sessions');
+        setSessions([]); // Clear sessions on error
     } finally {
-      setIsLoadingSessions(false);
+        setIsLoadingSessions(false);
     }
-  }, []); // Depends on the function itself, not external state changes here
+}, [provider]); // Add provider as a dependency
 
   // Function exposed to components for refreshing sessions
   const refreshSessions = async () => {
@@ -149,10 +152,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // --- Initial Data Loading Effects ---
 
-  // Load models once on mount
+  // Load models when userAddress or provider changes
   useEffect(() => {
-    loadModels();
-  }, [loadModels]);
+    if (userAddress && provider) {
+        loadModels();
+    }
+  }, [userAddress, provider, loadModels]);
 
   // Load sessions whenever the userAddress changes
   useEffect(() => {

@@ -479,9 +479,15 @@ async def submit_prompt(
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/models")
-async def get_available_models():
+async def get_available_models(token_data: TokenData = Depends(require_jwt_auth)):
     """Get a list of available models."""
     try:
+        if not token_data or not token_data.wallet_address:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentication required"
+            )
+
         models = llm_service.get_available_models()
         return {"models": models}
     except Exception as e:
@@ -489,7 +495,10 @@ async def get_available_models():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/sessions/{session_id}", response_model=SessionResponse)
-async def get_session(session_id: str):
+async def get_session(
+    session_id: str,
+    token_data: TokenData = Depends(require_jwt_auth)
+):
     try:
         messages = chat_session_service.get_session_messages(session_id)
         if not messages:
@@ -499,6 +508,10 @@ async def get_session(session_id: str):
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()
             )
+
+        # Verify the session belongs to the authenticated wallet
+        if messages[0].metadata.get('wallet_address', '').lower() != token_data.wallet_address.lower():
+            raise HTTPException(status_code=403, detail="Unauthorized access to session")
 
         return SessionResponse(
             session_id=session_id,
@@ -510,28 +523,38 @@ async def get_session(session_id: str):
         logger.error(f"Error retrieving session: {str(e)}")
         raise HTTPException(status_code=500, detail="Error retrieving session")
 
-
-@app.get("/sessions", response_model=List[SessionResponse])
-async def get_sessions(wallet_address: Optional[str] = None):
-    """Get all chat sessions. Optionally filter by wallet address."""
-    try:
-        if not wallet_address:
-            raise HTTPException(status_code=400, detail="wallet_address query parameter is required")
-        
-        sessions = chat_session_service.get_all_sessions(wallet_address=wallet_address)
-        return [SessionResponse.from_chat_session(session) for session in sessions]
-    except Exception as e:
-        logger.error(f"Error retrieving sessions: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.delete("/sessions/{session_id}")
-async def delete_session(session_id: str):
+async def delete_session(
+    session_id: str,
+    token_data: TokenData = Depends(require_jwt_auth)
+):
     """Delete a chat session and all its messages."""
     try:
+        # Verify the session belongs to the authenticated wallet
+        session = chat_session_service.get_session(session_id)
+        if not session or session.wallet_address.lower() != token_data.wallet_address.lower():
+            raise HTTPException(status_code=403, detail="Unauthorized access to session")
+
         chat_session_service.delete_session(session_id)
         return Response(status_code=204)
     except Exception as e:
         logger.error(f"Error deleting session: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/sessions", response_model=List[SessionResponse])
+async def get_sessions(token_data: TokenData = Depends(require_jwt_auth)):
+    """Get all chat sessions for the authenticated wallet."""
+    try:
+        if not token_data or not token_data.wallet_address:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentication required"
+            )
+
+        sessions = chat_session_service.get_all_sessions(wallet_address=token_data.wallet_address)
+        return [SessionResponse.from_chat_session(session) for session in sessions]
+    except Exception as e:
+        logger.error(f"Error retrieving sessions: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 class CreateSessionRequest(BaseModel):
@@ -761,14 +784,14 @@ def get_db():
 @app.post("/rag/upload")
 async def upload_document(
     file: UploadFile = File(...),
-    wallet_address: str = Depends(require_wallet_auth),
+    token_data: TokenData = Depends(require_jwt_auth),
     db: Session = Depends(get_db)
 ):
     """Upload a document for RAG with security measures."""
     temp_path = None
     try:
-        # Validate wallet address
-        wallet_address = validate_wallet_address(wallet_address)
+        # Use wallet address from JWT token
+        wallet_address = token_data.wallet_address
 
         # Validate filename
         if len(file.filename) > MAX_FILENAME_LENGTH:
@@ -903,10 +926,10 @@ async def query_documents(request: RAGQueryRequest):
 
 
 @app.get("/rag/documents")
-async def get_documents(wallet_address: str = Depends(require_wallet_auth)):
+async def get_documents(token_data: TokenData = Depends(require_jwt_auth)):
     """Get list of uploaded documents for a specific wallet address."""
     try:
-        documents = await rag_service.get_documents(wallet_address)
+        documents = await rag_service.get_documents(token_data.wallet_address)
         return documents
     except Exception as e:
         logger.error(f"Error getting documents: {str(e)}")
@@ -915,11 +938,11 @@ async def get_documents(wallet_address: str = Depends(require_wallet_auth)):
 @app.delete("/rag/documents/{document_id}")
 async def delete_document(
     document_id: str,
-    wallet_address: str = Depends(require_wallet_auth)
+    token_data: TokenData = Depends(require_jwt_auth)
 ):
     """Delete a document and its chunks from the database."""
     try:
-        success = rag_service.delete_document(document_id, wallet_address)
+        success = rag_service.delete_document(document_id, token_data.wallet_address)
         if not success:
             raise HTTPException(status_code=404, detail="Document not found or unauthorized")
         return {"status": "success", "message": "Document deleted successfully"}
@@ -977,13 +1000,13 @@ class FlagMessageRequest(BaseModel):
 @app.post("/flag")
 async def flag_message(
     request: FlagMessageRequest,
-    wallet_address: str = Depends(require_wallet_auth)
+    token_data: TokenData = Depends(require_jwt_auth)
 ):
     try:
         flagged_message = flagging_service.flag_message(
             str(request.message_id),
             request.reason,
-            wallet_address,
+            token_data.wallet_address,
             request.note
         )
         return {"status": "success", "flagged_message": flagged_message}
@@ -1047,9 +1070,16 @@ class FreeRequestRequest(BaseModel):
             raise ValueError('Invalid session ID format')
 
 @app.get("/free-requests/{user_address}")
-async def get_free_requests(user_address: str):
+async def get_free_requests(
+    user_address: str,
+    token_data: TokenData = Depends(require_jwt_auth)
+):
     """Get the number of remaining free requests for a user."""
     try:
+        # Verify the wallet address matches the JWT token
+        if user_address.lower() != token_data.wallet_address.lower():
+            raise HTTPException(status_code=403, detail="Wallet address mismatch")
+
         remaining_requests = payment_service.get_remaining_free_requests(user_address)
         return {"remaining_requests": remaining_requests}
     except Exception as e:
@@ -1057,9 +1087,16 @@ async def get_free_requests(user_address: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/use-free-request")
-async def use_free_request(request: FreeRequestRequest):
+async def use_free_request(
+    request: FreeRequestRequest,
+    token_data: TokenData = Depends(require_jwt_auth)
+):
     """Use a free request for a user."""
     try:
+        # Verify the wallet address matches the JWT token
+        if request.userAddress.lower() != token_data.wallet_address.lower():
+            raise HTTPException(status_code=403, detail="Wallet address mismatch")
+
         if payment_service._has_free_request(request.userAddress):
             remaining = payment_service.get_remaining_free_requests(request.userAddress)
             return {

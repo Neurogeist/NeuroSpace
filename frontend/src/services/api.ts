@@ -73,10 +73,23 @@ export interface VerificationResponse {
     match: boolean;
 }
 
-export const getAvailableModels = async (): Promise<{ [key: string]: string }> => {
-  const response = await axios.get(`${API_BASE_URL}/models`);
-  // The backend returns { models: { [name: string]: id } }
-  return response.data.models;
+export const getAvailableModels = async (
+    userAddress: string,
+    provider?: ethers.BrowserProvider
+): Promise<{ [key: string]: string }> => {
+    try {
+        const authHeaders = provider ? 
+            await getAuthHeaders(userAddress, provider) : 
+            undefined;
+
+        const headers = authHeaders ? new AxiosHeaders(authHeaders as Record<string, string>) : undefined;
+
+        const response = await axios.get(`${API_BASE_URL}/models`, { headers });
+        return response.data.models;
+    } catch (error) {
+        console.error('Error getting available models:', error);
+        throw error;
+    }
 };
 
 export const submitPrompt = async (
@@ -126,16 +139,14 @@ export const getSessions = async (
     provider?: ethers.BrowserProvider
 ): Promise<ChatSession[]> => {
     try {
-        const authHeaders = provider ? 
-            await getAuthHeaders(userAddress, provider) : 
-            undefined;
+        if (!provider) {
+            throw new Error('Provider is required for authentication');
+        }
 
-        const headers = authHeaders ? new AxiosHeaders(authHeaders as Record<string, string>) : undefined;
+        const authHeaders = await getAuthHeaders(userAddress, provider);
+        const headers = new AxiosHeaders(authHeaders as Record<string, string>);
 
         const response = await axios.get(`${API_BASE_URL}/sessions`, {
-            params: {
-                wallet_address: userAddress
-            },
             headers
         });
         return response.data;
