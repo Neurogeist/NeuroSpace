@@ -8,39 +8,6 @@ export const API_BASE_URL = import.meta.env.VITE_API_URL;
 axios.defaults.withCredentials = false;
 axios.defaults.headers.common['Content-Type'] = 'application/json';
 
-// Add response interceptor for better error handling
-axios.interceptors.response.use(
-  response => response,
-  async error => {
-    if (error.response?.status === 401 && error.config) {
-      // Token expired, try to refresh
-      try {
-        const walletAddress = localStorage.getItem('wallet_address');
-        const provider = window.ethereum ? new ethers.BrowserProvider(window.ethereum) : null;
-        
-        if (walletAddress && provider) {
-          // Prompt user to sign a new message to get a fresh token
-          const newToken = await login(walletAddress, provider);
-          if (newToken) {
-            localStorage.setItem('jwt_token', newToken);
-            
-            // Retry the original request with new token
-            error.config.headers['Authorization'] = `Bearer ${newToken}`;
-            return axios(error.config);
-          }
-        }
-      } catch (refreshError) {
-        console.error('Token refresh failed:', refreshError);
-        // Clear invalid token
-        localStorage.removeItem('jwt_token');
-        // Throw the original error to trigger the error handling in the component
-        throw error;
-      }
-    }
-    return Promise.reject(error);
-  }
-);
-
 export interface Model {
   name: string;
   description: string;
