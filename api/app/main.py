@@ -23,6 +23,7 @@ from .core.auth import (
     TokenData,
     verify_wallet_signature_for_login
 )
+from .models.chat import ChatSessionDB
 import logging
 import time
 import os
@@ -530,11 +531,19 @@ async def delete_session(
 ):
     """Delete a chat session and all its messages."""
     try:
+        # First check if the session exists in the database
+        db_session = chat_session_service.db.query(ChatSessionDB).filter(
+            ChatSessionDB.id == uuid.UUID(session_id)
+        ).first()
+        
+        if not db_session:
+            raise HTTPException(status_code=404, detail="Session not found")
+            
         # Verify the session belongs to the authenticated wallet
-        session = chat_session_service.get_session(session_id)
-        if not session or session.wallet_address.lower() != token_data.wallet_address.lower():
+        if db_session.wallet_address.lower() != token_data.wallet_address.lower():
             raise HTTPException(status_code=403, detail="Unauthorized access to session")
 
+        # Delete the session and its messages
         chat_session_service.delete_session(session_id)
         return Response(status_code=204)
     except Exception as e:

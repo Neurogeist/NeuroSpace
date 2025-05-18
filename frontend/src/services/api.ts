@@ -241,11 +241,12 @@ export const deleteSession = async (
     userAddress: string,
     provider?: ethers.BrowserProvider
 ): Promise<void> => {
-    const authHeaders = provider ? 
-        await getAuthHeaders(userAddress, provider) : 
-        undefined;
+    if (!provider) {
+        throw new Error('Provider is required for authentication');
+    }
 
-    const headers = authHeaders ? new AxiosHeaders(authHeaders as Record<string, string>) : undefined;
+    const authHeaders = await getAuthHeaders(userAddress, provider);
+    const headers = new AxiosHeaders(authHeaders as Record<string, string>);
 
     const response = await axios.delete(
         `${API_BASE_URL}/sessions/${sessionId}`,

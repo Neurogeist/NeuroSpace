@@ -539,6 +539,8 @@ export default function Chat() {
                             activeSessionId={activeSessionId}
                             onNewChat={handleNewChat}
                             onSelectSession={handleSelectSession}
+                            userAddress={userAddress}
+                            provider={provider}
                         />
                     </Box>
                 </Box>
