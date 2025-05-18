@@ -920,9 +920,16 @@ class RAGQueryRequest(BaseModel):
         return validate_wallet_address(v)
 
 @app.post("/rag/query")
-async def query_documents(request: RAGQueryRequest):
+async def query_documents(
+    request: RAGQueryRequest,
+    token_data: TokenData = Depends(require_jwt_auth)
+):
     """Query uploaded documents using vector search + LLM, return a verifiable answer."""
     try:
+        # Verify the wallet address matches the JWT token
+        if request.wallet_address.lower() != token_data.wallet_address.lower():
+            raise HTTPException(status_code=403, detail="Wallet address mismatch")
+
         result = await rag_service.query_documents(
             query=request.query,
             wallet_address=request.wallet_address,
