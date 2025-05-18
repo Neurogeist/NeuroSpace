@@ -14,6 +14,7 @@ from .core.config import get_settings
 from .core.rate_limit import RateLimitMiddleware
 from .services.chat_session import ChatSessionService
 from .utils.verifiability import generate_verification_hash
+from .core.auth import require_wallet_auth, verify_wallet_signature
 import logging
 import time
 import os
@@ -225,10 +226,41 @@ class PromptRequest(BaseModel):
                 raise ValueError('Invalid transaction hash format')
         return v
 
+class WalletAuthRequest(BaseModel):
+    wallet_address: str = Field(..., description="Ethereum wallet address")
+    signature: str = Field(..., description="Wallet signature")
+    nonce: str = Field(..., description="Nonce used in signature")
+
+    @validator('wallet_address')
+    def validate_wallet_address(cls, v):
+        return validate_wallet_address(v)
+
+@app.post("/auth/verify")
+async def verify_auth(request: WalletAuthRequest):
+    """Verify a wallet signature."""
+    try:
+        if verify_wallet_signature(request.wallet_address, request.signature, request.nonce):
+            return {"status": "success", "message": "Signature verified"}
+        raise HTTPException(status_code=401, detail="Invalid signature")
+    except Exception as e:
+        logger.error(f"Error verifying signature: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/submit_prompt")
-async def submit_prompt(request: PromptRequest, request_obj: Request):
+async def submit_prompt(
+    request: PromptRequest,
+    request_obj: Request,
+    wallet_address: str = Depends(require_wallet_auth)
+):
     """Submit a prompt and get a response."""
     try:
+        # Verify that the authenticated wallet matches the request wallet
+        if wallet_address.lower() != request.user_address.lower():
+            raise HTTPException(
+                status_code=403,
+                detail="Authenticated wallet does not match request wallet"
+            )
+            
         # Get client IP from various possible headers
         client_ip = None
         forwarded_for = request_obj.headers.get("X-Forwarded-For")
@@ -686,7 +718,7 @@ def get_db():
 @app.post("/rag/upload")
 async def upload_document(
     file: UploadFile = File(...),
-    wallet_address: str = Header(..., description="Ethereum wallet address"),
+    wallet_address: str = Depends(require_wallet_auth),
     db: Session = Depends(get_db)
 ):
     """Upload a document for RAG with security measures."""
@@ -828,18 +860,20 @@ async def query_documents(request: RAGQueryRequest):
 
 
 @app.get("/rag/documents")
-async def get_documents(wallet_address: str = Header(...)):
+async def get_documents(wallet_address: str = Depends(require_wallet_auth)):
     """Get list of uploaded documents for a specific wallet address."""
     try:
         documents = await rag_service.get_documents(wallet_address)
         return documents
-        
     except Exception as e:
         logger.error(f"Error getting documents: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/rag/documents/{document_id}")
-async def delete_document(document_id: str, wallet_address: str = Header(...)):
+async def delete_document(
+    document_id: str,
+    wallet_address: str = Depends(require_wallet_auth)
+):
     """Delete a document and its chunks from the database."""
     try:
         success = rag_service.delete_document(document_id, wallet_address)
@@ -900,7 +934,7 @@ class FlagMessageRequest(BaseModel):
 @app.post("/flag")
 async def flag_message(
     request: FlagMessageRequest,
-    wallet_address: str = Header(...)
+    wallet_address: str = Depends(require_wallet_auth)
 ):
     try:
         flagged_message = flagging_service.flag_message(

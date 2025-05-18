@@ -1,9 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { getAvailableModels, getSessions, ChatSession } from '../services/api'; // Assuming ChatSession is exported from api or types
 import { connectWallet as connectWalletService } from '../services/blockchain'; // Import your actual connect service
+import { ethers } from 'ethers';
 
 interface AppContextType {
   userAddress: string | null; // Add userAddress state
+  provider: ethers.BrowserProvider | null;
   connectWallet: () => Promise<string | null>; // Add connect function
   models: { [key: string]: string };
   sessions: ChatSession[]; // Use correct type if available
@@ -12,24 +14,38 @@ interface AppContextType {
   error: string | null;
   refreshSessions: () => Promise<void>;
   refreshModels: () => Promise<void>;
+  isApproved: boolean;
+  setIsApproved: (approved: boolean) => void;
+  tokenBalance: string;
+  setTokenBalance: (balance: string) => void;
+  remainingFreeRequests: number;
+  setRemainingFreeRequests: (count: number) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [userAddress, setUserAddress] = useState<string | null>(null); // Wallet address state
+  const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null);
   const [models, setModels] = useState<{ [key: string]: string }>({});
   const [sessions, setSessions] = useState<ChatSession[]>([]); // Use specific type
   const [isLoadingModels, setIsLoadingModels] = useState(true);
   const [isLoadingSessions, setIsLoadingSessions] = useState(false); // Initially false, load sessions only when address is known
   const [error, setError] = useState<string | null>(null);
+  const [isApproved, setIsApproved] = useState(false);
+  const [tokenBalance, setTokenBalance] = useState<string>('0');
+  const [remainingFreeRequests, setRemainingFreeRequests] = useState<number>(0);
   
   useEffect(() => {
     const tryAutoConnect = async () => {
       if (!userAddress) {
         try {
-          const address = await connectWalletService(); // Or use injected `window.ethereum` manually
+          const address = await connectWalletService();
           setUserAddress(address);
+          if (window.ethereum) {
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            setProvider(provider);
+          }
           console.log("🔁 Auto-connected wallet:", address);
         } catch (err) {
           console.warn("⚠️ Auto-connect failed or wallet not available");
@@ -46,12 +62,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       const address = await connectWalletService();
       setUserAddress(address);
+      if (window.ethereum) {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        setProvider(provider);
+      }
       setError(null); // Clear previous errors on successful connect
       console.log("Wallet connected in context:", address);
       return address;
     } catch (err) {
       console.error('Error connecting wallet in context:', err);
       setUserAddress(null); // Ensure address is null on error
+      setProvider(null);
       setSessions([]); // Clear sessions if wallet disconnects or fails to connect
       setError(err instanceof Error ? err.message : 'Failed to connect wallet');
       return null;
@@ -148,6 +169,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     <AppContext.Provider
       value={{
         userAddress,
+        provider,
         connectWallet,
         models,
         sessions,
@@ -156,6 +178,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         error,
         refreshSessions,
         refreshModels,
+        isApproved,
+        setIsApproved,
+        tokenBalance,
+        setTokenBalance,
+        remainingFreeRequests,
+        setRemainingFreeRequests
       }}
     >
       {children}
