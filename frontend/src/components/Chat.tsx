@@ -28,7 +28,7 @@ import {
 } from '@chakra-ui/react';
 import { ChevronLeftIcon, ChevronRightIcon } from '@chakra-ui/icons';
 import { ChatMessage } from '../types/chat';
-import { submitPrompt, getSession, createSession, deleteSession } from '../services/api';
+import { submitPrompt, getSession, createSession } from '../services/api';
 import Sidebar from './Sidebar';
 import ChatMessageComponent from './ChatMessage';
 import { useApp } from '../context/AppContext';
