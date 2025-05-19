@@ -1,6 +1,6 @@
 import axios, { AxiosHeaders } from 'axios';
 import { ethers } from 'ethers';
-import { getAuthHeaders, login, AuthHeaders } from './auth';
+import { getAuthHeaders } from './auth';
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL;
 

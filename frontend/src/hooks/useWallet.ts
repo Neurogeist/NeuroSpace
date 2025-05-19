@@ -5,6 +5,7 @@ interface WalletState {
     address: string | null;
     isConnected: boolean;
     chainId: string | null;
+    provider: ethers.BrowserProvider | null;
 }
 
 const standardizeAddress = (address: string | null): string | null => {
@@ -16,6 +17,7 @@ export const useWallet = () => {
         address: null,
         isConnected: false,
         chainId: null,
+        provider: null,
     });
 
     const connect = useCallback(async () => {
@@ -33,6 +35,7 @@ export const useWallet = () => {
                 address: standardizeAddress(accounts[0]),
                 isConnected: true,
                 chainId: network.chainId.toString(),
+                provider,
             });
         } catch (error) {
             console.error('Error connecting wallet:', error);
@@ -44,6 +47,7 @@ export const useWallet = () => {
             address: null,
             isConnected: false,
             chainId: null,
+            provider: null,
         });
     }, []);
 
@@ -85,6 +89,7 @@ export const useWallet = () => {
                         address: standardizeAddress(accounts[0].address),
                         isConnected: true,
                         chainId: network.chainId.toString(),
+                        provider,
                     });
                 }
             } catch (error) {

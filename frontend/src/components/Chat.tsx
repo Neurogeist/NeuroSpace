@@ -28,7 +28,7 @@ import {
 } from '@chakra-ui/react';
 import { ChevronLeftIcon, ChevronRightIcon } from '@chakra-ui/icons';
 import { ChatMessage } from '../types/chat';
-import { submitPrompt, getSession, createSession, deleteSession, getSessions } from '../services/api';
+import { submitPrompt, getSession, createSession, deleteSession } from '../services/api';
 import Sidebar from './Sidebar';
 import ChatMessageComponent from './ChatMessage';
 import { useApp } from '../context/AppContext';
@@ -423,47 +423,6 @@ export default function Chat() {
             return name.length > 20 ? `${name.slice(0, 17)}...` : name;
         }
         return name;
-    };
-
-    const handleDeleteSession = async (sessionId: string) => {
-        if (!userAddress || !provider) return;
-        try {
-            await deleteSession(sessionId, userAddress, provider);
-            await refreshSessions();
-            if (activeSessionId === sessionId) {
-                setActiveSessionId(null);
-                localStorage.removeItem('activeSessionId');
-                setMessages([]);
-            }
-        } catch (error) {
-            console.error('Error deleting session:', error);
-            toast({
-                title: "Error",
-                description: "Failed to delete session",
-                status: "error",
-                duration: 3000,
-                isClosable: true
-            });
-        }
-    };
-
-    const handleSessionSelect = async (sessionId: string) => {
-        if (!userAddress || !provider) return;
-        try {
-            const session = await getSession(sessionId, userAddress, provider);
-            setMessages(session.messages);
-            setActiveSessionId(sessionId);
-            localStorage.setItem('activeSessionId', sessionId);
-        } catch (error) {
-            console.error('Error loading session:', error);
-            toast({
-                title: "Error",
-                description: "Failed to load session",
-                status: "error",
-                duration: 3000,
-                isClosable: true
-            });
-        }
     };
 
     return (

@@ -1,5 +1,4 @@
 import { ethers } from 'ethers';
-import { AxiosHeaders } from 'axios';
 import { isTokenExpired, isTokenExpiringSoon } from '../utils/token';
 
 export type AuthHeaders = {
