@@ -38,6 +38,8 @@ instance/
 .env
 .env.development
 .env.production
+.env.*
+!.env.example
 .venv
 env/
 venv/

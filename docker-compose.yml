@@ -9,16 +9,14 @@ services:
       - .:/app
       - ./uploads:/app/uploads
       - ./temp_uploads:/app/temp_uploads
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/neurospace
-      - REDIS_URL=redis://redis:6379/0
-      - ENVIRONMENT=development
+    env_file:
+      - .env
     depends_on:
       - db
       - redis
 
   db:
-    image: postgres:15
+    image: ankane/pgvector:latest
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
@@ -27,6 +25,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
 
   redis:
     image: redis:7

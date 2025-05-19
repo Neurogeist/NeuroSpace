@@ -30,6 +30,7 @@ A decentralized system for submitting prompts and generating responses using loc
 - MetaMask wallet with Base Sepolia network configured
 - Hardhat for smart contract development
 - Git for version control
+- Docker and Docker Compose
 
 ## Installation
 
@@ -210,6 +211,70 @@ npm run dev
   - Optional fields: session_id
 
 ## Development
+
+## 🚀 Running the Backend Locally
+
+The backend uses Docker Compose to manage services including the FastAPI application, PostgreSQL with pgvector support, and Redis for rate limiting.
+
+### 1. Environment Setup
+
+Create a `.env` file in the root directory:
+
+```bash
+cp .env.example .env
+```
+
+### 2. Running with Docker Compose
+
+Build and start all services:
+
+```bash
+docker compose up --build
+```
+
+This will:
+- Build the FastAPI application container
+- Start PostgreSQL with pgvector support (using ankane/pgvector)
+- Start Redis for rate limiting
+- Auto-create the database schema using `db/init.sql`
+- Mount the uploads and temp_uploads directories as volumes
+
+The services will be available at:
+- FastAPI: http://localhost:8000
+- PostgreSQL: localhost:5432
+- Redis: localhost:6379
+
+### 3. Running Tests
+
+Run the test suite using make:
+
+```bash
+make test
+```
+
+This will execute:
+- Unit tests
+- Integration tests
+- Database migration tests
+- API endpoint tests
+
+### 4. Development Workflow
+
+For local development:
+1. The code is mounted as a volume, so changes will be reflected immediately
+2. The database schema is automatically created on first run
+3. Uploads are persisted in the `./uploads` directory
+4. Logs are available through `docker compose logs -f api`
+
+To stop all services:
+```bash
+docker compose down
+```
+
+To stop and remove volumes (including database data):
+```bash
+docker compose down -v
+```
 
 ### Backend
 
