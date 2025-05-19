@@ -1,22 +1,12 @@
-import axios from 'axios';
+import axios, { AxiosHeaders } from 'axios';
+import { ethers } from 'ethers';
+import { getAuthHeaders } from './auth';
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL;
 
 // Configure axios defaults
 axios.defaults.withCredentials = false;
 axios.defaults.headers.common['Content-Type'] = 'application/json';
-
-// Add response interceptor for better error handling
-axios.interceptors.response.use(
-  response => response,
-  error => {
-    console.error('API Error:', error.message);
-    if (error.response) {
-      console.error('Response status:', error.response.status);
-    }
-    return Promise.reject(error);
-  }
-);
 
 export interface Model {
   name: string;
@@ -83,10 +73,23 @@ export interface VerificationResponse {
     match: boolean;
 }
 
-export const getAvailableModels = async (): Promise<{ [key: string]: string }> => {
-  const response = await axios.get(`${API_BASE_URL}/models`);
-  // The backend returns { models: { [name: string]: id } }
-  return response.data.models;
+export const getAvailableModels = async (
+    userAddress: string,
+    provider?: ethers.BrowserProvider
+): Promise<{ [key: string]: string }> => {
+    try {
+        const authHeaders = provider ? 
+            await getAuthHeaders(userAddress, provider) : 
+            undefined;
+
+        const headers = authHeaders ? new AxiosHeaders(authHeaders as Record<string, string>) : undefined;
+
+        const response = await axios.get(`${API_BASE_URL}/models`, { headers });
+        return response.data.models;
+    } catch (error) {
+        console.error('Error getting available models:', error);
+        throw error;
+    }
 };
 
 export const submitPrompt = async (
@@ -95,7 +98,8 @@ export const submitPrompt = async (
     userAddress: string,
     sessionId?: string,
     txHash?: string,
-    paymentMethod: 'ETH' | 'NEURO' | 'FREE' = 'ETH'
+    paymentMethod: 'ETH' | 'NEURO' | 'FREE' = 'ETH',
+    provider?: ethers.BrowserProvider
 ): Promise<PromptResponse> => {
     try {
         const requestBody: any = {
@@ -111,7 +115,18 @@ export const submitPrompt = async (
             requestBody.tx_hash = txHash;
         }
 
-        const response = await axios.post(`${API_BASE_URL}/submit_prompt`, requestBody);
+        // Get authentication headers if provider is available
+        const authHeaders = provider ? 
+            await getAuthHeaders(userAddress, provider) : 
+            undefined;
+
+        const headers = authHeaders ? new AxiosHeaders(authHeaders as Record<string, string>) : undefined;
+
+        const response = await axios.post(
+            `${API_BASE_URL}/submit_prompt`, 
+            requestBody,
+            { headers }
+        );
         return response.data;
     } catch (error) {
         console.error('Error submitting prompt:', error instanceof Error ? error.message : 'Unknown error');
@@ -119,58 +134,75 @@ export const submitPrompt = async (
     }
 };
 
+export const getSessions = async (
+    userAddress: string,
+    provider?: ethers.BrowserProvider
+): Promise<ChatSession[]> => {
+    try {
+        if (!provider) {
+            throw new Error('Provider is required for authentication');
+        }
 
-export const getSessions = async (userAddress: string): Promise<ChatSession[]> => {
-  try {
-    const response = await axios.get(`${API_BASE_URL}/sessions`, {
-      params: {
-        wallet_address: userAddress
-      }
-    });
-    return response.data;
-  } catch (error) {
-    if (axios.isAxiosError(error)) {
-      if (error.response?.status === 404) {
-        // Return empty array if sessions endpoint is not available
-        console.log('Sessions endpoint not available, returning empty array');
+        const authHeaders = await getAuthHeaders(userAddress, provider);
+        const headers = new AxiosHeaders(authHeaders as Record<string, string>);
+
+        const response = await axios.get(`${API_BASE_URL}/sessions`, {
+            headers
+        });
+        return response.data;
+    } catch (error) {
+        if (axios.isAxiosError(error)) {
+            if (error.response?.status === 404) {
+                console.log('Sessions endpoint not available, returning empty array');
+                return [];
+            }
+            console.error('Error fetching sessions:', error.response?.data);
+        } else {
+            console.error('Error fetching sessions:', error);
+        }
         return [];
-      }
-      console.error('Error fetching sessions:', error.response?.data);
-    } else {
-      console.error('Error fetching sessions:', error);
     }
-    return [];
-  }
 };
 
-export const getSession = async (sessionId: string): Promise<ChatSession> => {
-  try {
-    const response = await axios.get(`${API_BASE_URL}/sessions/${sessionId}`);
-    return response.data;
-  } catch (error) {
-    if (axios.isAxiosError(error)) {
-      if (error.response?.status === 404) {
-        // Return empty session if not found
-        console.log(`Session ${sessionId} not found, returning empty session`);
+export const getSession = async (
+    sessionId: string,
+    userAddress: string,
+    provider?: ethers.BrowserProvider
+): Promise<ChatSession> => {
+    try {
+        const authHeaders = provider ? 
+            await getAuthHeaders(userAddress, provider) : 
+            undefined;
+
+        const headers = authHeaders ? new AxiosHeaders(authHeaders as Record<string, string>) : undefined;
+
+        const response = await axios.get(
+            `${API_BASE_URL}/sessions/${sessionId}`,
+            { headers }
+        );
+        return response.data;
+    } catch (error) {
+        if (axios.isAxiosError(error)) {
+            if (error.response?.status === 404) {
+                console.log(`Session ${sessionId} not found, returning empty session`);
+                return {
+                    session_id: sessionId,
+                    messages: [],
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                };
+            }
+            console.error('Error fetching session:', error.response?.data);
+        } else {
+            console.error('Error fetching session:', error);
+        }
         return {
-          session_id: sessionId,
-          messages: [],
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+            session_id: sessionId,
+            messages: [],
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
         };
-      }
-      console.error('Error fetching session:', error.response?.data);
-    } else {
-      console.error('Error fetching session:', error);
     }
-    // Return empty session on any error
-    return {
-      session_id: sessionId,
-      messages: [],
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
-  }
 };
 
 const verifyCache = new Map<string, Promise<VerificationResponse>>();
@@ -204,18 +236,27 @@ export const verifyMessage = async (
   return request;
 };
 
-export async function deleteSession(sessionId: string): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}`, {
-        method: 'DELETE',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-    });
+export const deleteSession = async (
+    sessionId: string,
+    userAddress: string,
+    provider?: ethers.BrowserProvider
+): Promise<void> => {
+    if (!provider) {
+        throw new Error('Provider is required for authentication');
+    }
 
-    if (!response.ok) {
+    const authHeaders = await getAuthHeaders(userAddress, provider);
+    const headers = new AxiosHeaders(authHeaders as Record<string, string>);
+
+    const response = await axios.delete(
+        `${API_BASE_URL}/sessions/${sessionId}`,
+        { headers }
+    );
+
+    if (response.status !== 204) {
         throw new Error('Failed to delete session');
     }
-}
+};
 
 export interface CreateSessionResponse {
   session_id: string;
@@ -223,14 +264,25 @@ export interface CreateSessionResponse {
   updated_at: string;
 }
 
-export const createSession = async (walletAddress: string): Promise<CreateSessionResponse> => {
-  try {
-    const response = await axios.post(`${API_BASE_URL}/sessions/create`, {
-      wallet_address: walletAddress
-    });
-    return response.data;
-  } catch (error) {
-    console.error('Error creating session:', error);
-    throw error;
-  }
+export const createSession = async (
+    walletAddress: string,
+    provider?: ethers.BrowserProvider
+): Promise<CreateSessionResponse> => {
+    try {
+        const authHeaders = provider ? 
+            await getAuthHeaders(walletAddress, provider) : 
+            undefined;
+
+        const headers = authHeaders ? new AxiosHeaders(authHeaders as Record<string, string>) : undefined;
+
+        const response = await axios.post(
+            `${API_BASE_URL}/sessions/create`,
+            { wallet_address: walletAddress },
+            { headers }
+        );
+        return response.data;
+    } catch (error) {
+        console.error('Error creating session:', error);
+        throw error;
+    }
 };

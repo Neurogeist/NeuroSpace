@@ -28,7 +28,7 @@ import {
 } from '@chakra-ui/react';
 import { ChevronLeftIcon, ChevronRightIcon } from '@chakra-ui/icons';
 import { ChatMessage } from '../types/chat';
-import { submitPrompt, getSession, createSession, deleteSession } from '../services/api';
+import { submitPrompt, getSession, createSession } from '../services/api';
 import Sidebar from './Sidebar';
 import ChatMessageComponent from './ChatMessage';
 import { useApp } from '../context/AppContext';
@@ -41,9 +41,16 @@ export default function Chat() {
         models: availableModels,
         sessions: availableSessions,
         userAddress,
+        provider,
         connectWallet,
         error,
-        refreshSessions
+        refreshSessions,
+        isApproved,
+        setIsApproved,
+        tokenBalance,
+        setTokenBalance,
+        remainingFreeRequests,
+        setRemainingFreeRequests
     } = useApp();
     const { colorMode, toggleColorMode } = useColorMode();
     const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -66,9 +73,6 @@ export default function Chat() {
     const [paymentMethod, setPaymentMethod] = useState<'ETH' | 'NEURO' | 'FREE'>('ETH');
     const [isApproving, setIsApproving] = useState(false);
     const [tokenPrice] = useState<string>('1');
-    const [tokenBalance, setTokenBalance] = useState<string>('0');
-    const [isApproved, setIsApproved] = useState(false);
-    const [remainingFreeRequests, setRemainingFreeRequests] = useState<number>(0);
 
     const bgColor = useColorModeValue('gray.50', 'gray.900');
     const borderColor = useColorModeValue('gray.200', 'gray.700');
@@ -102,13 +106,13 @@ export default function Chat() {
 
     useEffect(() => {
         const loadSession = async () => {
-            if (!activeSessionId) {
+            if (!activeSessionId || !userAddress || !provider) {
                 setMessages([]);
                 return;
             }
-    
+
             try {
-                const session = await getSession(activeSessionId);
+                const session = await getSession(activeSessionId, userAddress, provider);
                 setMessages(session.messages);
             } catch (error) {
                 console.error('Error loading session:', error);
@@ -121,9 +125,9 @@ export default function Chat() {
                 });
             }
         };
-    
+
         loadSession();
-    }, [activeSessionId]);
+    }, [activeSessionId, userAddress, provider]);
     
     useEffect(() => {
         if (activeSessionId) {
@@ -271,13 +275,9 @@ export default function Chat() {
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
-        if (!input.trim() || thinkingStatus) return;
+        if (!input.trim() || thinkingStatus || !userAddress || !provider) return;
 
         e.preventDefault();
-        if (!userAddress) {
-            toast({ title: "Connect wallet", status: "error" });
-            return;
-        }
 
         setThinkingStatus("Processing Payment...");
 
@@ -290,7 +290,7 @@ export default function Chat() {
 
         try {
             if (!sessionId) {
-                const sessionResponse = await createSession(userAddress);
+                const sessionResponse = await createSession(userAddress, provider);
                 sessionId = sessionResponse.session_id;
                 createdNewSession = true;
                 console.log("🆕 Created new session:", sessionId);
@@ -307,8 +307,8 @@ export default function Chat() {
             console.log("💵 Payment transaction hash:", tx.hash);
 
             if (paymentMethod !== 'FREE') {
-            await tx.wait();
-            console.log("✅ Payment confirmed on chain");
+                await tx.wait();
+                console.log("✅ Payment confirmed on chain");
             }
 
             setThinkingStatus("Thinking...");
@@ -319,15 +319,17 @@ export default function Chat() {
                 userAddress,
                 sessionId,
                 tx.hash,
-                paymentMethod
+                paymentMethod,
+                provider
             );
 
             if (paymentMethod === 'FREE') {
-                setRemainingFreeRequests(prev => prev - 1);
+                const newCount = remainingFreeRequests - 1;
+                setRemainingFreeRequests(newCount);
             }
 
             await refreshSessions();
-            const session = await getSession(sessionId);
+            const session = await getSession(sessionId, userAddress, provider);
             setMessages(session.messages);
 
             if (createdNewSession) {
@@ -369,30 +371,29 @@ export default function Chat() {
                 errorMessage = error.message;
             }
 
-            // Clean up the session if it was newly created
-            if (createdNewSession && sessionId) {
-                try {
-                    await deleteSession(sessionId);
-                    console.log("🧹 Cleaned up failed session:", sessionId);
-                } catch (deleteError) {
-                    console.error('Error cleaning up failed session:', deleteError);
-                }
-            }
-        
             toast({
                 title: errorTitle,
-                description: (
-                    <VStack align="start" spacing={2}>
-                        <Text>{errorMessage}</Text>
-                        {errorAction}
-                    </VStack>
-                ),
+                description: errorMessage,
                 status: "error",
-                duration: 8000,
+                duration: 5000,
                 isClosable: true,
+                position: "top",
+                render: errorAction ? () => (
+                    <Alert status="error" variant="left-accent">
+                        <AlertIcon />
+                        <Box>
+                            <AlertTitle>{errorTitle}</AlertTitle>
+                            <AlertDescription>
+                                {errorMessage}
+                                {errorAction}
+                            </AlertDescription>
+                        </Box>
+                    </Alert>
+                ) : undefined
             });
-        
-            setMessages(prev => prev.slice(0, -1));
+
+            // Remove the user message if there was an error
+            setMessages(prev => prev.filter(msg => msg !== userMessage));
         } finally {
             setThinkingStatus(null);
         }
@@ -497,6 +498,8 @@ export default function Chat() {
                             activeSessionId={activeSessionId}
                             onNewChat={handleNewChat}
                             onSelectSession={handleSelectSession}
+                            userAddress={userAddress}
+                            provider={provider}
                         />
                     </Box>
                 </Box>

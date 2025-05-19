@@ -1,9 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { getAvailableModels, getSessions, ChatSession } from '../services/api'; // Assuming ChatSession is exported from api or types
 import { connectWallet as connectWalletService } from '../services/blockchain'; // Import your actual connect service
+import { ethers } from 'ethers';
 
 interface AppContextType {
   userAddress: string | null; // Add userAddress state
+  provider: ethers.BrowserProvider | null;
   connectWallet: () => Promise<string | null>; // Add connect function
   models: { [key: string]: string };
   sessions: ChatSession[]; // Use correct type if available
@@ -12,24 +14,38 @@ interface AppContextType {
   error: string | null;
   refreshSessions: () => Promise<void>;
   refreshModels: () => Promise<void>;
+  isApproved: boolean;
+  setIsApproved: (approved: boolean) => void;
+  tokenBalance: string;
+  setTokenBalance: (balance: string) => void;
+  remainingFreeRequests: number;
+  setRemainingFreeRequests: (count: number) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [userAddress, setUserAddress] = useState<string | null>(null); // Wallet address state
+  const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null);
   const [models, setModels] = useState<{ [key: string]: string }>({});
   const [sessions, setSessions] = useState<ChatSession[]>([]); // Use specific type
   const [isLoadingModels, setIsLoadingModels] = useState(true);
   const [isLoadingSessions, setIsLoadingSessions] = useState(false); // Initially false, load sessions only when address is known
   const [error, setError] = useState<string | null>(null);
+  const [isApproved, setIsApproved] = useState(false);
+  const [tokenBalance, setTokenBalance] = useState<string>('0');
+  const [remainingFreeRequests, setRemainingFreeRequests] = useState<number>(0);
   
   useEffect(() => {
     const tryAutoConnect = async () => {
       if (!userAddress) {
         try {
-          const address = await connectWalletService(); // Or use injected `window.ethereum` manually
+          const address = await connectWalletService();
           setUserAddress(address);
+          if (window.ethereum) {
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            setProvider(provider);
+          }
           console.log("🔁 Auto-connected wallet:", address);
         } catch (err) {
           console.warn("⚠️ Auto-connect failed or wallet not available");
@@ -46,12 +62,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       const address = await connectWalletService();
       setUserAddress(address);
+      if (window.ethereum) {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        setProvider(provider);
+      }
       setError(null); // Clear previous errors on successful connect
       console.log("Wallet connected in context:", address);
       return address;
     } catch (err) {
       console.error('Error connecting wallet in context:', err);
       setUserAddress(null); // Ensure address is null on error
+      setProvider(null);
       setSessions([]); // Clear sessions if wallet disconnects or fails to connect
       setError(err instanceof Error ? err.message : 'Failed to connect wallet');
       return null;
@@ -62,58 +83,61 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const loadModels = useCallback(async () => {
     setIsLoadingModels(true);
     try {
-      const modelsData = await getAvailableModels();
-      setModels(modelsData);
-      setError(null);
+        if (!userAddress || !provider) {
+            console.log('No user address or provider available, skipping model load');
+            setModels({});
+            return;
+        }
+
+        const modelsData = await getAvailableModels(userAddress, provider);
+        setModels(modelsData);
+        setError(null);
     } catch (err) {
-      console.error('Error loading models:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load models');
-      setModels({}); // Clear models on error
+        console.error('Error loading models:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load models');
+        setModels({}); // Clear models on error
     } finally {
-      setIsLoadingModels(false);
+        setIsLoadingModels(false);
     }
-  }, []); // No dependencies, models don't depend on user address
+}, [userAddress, provider]); // Add dependencies
 
   // --- Session Loading (Depends on userAddress) ---
   const loadSessions = useCallback(async (address: string | null) => {
-    // Only load if address is valid
-    if (!address) {
-      console.log("No address provided to loadSessions, clearing sessions.");
-      setSessions([]); // Clear sessions if no address
-      setIsLoadingSessions(false);
-      return;
+    // Only load if address is valid and provider is available
+    if (!address || !provider) {
+        console.log("No address or provider available, clearing sessions.");
+        setSessions([]); // Clear sessions if no address
+        setIsLoadingSessions(false);
+        return;
     }
 
-    // Remove sensitive address logging
-    // console.log(`Context: Attempting to load sessions for ${address}`);
     setIsLoadingSessions(true);
     setError(null);
     try {
-      // CORRECTED: Pass the address to getSessions
-      const sessionsData = await getSessions(address);
-      setSessions(sessionsData);
+        const sessionsData = await getSessions(address, provider);
+        setSessions(sessionsData);
 
-      // Validate active session (optional, but good practice)
-      const activeSessionId = localStorage.getItem('activeSessionId');
-      if (activeSessionId && sessionsData.length > 0) {
-        const sessionExists = sessionsData.some(session => session.session_id === activeSessionId);
-        if (!sessionExists) {
-          console.log(`Context: Active session ${activeSessionId} not found in loaded sessions, clearing local storage.`);
-          localStorage.removeItem('activeSessionId');
+        // Validate active session (optional, but good practice)
+        const activeSessionId = localStorage.getItem('activeSessionId');
+        if (activeSessionId && sessionsData.length > 0) {
+            const sessionExists = sessionsData.some(session => session.session_id === activeSessionId);
+            if (!sessionExists) {
+                console.log(`Context: Active session ${activeSessionId} not found in loaded sessions, clearing local storage.`);
+                localStorage.removeItem('activeSessionId');
+            }
+        } else if (activeSessionId) {
+            // Clear if there are no sessions but local storage still has an ID
+            localStorage.removeItem('activeSessionId');
         }
-      } else if (activeSessionId) {
-         // Clear if there are no sessions but local storage still has an ID
-         localStorage.removeItem('activeSessionId');
-      }
 
     } catch (err) {
-      console.error('Error loading sessions in context:', err instanceof Error ? err.message : 'Unknown error');
-      setError(err instanceof Error ? err.message : 'Failed to load sessions');
-      setSessions([]); // Clear sessions on error
+        console.error('Error loading sessions in context:', err instanceof Error ? err.message : 'Unknown error');
+        setError(err instanceof Error ? err.message : 'Failed to load sessions');
+        setSessions([]); // Clear sessions on error
     } finally {
-      setIsLoadingSessions(false);
+        setIsLoadingSessions(false);
     }
-  }, []); // Depends on the function itself, not external state changes here
+}, [provider]); // Add provider as a dependency
 
   // Function exposed to components for refreshing sessions
   const refreshSessions = async () => {
@@ -128,10 +152,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // --- Initial Data Loading Effects ---
 
-  // Load models once on mount
+  // Load models when userAddress or provider changes
   useEffect(() => {
-    loadModels();
-  }, [loadModels]);
+    if (userAddress && provider) {
+        loadModels();
+    }
+  }, [userAddress, provider, loadModels]);
 
   // Load sessions whenever the userAddress changes
   useEffect(() => {
@@ -148,6 +174,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     <AppContext.Provider
       value={{
         userAddress,
+        provider,
         connectWallet,
         models,
         sessions,
@@ -156,6 +183,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         error,
         refreshSessions,
         refreshModels,
+        isApproved,
+        setIsApproved,
+        tokenBalance,
+        setTokenBalance,
+        remainingFreeRequests,
+        setRemainingFreeRequests
       }}
     >
       {children}

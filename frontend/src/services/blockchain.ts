@@ -1,5 +1,6 @@
 import { ethers } from 'ethers';
 import { MetaMaskInpageProvider } from '@metamask/providers';
+import { getAuthHeaders } from './auth';
 
 declare global {
   interface Window {
@@ -293,7 +294,13 @@ export const getEthBalance = async (userAddress: string): Promise<string> => {
 
 export const getRemainingFreeRequests = async (userAddress: string): Promise<number> => {
     try {
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/free-requests/${userAddress}`);
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const authHeaders = await getAuthHeaders(userAddress, provider);
+        
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/free-requests/${userAddress}`, {
+            headers: authHeaders
+        });
+        
         if (!response.ok) {
             throw new Error('Failed to fetch free requests');
         }
@@ -315,10 +322,14 @@ export const payForMessage = async (sessionId: string, paymentMethod: 'ETH' | 'N
 
         if (paymentMethod === 'FREE') {
             // Use free request
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const authHeaders = await getAuthHeaders(userAddress[0], provider);
+            
             const response = await fetch(`${import.meta.env.VITE_API_URL}/use-free-request`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    ...authHeaders
                 },
                 body: JSON.stringify({
                     sessionId,

@@ -11,6 +11,7 @@ import { Components } from 'react-markdown';
 import { verifyHash } from '../utils/verification';
 import { flagMessage } from '../services/flagging';
 import { useApp } from '../context/AppContext';
+import { useWallet } from '../hooks/useWallet';
 
 const blockExplorerUrl =
   import.meta.env.VITE_ENVIRONMENT?.toLowerCase() === 'production'
@@ -77,6 +78,7 @@ export default function ChatMessageComponent({ message, isSidebarOpen = false }:
     const [flagNote, setFlagNote] = useState('');
     const { userAddress } = useApp();
     const toast = useToast();
+    const { provider } = useWallet();
 
     const messageBgColor = useColorModeValue('gray.50', 'gray.700');
     const userMessageBgColor = useColorModeValue('blue.50', 'blue.900');
@@ -197,7 +199,7 @@ export default function ChatMessageComponent({ message, isSidebarOpen = false }:
     const maxWidth = useBreakpointValue({ base: '90%', md: '80%' });
 
     const handleFlagMessage = async () => {
-        if (!userAddress) {
+        if (!userAddress || !provider) {
             toast({
                 title: "Wallet not connected",
                 description: "Please connect your wallet to flag messages",
@@ -223,7 +225,7 @@ export default function ChatMessageComponent({ message, isSidebarOpen = false }:
         console.log('Flagging message:', messageId);
         setIsFlagging(true);
         try {
-            await flagMessage(messageId, flagReason, flagNote, userAddress);
+            await flagMessage(messageId, flagReason, flagNote, userAddress, provider);
             toast({
                 title: "Message flagged",
                 description: "Thank you for helping improve the community",

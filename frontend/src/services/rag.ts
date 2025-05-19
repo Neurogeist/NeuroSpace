@@ -1,5 +1,7 @@
 import axios from 'axios';
 import { API_BASE_URL } from './api';
+import { getAuthHeaders } from './auth';
+import { ethers } from 'ethers';
 
 export interface Document {
     id: string;
@@ -26,34 +28,48 @@ export interface RAGResponse {
     ipfs_cid: string;
 }
 
-export const uploadDocument = async (file: File, walletAddress: string): Promise<Document> => {
+export const uploadDocument = async (
+    file: File,
+    walletAddress: string,
+    provider: ethers.BrowserProvider
+): Promise<Document> => {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await axios.post<Document>(`${API_BASE_URL}/rag/upload`, formData, {
-        headers: {
-            'Content-Type': 'multipart/form-data',
-            'wallet-address': walletAddress,
+    const authHeaders = await getAuthHeaders(walletAddress, provider);
+    const headers = {
+        ...authHeaders,
+        'Content-Type': 'multipart/form-data',
+    };
+
+    const response = await axios.post<Document>(`${API_BASE_URL}/rag/upload`, formData, { headers });
+    return response.data;
+};
+
+export const queryDocuments = async (
+    query: string,
+    walletAddress: string,
+    provider: ethers.BrowserProvider
+): Promise<RAGResponse> => {
+    const authHeaders = await getAuthHeaders(walletAddress, provider);
+    const response = await axios.post<RAGResponse>(
+        `${API_BASE_URL}/rag/query`,
+        {
+            query,
+            wallet_address: walletAddress,
         },
-    });
-
+        { headers: authHeaders }
+    );
     return response.data;
 };
 
-export const queryDocuments = async (query: string, walletAddress: string): Promise<RAGResponse> => {
-    const response = await axios.post<RAGResponse>(`${API_BASE_URL}/rag/query`, {
-        query,
-        wallet_address: walletAddress,
-    });
-
-    return response.data;
-};
-
-export const getDocuments = async (walletAddress: string): Promise<Document[]> => {
+export const getDocuments = async (
+    walletAddress: string,
+    provider: ethers.BrowserProvider
+): Promise<Document[]> => {
+    const authHeaders = await getAuthHeaders(walletAddress, provider);
     const response = await axios.get<Document[]>(`${API_BASE_URL}/rag/documents`, {
-        headers: {
-            'wallet-address': walletAddress,
-        },
+        headers: authHeaders
     });
     return response.data;
 };
@@ -74,10 +90,13 @@ export const verifyRAGResponse = async (
     }
 };
 
-export const deleteDocument = async (documentId: string, walletAddress: string): Promise<void> => {
+export const deleteDocument = async (
+    documentId: string,
+    walletAddress: string,
+    provider: ethers.BrowserProvider
+): Promise<void> => {
+    const authHeaders = await getAuthHeaders(walletAddress, provider);
     await axios.delete(`${API_BASE_URL}/rag/documents/${documentId}`, {
-        headers: {
-            'wallet-address': walletAddress,
-        },
+        headers: authHeaders
     });
 }; 

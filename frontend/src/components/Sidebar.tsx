@@ -23,15 +23,18 @@ import { FiPlus, FiTrash2 } from 'react-icons/fi';
 import { ChatSession } from '../types/chat';
 import { deleteSession } from '../services/api';
 import { useApp } from '../context/AppContext';
+import { ethers } from 'ethers';
 
 interface SidebarProps {
     sessions: ChatSession[];
     activeSessionId: string | null;
     onNewChat: () => void;
     onSelectSession: (sessionId: string) => void;
+    userAddress: string | null;
+    provider: ethers.BrowserProvider | null;
 }
 
-export default function Sidebar({ sessions, activeSessionId, onNewChat, onSelectSession }: SidebarProps) {
+export default function Sidebar({ sessions, activeSessionId, onNewChat, onSelectSession, userAddress, provider }: SidebarProps) {
     const { isOpen, onOpen, onClose } = useDisclosure();
     const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
     const cancelRef = React.useRef<HTMLButtonElement>(null);
@@ -56,10 +59,10 @@ export default function Sidebar({ sessions, activeSessionId, onNewChat, onSelect
     };
 
     const handleDeleteConfirm = async () => {
-        if (!sessionToDelete) return;
+        if (!sessionToDelete || !userAddress || !provider) return;
 
         try {
-            await deleteSession(sessionToDelete);
+            await deleteSession(sessionToDelete, userAddress, provider);
             await refreshSessions();
 
             if (sessionToDelete === activeSessionId) {

@@ -1,19 +1,29 @@
-from fastapi import FastAPI, HTTPException, Request, Depends, Header, File, UploadFile
+from fastapi import FastAPI, HTTPException, Request, Depends, Header, File, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import uuid
 from typing import Dict, Any, List, Optional
 from .models.prompt import PromptRequest, PromptResponse, SessionResponse
 from .services.blockchain import BlockchainService
 from .services.ipfs import IPFSService
 from .services.llm import LLMService
-from .core.config import get_settings
+from .core.config import get_settings, settings
 from .core.rate_limit import RateLimitMiddleware
 from .services.chat_session import ChatSessionService
 from .utils.verifiability import generate_verification_hash
+from .core.auth import (
+    require_wallet_auth,
+    verify_wallet_signature,
+    create_access_token,
+    require_jwt_auth,
+    Token,
+    TokenData,
+    verify_wallet_signature_for_login
+)
+from .models.chat import ChatSessionDB
 import logging
 import time
 import os
@@ -225,9 +235,74 @@ class PromptRequest(BaseModel):
                 raise ValueError('Invalid transaction hash format')
         return v
 
-@app.post("/submit_prompt")
-async def submit_prompt(request: PromptRequest, request_obj: Request):
-    """Submit a prompt and get a response."""
+class WalletAuthRequest(BaseModel):
+    wallet_address: str = Field(..., description="Ethereum wallet address")
+    signature: str = Field(..., description="Wallet signature")
+    nonce: str = Field(..., description="Nonce used in signature")
+
+    @validator('wallet_address')
+    def validate_wallet_address(cls, v):
+        return validate_wallet_address(v)
+
+@app.post("/auth/verify")
+async def verify_auth(request: WalletAuthRequest):
+    """Verify a wallet signature."""
+    try:
+        if verify_wallet_signature(request.wallet_address, request.signature, request.nonce):
+            return {"status": "success", "message": "Signature verified"}
+        raise HTTPException(status_code=401, detail="Invalid signature")
+    except Exception as e:
+        logger.error(f"Error verifying signature: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class LoginRequest(BaseModel):
+    wallet_address: str
+    signature: str
+    nonce: str
+
+@app.post("/auth/login", response_model=Token)
+async def login(request: LoginRequest):
+    """Login endpoint that verifies wallet signature and issues JWT."""
+    if not verify_wallet_signature_for_login(request.wallet_address, request.signature, request.nonce):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid signature",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": request.wallet_address},
+        expires_delta=access_token_expires
+    )
+    return Token(access_token=access_token, token_type="bearer")
+
+class PromptResponse(BaseModel):
+    response: str
+    session_id: str
+    model_id: str
+    model_name: str
+    metadata: Dict[str, Any]
+
+    class Config:
+        json_encoders = {
+            datetime: lambda dt: dt.isoformat()
+        }
+
+@app.post("/submit_prompt", response_model=PromptResponse)
+async def submit_prompt(
+    request: PromptRequest,
+    request_obj: Request,
+    token_data: TokenData = Depends(require_jwt_auth)
+):
+    """Submit a prompt to the LLM service with JWT authentication."""
+    # Verify the wallet address from JWT matches the request
+    if token_data.wallet_address.lower() != request.user_address.lower():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Wallet address mismatch"
+        )
+    
     try:
         # Get client IP from various possible headers
         client_ip = None
@@ -282,7 +357,7 @@ async def submit_prompt(request: PromptRequest, request_obj: Request):
             prompt=request.prompt,
             system_prompt=None,
             temperature=model_config.temperature,
-            max_tokens=model_config.max_new_tokens,  # Use max_new_tokens instead of max_tokens
+            max_tokens=model_config.max_new_tokens,
             session_id=session_id
         )
         
@@ -300,12 +375,12 @@ async def submit_prompt(request: PromptRequest, request_obj: Request):
             "model_id": model_config.model_id,
             "temperature": model_config.temperature,
             "max_tokens": model_config.max_new_tokens,
-            "system_prompt": None,  # Will fill later if applicable
+            "system_prompt": None,
             "timestamp": timestamp,
             "wallet_address": request.user_address,
             "session_id": session_id,
-            "rag_sources": [],  # placeholder
-            "tool_calls": []    # placeholder
+            "rag_sources": [],
+            "tool_calls": []
         }
 
         # Step 3: Hash
@@ -348,7 +423,7 @@ async def submit_prompt(request: PromptRequest, request_obj: Request):
                 "model_name": request.model,
                 "model_id": model_config.model_id,
                 "temperature": model_config.temperature,
-                "max_tokens": model_config.max_new_tokens,  # Use max_new_tokens here too
+                "max_tokens": model_config.max_new_tokens,
                 "ipfs_cid": ipfs_cid,
                 "verification_hash": verification_hash,
                 "signature": signature,
@@ -370,7 +445,7 @@ async def submit_prompt(request: PromptRequest, request_obj: Request):
                 "model_name": request.model,
                 "model_id": model_config.model_id,
                 "temperature": model_config.temperature,
-                "max_tokens": model_config.max_new_tokens,  # And here
+                "max_tokens": model_config.max_new_tokens,
                 "ipfs_cid": ipfs_cid,
                 "verification_hash": verification_hash,
                 "signature": signature,
@@ -385,9 +460,10 @@ async def submit_prompt(request: PromptRequest, request_obj: Request):
             "response": response,
             "session_id": session_id,
             "model_id": model_config.model_id,
+            "model_name": request.model,
             "metadata": {
                 "temperature": model_config.temperature,
-                "max_tokens": model_config.max_new_tokens,  # And here
+                "max_tokens": model_config.max_new_tokens,
                 "top_p": model_config.top_p,
                 "do_sample": model_config.do_sample,
                 "num_beams": model_config.num_beams,
@@ -404,9 +480,15 @@ async def submit_prompt(request: PromptRequest, request_obj: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/models")
-async def get_available_models():
+async def get_available_models(token_data: TokenData = Depends(require_jwt_auth)):
     """Get a list of available models."""
     try:
+        if not token_data or not token_data.wallet_address:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentication required"
+            )
+
         models = llm_service.get_available_models()
         return {"models": models}
     except Exception as e:
@@ -414,7 +496,10 @@ async def get_available_models():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/sessions/{session_id}", response_model=SessionResponse)
-async def get_session(session_id: str):
+async def get_session(
+    session_id: str,
+    token_data: TokenData = Depends(require_jwt_auth)
+):
     try:
         messages = chat_session_service.get_session_messages(session_id)
         if not messages:
@@ -424,6 +509,10 @@ async def get_session(session_id: str):
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()
             )
+
+        # Verify the session belongs to the authenticated wallet
+        if messages[0].metadata.get('wallet_address', '').lower() != token_data.wallet_address.lower():
+            raise HTTPException(status_code=403, detail="Unauthorized access to session")
 
         return SessionResponse(
             session_id=session_id,
@@ -435,28 +524,46 @@ async def get_session(session_id: str):
         logger.error(f"Error retrieving session: {str(e)}")
         raise HTTPException(status_code=500, detail="Error retrieving session")
 
-
-@app.get("/sessions", response_model=List[SessionResponse])
-async def get_sessions(wallet_address: Optional[str] = None):
-    """Get all chat sessions. Optionally filter by wallet address."""
-    try:
-        if not wallet_address:
-            raise HTTPException(status_code=400, detail="wallet_address query parameter is required")
-        
-        sessions = chat_session_service.get_all_sessions(wallet_address=wallet_address)
-        return [SessionResponse.from_chat_session(session) for session in sessions]
-    except Exception as e:
-        logger.error(f"Error retrieving sessions: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.delete("/sessions/{session_id}")
-async def delete_session(session_id: str):
+async def delete_session(
+    session_id: str,
+    token_data: TokenData = Depends(require_jwt_auth)
+):
     """Delete a chat session and all its messages."""
     try:
+        # First check if the session exists in the database
+        db_session = chat_session_service.db.query(ChatSessionDB).filter(
+            ChatSessionDB.id == uuid.UUID(session_id)
+        ).first()
+        
+        if not db_session:
+            raise HTTPException(status_code=404, detail="Session not found")
+            
+        # Verify the session belongs to the authenticated wallet
+        if db_session.wallet_address.lower() != token_data.wallet_address.lower():
+            raise HTTPException(status_code=403, detail="Unauthorized access to session")
+
+        # Delete the session and its messages
         chat_session_service.delete_session(session_id)
         return Response(status_code=204)
     except Exception as e:
         logger.error(f"Error deleting session: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/sessions", response_model=List[SessionResponse])
+async def get_sessions(token_data: TokenData = Depends(require_jwt_auth)):
+    """Get all chat sessions for the authenticated wallet."""
+    try:
+        if not token_data or not token_data.wallet_address:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentication required"
+            )
+
+        sessions = chat_session_service.get_all_sessions(wallet_address=token_data.wallet_address)
+        return [SessionResponse.from_chat_session(session) for session in sessions]
+    except Exception as e:
+        logger.error(f"Error retrieving sessions: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 class CreateSessionRequest(BaseModel):
@@ -686,14 +793,14 @@ def get_db():
 @app.post("/rag/upload")
 async def upload_document(
     file: UploadFile = File(...),
-    wallet_address: str = Header(..., description="Ethereum wallet address"),
+    token_data: TokenData = Depends(require_jwt_auth),
     db: Session = Depends(get_db)
 ):
     """Upload a document for RAG with security measures."""
     temp_path = None
     try:
-        # Validate wallet address
-        wallet_address = validate_wallet_address(wallet_address)
+        # Use wallet address from JWT token
+        wallet_address = token_data.wallet_address
 
         # Validate filename
         if len(file.filename) > MAX_FILENAME_LENGTH:
@@ -813,9 +920,16 @@ class RAGQueryRequest(BaseModel):
         return validate_wallet_address(v)
 
 @app.post("/rag/query")
-async def query_documents(request: RAGQueryRequest):
+async def query_documents(
+    request: RAGQueryRequest,
+    token_data: TokenData = Depends(require_jwt_auth)
+):
     """Query uploaded documents using vector search + LLM, return a verifiable answer."""
     try:
+        # Verify the wallet address matches the JWT token
+        if request.wallet_address.lower() != token_data.wallet_address.lower():
+            raise HTTPException(status_code=403, detail="Wallet address mismatch")
+
         result = await rag_service.query_documents(
             query=request.query,
             wallet_address=request.wallet_address,
@@ -828,21 +942,23 @@ async def query_documents(request: RAGQueryRequest):
 
 
 @app.get("/rag/documents")
-async def get_documents(wallet_address: str = Header(...)):
+async def get_documents(token_data: TokenData = Depends(require_jwt_auth)):
     """Get list of uploaded documents for a specific wallet address."""
     try:
-        documents = await rag_service.get_documents(wallet_address)
+        documents = await rag_service.get_documents(token_data.wallet_address)
         return documents
-        
     except Exception as e:
         logger.error(f"Error getting documents: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/rag/documents/{document_id}")
-async def delete_document(document_id: str, wallet_address: str = Header(...)):
+async def delete_document(
+    document_id: str,
+    token_data: TokenData = Depends(require_jwt_auth)
+):
     """Delete a document and its chunks from the database."""
     try:
-        success = rag_service.delete_document(document_id, wallet_address)
+        success = rag_service.delete_document(document_id, token_data.wallet_address)
         if not success:
             raise HTTPException(status_code=404, detail="Document not found or unauthorized")
         return {"status": "success", "message": "Document deleted successfully"}
@@ -900,13 +1016,13 @@ class FlagMessageRequest(BaseModel):
 @app.post("/flag")
 async def flag_message(
     request: FlagMessageRequest,
-    wallet_address: str = Header(...)
+    token_data: TokenData = Depends(require_jwt_auth)
 ):
     try:
         flagged_message = flagging_service.flag_message(
             str(request.message_id),
             request.reason,
-            wallet_address,
+            token_data.wallet_address,
             request.note
         )
         return {"status": "success", "flagged_message": flagged_message}
@@ -970,9 +1086,16 @@ class FreeRequestRequest(BaseModel):
             raise ValueError('Invalid session ID format')
 
 @app.get("/free-requests/{user_address}")
-async def get_free_requests(user_address: str):
+async def get_free_requests(
+    user_address: str,
+    token_data: TokenData = Depends(require_jwt_auth)
+):
     """Get the number of remaining free requests for a user."""
     try:
+        # Verify the wallet address matches the JWT token
+        if user_address.lower() != token_data.wallet_address.lower():
+            raise HTTPException(status_code=403, detail="Wallet address mismatch")
+
         remaining_requests = payment_service.get_remaining_free_requests(user_address)
         return {"remaining_requests": remaining_requests}
     except Exception as e:
@@ -980,9 +1103,16 @@ async def get_free_requests(user_address: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/use-free-request")
-async def use_free_request(request: FreeRequestRequest):
+async def use_free_request(
+    request: FreeRequestRequest,
+    token_data: TokenData = Depends(require_jwt_auth)
+):
     """Use a free request for a user."""
     try:
+        # Verify the wallet address matches the JWT token
+        if request.userAddress.lower() != token_data.wallet_address.lower():
+            raise HTTPException(status_code=403, detail="Wallet address mismatch")
+
         if payment_service._has_free_request(request.userAddress):
             remaining = payment_service.get_remaining_free_requests(request.userAddress)
             return {

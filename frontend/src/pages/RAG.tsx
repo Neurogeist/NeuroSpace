@@ -38,7 +38,7 @@ export default function RAGPage() {
     const [documentToDelete, setDocumentToDelete] = useState<string | null>(null);
     const cancelRef = useRef<HTMLButtonElement>(null);
     const toast = useToast();
-    const { address, connect, isConnected } = useWallet();
+    const { address, connect, isConnected, provider } = useWallet();
 
     const borderColor = useColorModeValue('gray.200', 'gray.700');
     const linkColor = useColorModeValue('blue.500', 'blue.300');
@@ -57,8 +57,19 @@ export default function RAGPage() {
     }, [isConnected, address]);
 
     const loadDocuments = async (walletAddress: string) => {
+        if (!provider) {
+            toast({
+                title: 'Error',
+                description: 'Wallet provider not available',
+                status: 'error',
+                duration: 3000,
+                isClosable: true,
+            });
+            return;
+        }
+
         try {
-            const docs = await getDocuments(walletAddress);
+            const docs = await getDocuments(walletAddress, provider);
             setDocuments(docs);
         } catch (error) {
             console.error('Error loading documents:', error);
@@ -76,7 +87,7 @@ export default function RAGPage() {
         const file = event.target.files?.[0];
         if (!file) return;
 
-        if (!isConnected || !address) {
+        if (!isConnected || !address || !provider) {
             toast({
                 title: 'Wallet Required',
                 description: 'Please connect your wallet to upload documents',
@@ -91,7 +102,7 @@ export default function RAGPage() {
         setUploadStatus('Uploading...');
 
         try {
-            const result = await uploadDocument(file, address);
+            const result = await uploadDocument(file, address, provider);
             setUploadStatus('Uploaded');
             setDocuments(prev => [...prev, result]);
             toast({
@@ -114,7 +125,7 @@ export default function RAGPage() {
     };
 
     const handleQuery = async () => {
-        if (!query.trim()) return;
+        if (!query.trim() || !provider) return;
 
         setIsLoading(true);
         setResponse('');
@@ -122,7 +133,7 @@ export default function RAGPage() {
         setVerificationResult(null);
 
         try {
-            const result = await queryDocuments(query, address || '');
+            const result = await queryDocuments(query, address || '', provider);
             setResponse(result.response);
             setSources(result.sources);
 
@@ -161,10 +172,10 @@ export default function RAGPage() {
     };
 
     const handleDeleteConfirm = async () => {
-        if (!documentToDelete || !address) return;
+        if (!documentToDelete || !address || !provider) return;
 
         try {
-            await deleteDocument(documentToDelete, address);
+            await deleteDocument(documentToDelete, address, provider);
             setDocuments(documents.filter(doc => doc.id !== documentToDelete));
             toast({
                 title: 'Success',
