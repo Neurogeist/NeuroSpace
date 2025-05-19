@@ -1,5 +1,7 @@
 import axios from 'axios';
 import { API_BASE_URL } from './api';
+import { getAuthHeaders } from './auth';
+import { ethers } from 'ethers';
 
 export interface FlagMessageRequest {
     message_id: string;
@@ -20,9 +22,15 @@ export const flagMessage = async (
     messageId: string,
     reason: FlagMessageRequest['reason'],
     note?: string,
-    walletAddress?: string
+    walletAddress?: string,
+    provider?: ethers.BrowserProvider
 ): Promise<FlaggedMessage> => {
+    if (!walletAddress || !provider) {
+        throw new Error('Wallet address and provider are required for flagging messages');
+    }
+
     try {
+        const authHeaders = await getAuthHeaders(walletAddress, provider);
         const response = await axios.post(
             `${API_BASE_URL}/flag`,
             {
@@ -30,11 +38,7 @@ export const flagMessage = async (
                 reason,
                 note
             },
-            {
-                headers: {
-                    'wallet-address': walletAddress
-                }
-            }
+            { headers: authHeaders }
         );
         
         return response.data.flagged_message;

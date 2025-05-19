@@ -18,7 +18,6 @@ export const generateNonce = (): string => {
 };
 
 export const signMessage = async (
-    walletAddress: string,
     nonce: string,
     provider: ethers.BrowserProvider
 ): Promise<string> => {
@@ -46,7 +45,7 @@ export const login = async (
     refreshPromise = (async () => {
         try {
             const nonce = generateNonce();
-            const signature = await signMessage(walletAddress, nonce, provider);
+            const signature = await signMessage(nonce, provider);
             
             const response = await fetch(`${import.meta.env.VITE_API_URL}/auth/login`, {
                 method: 'POST',
