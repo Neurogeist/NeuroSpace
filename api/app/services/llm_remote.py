@@ -6,6 +6,7 @@ import asyncio
 from typing import Optional
 from ..core.config import get_settings
 from .model_registry import ModelConfig
+from openai import AsyncOpenAI
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -16,6 +17,7 @@ class RemoteLLMClient:
     def __init__(self):
         self.together_base_url = "https://api.together.xyz/v1/completions"
         self.replicate_base_url = "https://api.replicate.com/v1/predictions"
+        self.openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     
     async def generate(self, model_id: str, prompt: str, system_prompt: Optional[str], config: ModelConfig) -> str:
         """Generate a response using a remote LLM provider."""
@@ -23,6 +25,8 @@ class RemoteLLMClient:
             return await self._generate_together(model_id, prompt, system_prompt, config)
         elif config.provider == "replicate":
             return await self._generate_replicate(model_id, prompt, system_prompt, config)
+        elif config.provider == "openai":
+            return await self._generate_openai(model_id, prompt, system_prompt, config)
         else:
             raise ValueError(f"Unsupported provider: {config.provider}")
     
@@ -128,4 +132,35 @@ class RemoteLLMClient:
                     
         except Exception as e:
             logger.error(f"Error generating with Replicate: {str(e)}")
+            raise
+
+    async def _generate_openai(self, model_id: str, prompt: str, system_prompt: Optional[str], config: ModelConfig) -> str:
+        """Generate a response using OpenAI API."""
+        try:
+            # Get API key from environment
+            api_key = os.getenv(config.api_key_env)
+            if not api_key:
+                raise ValueError(f"API key not found in environment variable {config.api_key_env}")
+            
+            # Prepare messages
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+            
+            # Make request
+            response = await self.openai_client.chat.completions.create(
+                model=model_id,
+                messages=messages,
+                temperature=config.temperature,
+                max_tokens=config.max_new_tokens,
+                top_p=config.top_p,
+                frequency_penalty=0.0,
+                presence_penalty=0.0
+            )
+            
+            return response.choices[0].message.content.strip()
+            
+        except Exception as e:
+            logger.error(f"Error generating with OpenAI: {str(e)}")
             raise 

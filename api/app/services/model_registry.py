@@ -22,7 +22,7 @@ class ModelConfig(BaseModel):
     do_sample: bool = True
     num_beams: int = 1
     early_stopping: bool = False
-    provider: str = "local"  # "local", "together", or "replicate"
+    provider: str = "local"  # "local", "together", "replicate", or "openai"
     api_key_env: Optional[str] = None  # Environment variable name for API key
 
 class ModelRegistry:
@@ -53,6 +53,30 @@ class ModelRegistry:
                 api_key_env="TOGETHER_API_KEY",
                 system_prompt="You are a helpful AI assistant. Format your responses using markdown for better readability. Use code blocks for code examples, bold for emphasis, and lists for structured information. Answer questions accurately and concisely.",
                 max_new_tokens=512,
+                temperature=0.7,
+                top_p=0.9,
+                do_sample=True,
+                num_beams=1,
+                early_stopping=False
+            ),
+            "gpt-4-turbo": ModelConfig(
+                model_id="gpt-4-0125-preview",
+                provider="openai",
+                api_key_env="OPENAI_API_KEY",
+                system_prompt="You are a helpful AI assistant. Format your responses using markdown for better readability. Use code blocks for code examples, bold for emphasis, and lists for structured information. Answer questions accurately and concisely.",
+                max_new_tokens=4096,
+                temperature=0.7,
+                top_p=0.9,
+                do_sample=True,
+                num_beams=1,
+                early_stopping=False
+            ),
+            "gpt-3.5-turbo": ModelConfig(
+                model_id="gpt-3.5-turbo-0125",
+                provider="openai",
+                api_key_env="OPENAI_API_KEY",
+                system_prompt="You are a helpful AI assistant. Format your responses using markdown for better readability. Use code blocks for code examples, bold for emphasis, and lists for structured information. Answer questions accurately and concisely.",
+                max_new_tokens=2048,
                 temperature=0.7,
                 top_p=0.9,
                 do_sample=True,
