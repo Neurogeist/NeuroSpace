@@ -30,46 +30,6 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { Components } from 'react-markdown';
 
-const MarkdownComponents: Components = {
-    p: ({ children }) => <Text mb={2}>{children}</Text>,
-    em: ({ children }) => <Text as="em">{children}</Text>,
-    strong: ({ children }) => <Text as="strong" fontWeight="bold">{children}</Text>,
-    code: (props) => {
-        const { inline, children } = props as { inline?: boolean; children: React.ReactNode };
-        if (inline) {
-            return <Code p={1} borderRadius="md">{children}</Code>;
-        }
-        return (
-            <Box
-                as="pre"
-                p={3}
-                bg={useColorModeValue('gray.100', 'gray.800')}
-                borderRadius="md"
-                overflowX="auto"
-                whiteSpace="pre-wrap"
-                fontSize="sm"
-                fontFamily="mono"
-                border="1px solid"
-                borderColor={useColorModeValue('gray.200', 'gray.700')}
-            >
-                <Text color={useColorModeValue('gray.800', 'gray.100')}>{children}</Text>
-            </Box>
-        );
-    },
-    ul: ({ children }) => <Box as="ul" pl={4} mb={2}>{children}</Box>,
-    ol: ({ children }) => (
-        <Box as="ol" pl={4} mb={2} style={{ listStylePosition: 'inside' }}>
-            {children}
-        </Box>
-    ),      
-    li: ({ children }) => <Box as="li" mb={1}>{children}</Box>,
-    a: ({ href, children }) => (
-        <Link href={href} color="blue.500" isExternal>
-            {children}
-        </Link>
-    ),
-};
-
 export default function RAGPage() {
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [uploadStatus, setUploadStatus] = useState<string>('');
@@ -90,6 +50,12 @@ export default function RAGPage() {
     const textColor = useColorModeValue('gray.800', 'gray.100');
     const cardBgColor = useColorModeValue('white', 'gray.800');
     const headerBgColor = useColorModeValue('gray.50', 'gray.800');
+    const codeBgColor = useColorModeValue('gray.100', 'gray.800');
+    const codeBorderColor = useColorModeValue('gray.200', 'gray.700');
+    const codeTextColor = useColorModeValue('gray.800', 'gray.100');
+    const documentBgColor = useColorModeValue('gray.50', 'gray.700');
+    const responseBgColor = useColorModeValue('gray.50', 'gray.700');
+    const sourceBgColor = useColorModeValue('gray.50', 'gray.700');
 
     const blockExplorerUrl = import.meta.env.VITE_ENVIRONMENT?.toLowerCase() === 'production'
         ? 'https://basescan.org'
@@ -249,6 +215,46 @@ export default function RAGPage() {
         return `${hash.slice(0, 6)}...${hash.slice(-4)}`;
     };
 
+    const markdownComponents: Components = {
+        p: ({ children }) => <Text mb={2}>{children}</Text>,
+        em: ({ children }) => <Text as="em">{children}</Text>,
+        strong: ({ children }) => <Text as="strong" fontWeight="bold">{children}</Text>,
+        code: (props) => {
+            const { inline, children } = props as { inline?: boolean; children: React.ReactNode };
+            if (inline) {
+                return <Code p={1} borderRadius="md">{children}</Code>;
+            }
+            return (
+                <Box
+                    as="pre"
+                    p={3}
+                    bg={codeBgColor}
+                    borderRadius="md"
+                    overflowX="auto"
+                    whiteSpace="pre-wrap"
+                    fontSize="sm"
+                    fontFamily="mono"
+                    border="1px solid"
+                    borderColor={codeBorderColor}
+                >
+                    <Text color={codeTextColor}>{children}</Text>
+                </Box>
+            );
+        },
+        ul: ({ children }) => <Box as="ul" pl={4} mb={2}>{children}</Box>,
+        ol: ({ children }) => (
+            <Box as="ol" pl={4} mb={2} style={{ listStylePosition: 'inside' }}>
+                {children}
+            </Box>
+        ),      
+        li: ({ children }) => <Box as="li" mb={1}>{children}</Box>,
+        a: ({ href, children }) => (
+            <Link href={href} color={linkColor} isExternal>
+                {children}
+            </Link>
+        ),
+    };
+
     return (
         <Box maxW="1200px" mx="auto" p={4} minH="100vh">
             <VStack spacing={8} align="stretch">
@@ -321,7 +327,7 @@ export default function RAGPage() {
                     <VStack spacing={4} align="stretch">
                         <Text fontSize="lg" fontWeight="semibold" color={textColor}>Uploaded Documents</Text>
                         {documents.map(doc => (
-                            <HStack key={doc.id} justify="space-between" p={2} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="md">
+                            <HStack key={doc.id} justify="space-between" p={2} bg={documentBgColor} borderRadius="md">
                                 <Text color={textColor}>{doc.name}</Text>
                                 <HStack>
                                     <Tooltip label="View on IPFS">
@@ -399,11 +405,11 @@ export default function RAGPage() {
                                     </Badge>
                                 )}
                             </HStack>
-                            <Box p={4} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="md">
+                            <Box p={4} bg={responseBgColor} borderRadius="md">
                                 <ReactMarkdown
                                     remarkPlugins={[remarkGfm]}
                                     rehypePlugins={[rehypeRaw]}
-                                    components={MarkdownComponents}
+                                    components={markdownComponents}
                                 >
                                     {response}
                                 </ReactMarkdown>
@@ -423,11 +429,11 @@ export default function RAGPage() {
                     >
                         <VStack spacing={4} align="stretch">
                             <Text fontSize="lg" fontWeight="semibold" color={textColor}>Sources</Text>
-                            {sources.map(source => (
+                            {sources.map((source, index) => (
                                 <Box
-                                    key={source.id}
+                                    key={`${source.id}-${index}`}
                                     p={4}
-                                    bg={useColorModeValue('gray.50', 'gray.700')}
+                                    bg={sourceBgColor}
                                     borderRadius="md"
                                 >
                                     <VStack align="stretch" spacing={2}>
