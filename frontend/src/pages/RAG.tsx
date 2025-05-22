@@ -29,6 +29,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { Components } from 'react-markdown';
+import { verifyHash } from '../utils/verification';
 
 export default function RAGPage() {
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -148,6 +149,44 @@ export default function RAGPage() {
             setResponse(result.response);
             setSources(result.sources);
 
+            // Create verification data matching backend payload
+            const verificationData = {
+                prompt: query,
+                response: result.response,
+                model_name: "mixtral-8x7b-instruct",
+                model_id: "mixtral-8x7b-instruct",
+                temperature: 0.7,
+                max_tokens: 1000,
+                system_prompt: null,
+                timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, ''), // Remove milliseconds and Z
+                wallet_address: address || '',
+                session_id: '',
+                rag_sources: result.sources.map(source => ({
+                    id: source.id,
+                    snippet: source.snippet,
+                    ipfsHash: source.ipfsHash,
+                    chunk_index: source.chunk_index,
+                    similarity: source.similarity
+                })),
+                tool_calls: []
+            };
+
+            // First verify the hash
+            const hashIsValid = await verifyHash(verificationData, result.verification_hash);
+            if (!hashIsValid) {
+                console.error('Hash verification failed');
+                setVerificationResult(false);
+                toast({
+                    title: 'Warning',
+                    description: 'Response verification failed - hash mismatch',
+                    status: 'warning',
+                    duration: 3000,
+                    isClosable: true,
+                });
+                return;
+            }
+
+            // Then verify the signature
             const verified = await verifyRAGResponse(
                 result.verification_hash,
                 result.signature
@@ -157,7 +196,7 @@ export default function RAGPage() {
             if (!verified) {
                 toast({
                     title: 'Warning',
-                    description: 'Response verification failed',
+                    description: 'Response verification failed - signature mismatch',
                     status: 'warning',
                     duration: 3000,
                     isClosable: true,

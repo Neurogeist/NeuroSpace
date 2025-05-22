@@ -23,9 +23,16 @@ function serializeValue(value: any): string {
     } else if (typeof value === 'string') {
         return `"${value}"`;
     } else if (value instanceof Date) {
-        return value.toISOString();
+        // Use ISO format without milliseconds and Z
+        return value.toISOString().replace(/\.\d{3}Z$/, '');
+    } else if (Array.isArray(value)) {
+        // Serialize arrays
+        const items = value.map(item => serializeValue(item));
+        return `[${items.join(',')}]`;
     } else if (typeof value === 'object' && value !== null) {
         return serializeObject(value);
+    } else if (value === null) {
+        return 'null';
     }
     return String(value);
 }
@@ -34,9 +41,9 @@ function serializeObject(obj: Record<string, any>): string {
     const sortedKeys = Object.keys(obj).sort();
     const serializedItems = sortedKeys.map(key => {
         const serializedValue = serializeValue(obj[key]);
-        return `"${key}": ${serializedValue}`;
+        return `"${key}":${serializedValue}`; // Remove space after colon
     });
-    return `{${serializedItems.join(', ')}}`;
+    return `{${serializedItems.join(',')}}`; // Remove space after comma
 }
 
 export async function generateVerificationHash(data: VerificationData): Promise<string> {
@@ -51,13 +58,56 @@ export async function generateVerificationHash(data: VerificationData): Promise<
         throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
     }
     
-    // Serialize the data with stable formatting
-    const serializedData = JSON.stringify(dataCopy, Object.keys(dataCopy).sort()).replace(/[\u007f-\uffff]/g, function(chr) {
-        return '\\u' + ('0000' + chr.charCodeAt(0).toString(16)).slice(-4);
+    // Format numbers to match backend precision
+    if (typeof dataCopy.temperature === 'number') {
+        dataCopy.temperature = Number(dataCopy.temperature.toFixed(1));
+    }
+    if (typeof dataCopy.max_tokens === 'number') {
+        dataCopy.max_tokens = Math.round(dataCopy.max_tokens);
+    }
+    
+    // Format rag_sources numbers and sort fields
+    if (Array.isArray(dataCopy.rag_sources)) {
+        dataCopy.rag_sources = dataCopy.rag_sources.map(source => {
+            const formattedSource = {
+                ...source,
+                chunk_index: Math.round(source.chunk_index),
+                // Keep full precision for similarity to match backend
+                similarity: source.similarity
+            };
+            // Sort fields within each source object
+            return Object.keys(formattedSource)
+                .sort()
+                .reduce((obj: Record<string, any>, key) => {
+                    obj[key] = formattedSource[key as keyof typeof formattedSource];
+                    return obj;
+                }, {});
+        });
+    }
+    
+    // Sort keys alphabetically to match backend
+    const sortedData = Object.keys(dataCopy)
+        .sort()
+        .reduce((obj: Record<string, any>, key) => {
+            obj[key] = dataCopy[key as keyof VerificationData];
+            return obj;
+        }, {});
+    
+    // Serialize the data with stable formatting to match backend
+    const serializedData = JSON.stringify(sortedData, (key: string, value: any) => {
+        // Keep numbers as numbers, don't convert to strings
+        if (typeof value === 'number') {
+            return value;
+        }
+        // Format timestamp to match backend (remove milliseconds and Z)
+        if (key === 'timestamp' && typeof value === 'string') {
+            return value.replace(/\.\d{3}Z?$/, '');
+        }
+        return value;
     });
     
-
-    //console.log('📝 Serialized data (frontend):', serializedData);
+    console.log('📝 Frontend verification data:', dataCopy);
+    console.log('📝 Frontend serialized data:', serializedData);
     
     // Generate SHA-256 hash using Web Crypto API
     const encoder = new TextEncoder();
@@ -65,12 +115,16 @@ export async function generateVerificationHash(data: VerificationData): Promise<
     const hashBuffer = await crypto.subtle.digest('SHA-256', encodedData);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    console.log('🔐 Frontend generated hash:', hashHex);
     return hashHex;
 }
 
 export async function verifyHash(verificationData: VerificationData, expectedHash: string): Promise<boolean> {
     try {
+        console.log('🔍 Expected hash:', expectedHash);
         const computedHash = await generateVerificationHash(verificationData);
+        console.log('🔍 Computed hash:', computedHash);
+        console.log('🔍 Hash match:', computedHash === expectedHash);
         return computedHash === expectedHash;
     } catch (error) {
         console.error('Error verifying hash:', error);
