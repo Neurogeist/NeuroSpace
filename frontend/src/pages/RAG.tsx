@@ -19,11 +19,56 @@ import {
     AlertDialogHeader,
     AlertDialogContent,
     AlertDialogOverlay,
+    Code,
 } from '@chakra-ui/react';
 import { FiUpload, FiLink, FiHash, FiTrash2 } from 'react-icons/fi';
 import { uploadDocument, queryDocuments, getDocuments, verifyRAGResponse, deleteDocument } from '../services/rag';
 import { Document, Source } from '../services/rag';
 import { useWallet } from '../hooks/useWallet';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
+import { Components } from 'react-markdown';
+
+const MarkdownComponents: Components = {
+    p: ({ children }) => <Text mb={2}>{children}</Text>,
+    em: ({ children }) => <Text as="em">{children}</Text>,
+    strong: ({ children }) => <Text as="strong" fontWeight="bold">{children}</Text>,
+    code: (props) => {
+        const { inline, children } = props as { inline?: boolean; children: React.ReactNode };
+        if (inline) {
+            return <Code p={1} borderRadius="md">{children}</Code>;
+        }
+        return (
+            <Box
+                as="pre"
+                p={3}
+                bg={useColorModeValue('gray.100', 'gray.800')}
+                borderRadius="md"
+                overflowX="auto"
+                whiteSpace="pre-wrap"
+                fontSize="sm"
+                fontFamily="mono"
+                border="1px solid"
+                borderColor={useColorModeValue('gray.200', 'gray.700')}
+            >
+                <Text color={useColorModeValue('gray.800', 'gray.100')}>{children}</Text>
+            </Box>
+        );
+    },
+    ul: ({ children }) => <Box as="ul" pl={4} mb={2}>{children}</Box>,
+    ol: ({ children }) => (
+        <Box as="ol" pl={4} mb={2} style={{ listStylePosition: 'inside' }}>
+            {children}
+        </Box>
+    ),      
+    li: ({ children }) => <Box as="li" mb={1}>{children}</Box>,
+    a: ({ href, children }) => (
+        <Link href={href} color="blue.500" isExternal>
+            {children}
+        </Link>
+    ),
+};
 
 export default function RAGPage() {
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -355,7 +400,13 @@ export default function RAGPage() {
                                 )}
                             </HStack>
                             <Box p={4} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="md">
-                                <Text color={textColor}>{response}</Text>
+                                <ReactMarkdown
+                                    remarkPlugins={[remarkGfm]}
+                                    rehypePlugins={[rehypeRaw]}
+                                    components={MarkdownComponents}
+                                >
+                                    {response}
+                                </ReactMarkdown>
                             </Box>
                         </VStack>
                     </Box>
