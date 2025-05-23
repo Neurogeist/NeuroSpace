@@ -158,7 +158,7 @@ export default function RAGPage() {
                 temperature: 0.7,
                 max_tokens: 1000,
                 system_prompt: null,
-                timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, ''), // Remove milliseconds and Z
+                timestamp: result.timestamp, // Use timestamp from backend response
                 wallet_address: address || '',
                 session_id: '',
                 rag_sources: result.sources.map(source => ({

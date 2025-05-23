@@ -26,6 +26,7 @@ export interface RAGResponse {
     signature: string;
     transaction_hash: string;
     ipfs_cid: string;
+    timestamp: string;
 }
 
 export const uploadDocument = async (

@@ -313,7 +313,8 @@ Answer:"""
                 "verification_hash": verification_hash,
                 "signature": signature,
                 "transaction_hash": transaction_hash,
-                "ipfs_cid": ipfs_cid
+                "ipfs_cid": ipfs_cid,
+                "timestamp": timestamp
             }
 
         except Exception as e:
