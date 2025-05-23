@@ -268,7 +268,8 @@ Answer:"""
             )
             response = llm_response.get("response", "") if isinstance(llm_response, dict) else llm_response
 
-            timestamp = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+            # Use ISO format timestamp without microseconds
+            timestamp = datetime.utcnow().replace(microsecond=0).isoformat()
             sources = [{
                 "id": c["document_id"],
                 "snippet": c["content"],
@@ -277,11 +278,20 @@ Answer:"""
                 "similarity": c["similarity"]
             } for c in chunks]
 
+            # Create payload matching frontend VerificationData interface
             payload = {
-                "query": query,
+                "prompt": query,
                 "response": response,
-                "sources": sources,
-                "timestamp": timestamp
+                "model_name": "mixtral-8x7b-instruct",
+                "model_id": "mixtral-8x7b-instruct",
+                "temperature": 0.7,
+                "max_tokens": 1000,  # Default value
+                "system_prompt": None,
+                "timestamp": timestamp,
+                "wallet_address": wallet_address,
+                "session_id": "",  # Empty for RAG queries
+                "rag_sources": sources,
+                "tool_calls": []
             }
 
             verification_hash = self.llm_service.create_verification_hash(payload)
@@ -303,7 +313,8 @@ Answer:"""
                 "verification_hash": verification_hash,
                 "signature": signature,
                 "transaction_hash": transaction_hash,
-                "ipfs_cid": ipfs_cid
+                "ipfs_cid": ipfs_cid,
+                "timestamp": timestamp
             }
 
         except Exception as e:

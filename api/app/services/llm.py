@@ -308,9 +308,15 @@ class LLMService:
             import json
             import hashlib
 
+            # Log the data being hashed
+            logger.info(f"📝 Backend verification data: {data}")
+            
+            # Serialize with consistent formatting
             data_bytes = json.dumps(data, sort_keys=True, separators=(',', ':')).encode('utf-8')
+            serialized_data = data_bytes.decode('utf-8')
+            logger.info(f"📝 Backend serialized data: {serialized_data}")
+            
             hash_hex = hashlib.sha256(data_bytes).hexdigest()
-
             logger.info(f"🔐 Generated hash: {hash_hex}")
             return hash_hex
         except Exception as e:

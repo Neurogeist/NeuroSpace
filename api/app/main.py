@@ -407,7 +407,26 @@ async def submit_prompt(
             "timestamp": timestamp,
             "verification_hash": verification_hash,
             "signature": signature,
-            "transaction_hash": transaction_hash
+            "transaction_hash": transaction_hash,
+            "metadata": {
+                "model_config": {
+                    "temperature": model_config.temperature,
+                    "max_tokens": model_config.max_new_tokens,
+                    "top_p": model_config.top_p,
+                    "do_sample": model_config.do_sample,
+                    "num_beams": model_config.num_beams,
+                    "early_stopping": model_config.early_stopping
+                },
+                "session": {
+                    "session_id": session_id,
+                    "wallet_address": request.user_address,
+                    "payment_method": request.payment_method
+                },
+                "system": {
+                    "version": "1.0.0",
+                    "environment": settings.ENVIRONMENT
+                }
+            }
         }
         ipfs_cid = await ipfs_service.upload_json(ipfs_data)
         

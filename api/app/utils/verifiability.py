@@ -2,6 +2,9 @@ import hashlib
 import json
 from typing import Dict, Any
 from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 def _serialize_value(value: Any) -> str:
     """Serialize a value to a stable string representation."""
@@ -9,14 +12,20 @@ def _serialize_value(value: Any) -> str:
         # Use fixed precision for floats
         return f"{value:.6f}"
     elif isinstance(value, datetime):
-        # Use ISO format for timestamps
-        return value.isoformat()
+        # Use ISO format for timestamps without microseconds
+        return value.replace(microsecond=0).isoformat()
+    elif isinstance(value, (list, tuple)):
+        # Serialize lists and tuples
+        items = [_serialize_value(item) for item in value]
+        return f"[{','.join(items)}]"
     elif isinstance(value, dict):
         # Recursively serialize dictionaries
         return _serialize_dict(value)
+    elif value is None:
+        return "null"
     else:
-        # Convert other types to string
-        return str(value)
+        # Convert other types to string and escape special characters
+        return json.dumps(str(value))
 
 def _serialize_dict(data: Dict[str, Any]) -> str:
     """Serialize a dictionary with sorted keys and stable value formatting."""
@@ -62,9 +71,14 @@ def generate_verification_hash(data: Dict[str, Any]) -> str:
     # Serialize the data with stable formatting
     serialized_data = _serialize_dict(data_copy)
     
+    logger.info(f"📝 Backend verification data: {data_copy}")
+    logger.info(f"📝 Backend serialized data: {serialized_data}")
+    
     # Generate SHA-256 hash
     hash_obj = hashlib.sha256(serialized_data.encode('utf-8'))
-    return hash_obj.hexdigest()
+    hash_hex = hash_obj.hexdigest()
+    logger.info(f"🔐 Backend generated hash: {hash_hex}")
+    return hash_hex
 
 def verify_hash(data: Dict[str, Any], expected_hash: str) -> bool:
     """
@@ -78,7 +92,11 @@ def verify_hash(data: Dict[str, Any], expected_hash: str) -> bool:
         bool: True if the hash matches, False otherwise
     """
     try:
+        logger.info(f"🔍 Expected hash: {expected_hash}")
         computed_hash = generate_verification_hash(data)
+        logger.info(f"🔍 Computed hash: {computed_hash}")
+        logger.info(f"🔍 Hash match: {computed_hash == expected_hash}")
         return computed_hash == expected_hash
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error verifying hash: {str(e)}")
         return False 
