@@ -155,57 +155,59 @@ class OnChainQAAgent(BaseAgent):
         
         Args:
             parsed_query: Dictionary containing contract address, function name,
-                         arguments, and ABI type
-                         
+                        arguments, and ABI type
+                        
         Returns:
-            The result of the contract function call
+            The result of the contract function call, adjusted for decimals if needed
             
         Raises:
             ValueError: If the ABI type is not supported
             Exception: For other contract interaction errors
         """
         try:
-            # Extract query parameters
             contract_address = parsed_query["contract_address"]
             function_name = parsed_query["function"]
             args = parsed_query["args"]
             abi_type = parsed_query["abi_type"]
-            
-            # Validate contract address
+
             if not self.web3.is_address(contract_address):
                 raise ValueError(f"Invalid contract address: {contract_address}")
-            
-            # Select ABI based on type
+
             if abi_type == "ERC20":
                 abi = ERC20_ABI
             else:
                 raise ValueError(f"Unsupported ABI type: {abi_type}")
-            
-            # Create contract instance
+
             contract = self.web3.eth.contract(
                 address=self.web3.to_checksum_address(contract_address),
                 abi=abi
             )
-            
-            # Get the function
+
             contract_function = getattr(contract.functions, function_name)
-            
-            # Call the function with provided arguments
             result = contract_function(*args).call()
-            
+
+            # If function is `totalSupply`, adjust by decimals
+            if function_name == "totalSupply":
+                decimals = contract.functions.decimals().call()
+                human_readable_result = result / (10 ** decimals)
+                logger.info(
+                    f"{function_name} (raw): {result}, decimals: {decimals}, adjusted: {human_readable_result}"
+                )
+                return human_readable_result
+
             logger.info(
-                f"Successfully called {function_name} on contract {contract_address} "
-                f"with args {args}. Result: {result}"
+                f"Successfully called {function_name} on contract {contract_address} with args {args}. Result: {result}"
             )
-            
+
             return result
-            
+
         except ValueError as e:
             logger.error(f"Validation error in _execute_query: {str(e)}")
             raise
         except Exception as e:
             logger.error(f"Error executing contract query: {str(e)}")
             raise Exception(f"Failed to execute contract query: {str(e)}")
+
     
     async def _format_answer(self, result: Any) -> str:
         """
@@ -226,9 +228,9 @@ class OnChainQAAgent(BaseAgent):
             '{\n  "name": "USD Coin",\n  "symbol": "USDC"\n}'
         """
         try:
-            if isinstance(result, int):
-                # Format integers with commas
-                return f"{result:,}"
+            if isinstance(result, int) or isinstance(result, float):
+            # Format numbers with commas (integers or floats)
+                return f"{result:,.0f}" if result == int(result) else f"{result:,.2f}"
             elif isinstance(result, str):
                 # Return strings as-is
                 return result
