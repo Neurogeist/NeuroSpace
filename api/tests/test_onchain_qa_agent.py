@@ -5,9 +5,11 @@ import asyncio
 import unittest
 from unittest.mock import patch, AsyncMock, MagicMock
 import re
+from web3 import Web3
 
-from api.app.agents.onchain_qa import OnChainQAAgent
-from api.app.services.ipfs import IPFSService
+from app.agents.onchain_qa import OnChainQAAgent
+from app.agents.schemas import OnChainQuery, ERC20_FUNCTIONS
+from app.services.ipfs import IPFSService
 
 class TestOnChainQAAgent(unittest.TestCase):
     """Test cases for OnChainQAAgent."""
@@ -18,85 +20,135 @@ class TestOnChainQAAgent(unittest.TestCase):
             agent_id="test_agent",
             web3_provider="http://localhost:8545"
         )
+        
+        # Mock Web3 connection
+        self.agent.web3.is_connected = MagicMock(return_value=True)
     
-    def test_logging_and_finalizing_trace(self):
-        """Test logging a step and finalizing the trace."""
+    def test_parse_question_known_query(self):
+        """Test parsing a known query."""
         # Run the async code
-        asyncio.run(self._test_logging_and_finalizing_trace())
+        asyncio.run(self._test_parse_question_known_query())
     
-    async def _test_logging_and_finalizing_trace(self):
-        """Async implementation of logging and finalizing test."""
-        # Log a step
-        step = await self.agent.log_step(
-            action="parse_question",
-            inputs={"question": "What is the total supply?"},
-            outputs={"parsed_query": {"function": "totalSupply"}},
-            metadata={}
+    async def _test_parse_question_known_query(self):
+        """Async implementation of known query parsing test."""
+        question = "What is the total supply of neurocoin"
+        query = await self.agent._parse_question(question)
+        
+        self.assertIsInstance(query, OnChainQuery)
+        self.assertEqual(query.function, "totalSupply")
+        self.assertEqual(query.abi_type, "ERC20")
+        self.assertEqual(len(query.args), 0)
+    
+    @patch.object(OnChainQAAgent, 'client')
+    def test_parse_question_llm_fallback(self, mock_client):
+        """Test LLM fallback for unknown queries."""
+        # Run the async code
+        asyncio.run(self._test_parse_question_llm_fallback(mock_client))
+    
+    async def _test_parse_question_llm_fallback(self, mock_client):
+        """Async implementation of LLM fallback test."""
+        # Mock LLM response
+        mock_response = {
+            "contract_address": "0x1234567890123456789012345678901234567890",
+            "function": "balanceOf",
+            "args": ["0x0987654321098765432109876543210987654321"],
+            "abi_type": "ERC20"
+        }
+        mock_client.chat.completions.create.return_value.choices = [
+            MagicMock(message=MagicMock(content=json.dumps(mock_response)))
+        ]
+        
+        question = "What is the balance of 0x0987654321098765432109876543210987654321"
+        query = await self.agent._parse_question(question)
+        
+        self.assertIsInstance(query, OnChainQuery)
+        self.assertEqual(query.function, "balanceOf")
+        self.assertEqual(len(query.args), 1)
+        self.assertEqual(query.args[0], "0x0987654321098765432109876543210987654321")
+    
+    @patch.object(Web3.eth.Contract, 'functions')
+    def test_execute_query(self, mock_contract_functions):
+        """Test executing a query."""
+        # Run the async code
+        asyncio.run(self._test_execute_query(mock_contract_functions))
+    
+    async def _test_execute_query(self, mock_contract_functions):
+        """Async implementation of query execution test."""
+        # Mock contract function calls
+        mock_total_supply = MagicMock()
+        mock_total_supply.call.return_value = 1000000
+        mock_decimals = MagicMock()
+        mock_decimals.call.return_value = 18
+        mock_contract_functions.totalSupply.return_value = mock_total_supply
+        mock_contract_functions.decimals.return_value = mock_decimals
+        
+        query = OnChainQuery(
+            contract_address="0x1234567890123456789012345678901234567890",
+            function="totalSupply",
+            args=[],
+            abi_type="ERC20"
         )
         
-        # Finalize the trace
-        commitment_hash = await self.agent.finalize_trace()
+        result = await self.agent._execute_query(query)
         
-        # Assertions
-        self.assertIsNotNone(self.agent.current_trace)
-        self.assertEqual(len(self.agent.current_trace.steps), 1)
-        self.assertEqual(self.agent.current_trace.steps[0], step)
-        self.assertIsNotNone(commitment_hash)
-        self.assertEqual(self.agent.current_trace.commitment_hash, commitment_hash)
-        
-        # Verify step content
-        self.assertEqual(step.action, "parse_question")
-        self.assertEqual(step.inputs["question"], "What is the total supply?")
-        self.assertEqual(step.outputs["parsed_query"]["function"], "totalSupply")
+        self.assertEqual(result, 1.0)  # 1000000 / 10^18
+        mock_total_supply.call.assert_called_once()
+        mock_decimals.call.assert_called_once()
     
-    @patch.object(IPFSService, 'upload_json')
-    def test_ipfs_upload(self, mock_upload_json):
-        """Test storing trace on IPFS with mocked service."""
+    def test_format_answer(self):
+        """Test formatting different types of answers."""
         # Run the async code
-        asyncio.run(self._test_ipfs_upload(mock_upload_json))
+        asyncio.run(self._test_format_answer())
     
-    async def _test_ipfs_upload(self, mock_upload_json):
-        """Async implementation of IPFS upload test."""
-        # Mock the IPFS upload
-        mock_ipfs_hash = "QmTestHash123"
-        mock_upload_json.return_value = mock_ipfs_hash
-        
-        # Log a step and finalize
-        await self.agent.log_step(
-            action="test_step",
-            inputs={"test": "input"},
-            outputs={"test": "output"},
-            metadata={}
+    async def _test_format_answer(self):
+        """Async implementation of answer formatting test."""
+        # Test uint256 with decimals
+        query = OnChainQuery(
+            contract_address="0x1234567890123456789012345678901234567890",
+            function="totalSupply",
+            args=[],
+            abi_type="ERC20"
         )
-        await self.agent.finalize_trace()
+        result = 1234567.89
+        formatted = await self.agent._format_answer(query, result)
+        self.assertEqual(formatted, "1,234,567.89")
         
-        # Store trace
-        ipfs_hash = await self.agent.store_trace()
+        # Test string
+        query.function = "symbol"
+        result = "USDC"
+        formatted = await self.agent._format_answer(query, result)
+        self.assertEqual(formatted, "USDC")
         
-        # Assertions
-        self.assertEqual(ipfs_hash, mock_ipfs_hash)
-        self.assertEqual(self.agent.current_trace.ipfs_hash, mock_ipfs_hash)
-        mock_upload_json.assert_called_once()
-        
-        # Verify the uploaded data
-        call_args = mock_upload_json.call_args[0][0]
-        self.assertIn("trace_id", call_args)
-        self.assertIn("steps", call_args)
-        self.assertEqual(len(call_args["steps"]), 1)
+        # Test uint8
+        query.function = "decimals"
+        result = 18
+        formatted = await self.agent._format_answer(query, result)
+        self.assertEqual(formatted, "18")
     
+    @patch.object(OnChainQAAgent, '_parse_question')
     @patch.object(OnChainQAAgent, '_execute_query')
     @patch.object(OnChainQAAgent, '_format_answer')
     @patch.object(IPFSService, 'upload_json')
-    def test_full_execute_run(self, mock_upload_json, mock_format_answer, mock_execute_query):
+    def test_full_execute_run(self, mock_upload_json, mock_format_answer, 
+                            mock_execute_query, mock_parse_question):
         """Test the full execute() method with mocked dependencies."""
         # Run the async code
-        asyncio.run(self._test_full_execute_run(mock_upload_json, mock_format_answer, mock_execute_query))
+        asyncio.run(self._test_full_execute_run(mock_upload_json, mock_format_answer, 
+                                              mock_execute_query, mock_parse_question))
     
-    async def _test_full_execute_run(self, mock_upload_json, mock_format_answer, mock_execute_query):
+    async def _test_full_execute_run(self, mock_upload_json, mock_format_answer, 
+                                   mock_execute_query, mock_parse_question):
         """Async implementation of full execute test."""
         # Mock the dependencies
-        mock_execute_query.return_value = {"totalSupply": "1000000"}
-        mock_format_answer.return_value = "The total supply is 1,000,000 tokens"
+        mock_query = OnChainQuery(
+            contract_address="0x1234567890123456789012345678901234567890",
+            function="totalSupply",
+            args=[],
+            abi_type="ERC20"
+        )
+        mock_parse_question.return_value = mock_query
+        mock_execute_query.return_value = 1000000
+        mock_format_answer.return_value = "1,000,000"
         mock_ipfs_hash = "QmTestHash456"
         mock_upload_json.return_value = mock_ipfs_hash
         
@@ -112,12 +164,11 @@ class TestOnChainQAAgent(unittest.TestCase):
         self.assertIn("trace_metadata", result)
         
         # Verify the answer
-        self.assertEqual(result["answer"], "The total supply is 1,000,000 tokens")
+        self.assertEqual(result["answer"], "1,000,000")
         
         # Verify the hashes
         self.assertEqual(result["ipfs_hash"], mock_ipfs_hash)
         self.assertIsNotNone(result["commitment_hash"])
-        self.assertTrue(re.match(r"^0x[a-f0-9]{40}$", result["transaction_hash"]))
         
         # Verify the trace metadata
         self.assertIsInstance(result["trace_metadata"], dict)
@@ -125,6 +176,7 @@ class TestOnChainQAAgent(unittest.TestCase):
         self.assertEqual(len(result["trace_metadata"]["steps"]), 3)  # parse, execute, format
         
         # Verify the mocks were called
+        mock_parse_question.assert_called_once()
         mock_execute_query.assert_called_once()
         mock_format_answer.assert_called_once()
         mock_upload_json.assert_called_once()

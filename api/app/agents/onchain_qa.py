@@ -8,7 +8,7 @@ import logging
 import hashlib
 import json
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 import os
 import openai
 from openai import OpenAI
@@ -17,6 +17,7 @@ from web3.exceptions import ContractLogicError
 from web3.middleware import geth_poa_middleware
 
 from .base import BaseAgent, ExecutionStep, ExecutionTrace
+from .schemas import OnChainQuery, ERC20_FUNCTIONS, SYSTEM_PROMPT
 from ..services.ipfs import IPFSService
 
 logger = logging.getLogger(__name__)
@@ -107,6 +108,7 @@ class OnChainQAAgent(BaseAgent):
             raise ConnectionError(f"Failed to connect to Web3 provider: {web3_provider}")
             
         self.ipfs_service = IPFSService()
+        self.client = OpenAI()
     
     async def execute(self, question: str) -> Dict[str, Any]:
         """
@@ -119,12 +121,12 @@ class OnChainQAAgent(BaseAgent):
             Dict containing the answer and execution trace information
         """
         try:
-            # Log the question parsing step
+            # Parse the question
             parsed_query = await self._parse_question(question)
             await self.log_step(
                 action="parse_question",
                 inputs={"question": question},
-                outputs={"parsed_query": parsed_query},
+                outputs={"parsed_query": parsed_query.dict()},
                 metadata={}
             )
             
@@ -132,13 +134,13 @@ class OnChainQAAgent(BaseAgent):
             result = await self._execute_query(parsed_query)
             await self.log_step(
                 action="execute_query",
-                inputs={"parsed_query": parsed_query},
+                inputs={"parsed_query": parsed_query.dict()},
                 outputs={"result": result},
                 metadata={}
             )
             
             # Format the answer
-            answer = await self._format_answer(result)
+            answer = await self._format_answer(parsed_query, result)
             await self.log_step(
                 action="format_answer",
                 inputs={"result": result},
@@ -170,22 +172,31 @@ class OnChainQAAgent(BaseAgent):
             )
             raise
     
-    async def _parse_question(self, question: str) -> Dict[str, any]:
-        """Parse question using rule-based matching and fallback to LLM if needed."""
+    async def _parse_question(self, question: str) -> OnChainQuery:
+        """
+        Parse question using rule-based matching and fallback to LLM if needed.
+        
+        Args:
+            question: Natural language question
+            
+        Returns:
+            OnChainQuery: Structured query object
+            
+        Raises:
+            ValueError: If the question cannot be parsed
+        """
         try:
             q_lower = question.lower().strip()
 
             # Rule-based matching
             if q_lower in KNOWN_QUERIES:
                 logger.info(f"Matched known query: {q_lower}")
-                return KNOWN_QUERIES[q_lower]
+                return OnChainQuery(**KNOWN_QUERIES[q_lower])
 
             # Fallback to LLM
             logger.info("Falling back to LLM-based parsing")
-
-            client = OpenAI()
             
-            completion = client.chat.completions.create(
+            completion = self.client.chat.completions.create(
                 model="gpt-4",
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
@@ -195,125 +206,105 @@ class OnChainQAAgent(BaseAgent):
             )
             content = completion.choices[0].message.content
 
+            # Parse and validate the response
             parsed = json.loads(content)
+            query = OnChainQuery(**parsed)
+            
+            # Validate function exists
+            if query.function not in ERC20_FUNCTIONS:
+                raise ValueError(f"Unsupported function: {query.function}")
+                
+            # Validate arguments
+            function_meta = ERC20_FUNCTIONS[query.function]
+            if len(query.args) != len(function_meta.args):
+                raise ValueError(
+                    f"Function {query.function} expects {len(function_meta.args)} arguments, "
+                    f"got {len(query.args)}"
+                )
 
-            # Validate keys
-            required_keys = {"contract_address", "function", "args", "abi_type"}
-            if not required_keys.issubset(parsed):
-                raise ValueError("Missing one or more required keys in parsed output")
+            return query
 
-            # Reject placeholder values
-            if parsed["contract_address"].strip() == "0x...":
-                raise ValueError("LLM returned placeholder contract address (0x...).")
-
-            return parsed
-
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse LLM response as JSON: {e}")
+            raise ValueError("Could not parse the LLM response into a valid query")
         except Exception as e:
             logger.error(f"Failed to parse question: {e}")
-            raise ValueError("Could not parse the question into a structured query")
+            raise ValueError(f"Could not parse the question: {str(e)}")
     
-    async def _execute_query(self, parsed_query: Dict[str, Any]) -> Any:
+    async def _execute_query(self, query: OnChainQuery) -> Any:
         """
         Execute the parsed query against the blockchain.
         
         Args:
-            parsed_query: Dictionary containing contract address, function name,
-                        arguments, and ABI type
-                        
+            query: Structured query object
+            
         Returns:
-            The result of the contract function call, adjusted for decimals if needed
+            The result of the contract function call
             
         Raises:
-            ValueError: If the ABI type is not supported
+            ValueError: If the query is invalid
             Exception: For other contract interaction errors
         """
         try:
-            contract_address = parsed_query["contract_address"]
-            function_name = parsed_query["function"]
-            args = parsed_query["args"]
-            abi_type = parsed_query["abi_type"]
-
-            if not self.web3.is_address(contract_address):
-                raise ValueError(f"Invalid contract address: {contract_address}")
-
-            if abi_type == "ERC20":
-                abi = ERC20_ABI
-            else:
-                raise ValueError(f"Unsupported ABI type: {abi_type}")
-
+            # Get function metadata
+            function_meta = ERC20_FUNCTIONS[query.function]
+            
+            # Create contract instance
             contract = self.web3.eth.contract(
-                address=self.web3.to_checksum_address(contract_address),
-                abi=abi
+                address=query.contract_address,
+                abi=ERC20_ABI
             )
 
             try:
-                contract_function = getattr(contract.functions, function_name)
-                result = contract_function(*args).call()
+                # Call the function
+                contract_function = getattr(contract.functions, query.function)
+                result = contract_function(*query.args).call()
+                
+                # Apply decimals adjustment if needed
+                if function_meta.decimals_adjustment:
+                    try:
+                        decimals = contract.functions.decimals().call()
+                        result = result / (10 ** decimals)
+                    except ContractLogicError as e:
+                        logger.warning(f"Failed to get decimals, returning raw result: {str(e)}")
+                
+                return result
+                
             except ContractLogicError as e:
                 raise ValueError(f"Contract function call failed: {str(e)}")
 
-            # If function is `totalSupply`, adjust by decimals
-            if function_name == "totalSupply":
-                try:
-                    decimals = contract.functions.decimals().call()
-                    human_readable_result = result / (10 ** decimals)
-                    logger.info(
-                        f"{function_name} (raw): {result}, decimals: {decimals}, adjusted: {human_readable_result}"
-                    )
-                    return human_readable_result
-                except ContractLogicError as e:
-                    logger.warning(f"Failed to get decimals, returning raw result: {str(e)}")
-                    return result
-
-            logger.info(
-                f"Successfully called {function_name} on contract {contract_address} with args {args}. Result: {result}"
-            )
-
-            return result
-
-        except ValueError as e:
-            logger.error(f"Validation error in _execute_query: {str(e)}")
-            raise
         except Exception as e:
             logger.error(f"Error executing contract query: {str(e)}")
             raise Exception(f"Failed to execute contract query: {str(e)}")
-
     
-    async def _format_answer(self, result: Any) -> str:
+    async def _format_answer(self, query: OnChainQuery, result: Any) -> str:
         """
         Format the query result into a human-readable answer.
         
         Args:
+            query: The original query
             result: The raw result from the contract call
             
         Returns:
             str: A human-readable formatted answer
-            
-        Examples:
-            >>> _format_answer(1000000)
-            "1,000,000"
-            >>> _format_answer("USDC")
-            "USDC"
-            >>> _format_answer({"name": "USD Coin", "symbol": "USDC"})
-            '{\n  "name": "USD Coin",\n  "symbol": "USDC"\n}'
         """
         try:
-            if isinstance(result, int) or isinstance(result, float):
-            # Format numbers with commas (integers or floats)
-                return f"{result:,.0f}" if result == int(result) else f"{result:,.2f}"
-            elif isinstance(result, str):
-                # Return strings as-is
-                return result
-            elif isinstance(result, (dict, list)):
-                # Format complex objects as pretty-printed JSON
-                return json.dumps(result, indent=2)
+            function_meta = ERC20_FUNCTIONS[query.function]
+            
+            # Format based on return type
+            if function_meta.return_type == "uint256":
+                if function_meta.decimals_adjustment:
+                    return f"{result:,.2f}"
+                return f"{result:,}"
+            elif function_meta.return_type == "string":
+                return str(result)
+            elif function_meta.return_type == "uint8":
+                return str(result)
             else:
-                # For any other type, convert to string
                 return str(result)
                 
         except Exception as e:
             logger.error(f"Error formatting answer: {str(e)}")
-            # Fallback to string representation if formatting fails
             return str(result)
     
     async def store_trace(self) -> str:
