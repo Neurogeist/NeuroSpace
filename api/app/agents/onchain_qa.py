@@ -199,13 +199,17 @@ class OnChainQAAgent(BaseAgent):
             Dict containing the answer and execution trace information
         """
         try:
+            # Initialize new trace
+            self.current_trace = ExecutionTrace(agent_id=self.agent_id)
+            logger.info(f"Starting new execution trace: {self.current_trace.trace_id}")
+            
             # Parse the question
             parsed_query = await self._parse_question(question)
             await self.log_step(
                 action="parse_question",
                 inputs={"question": question},
                 outputs={"parsed_query": parsed_query.dict()},
-                metadata={}
+                metadata={"timestamp": datetime.utcnow().isoformat()}
             )
             
             # Execute the query
@@ -214,7 +218,11 @@ class OnChainQAAgent(BaseAgent):
                 action="execute_query",
                 inputs={"parsed_query": parsed_query.dict()},
                 outputs={"result": result},
-                metadata={}
+                metadata={
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "contract_address": parsed_query.contract_address,
+                    "function": parsed_query.function
+                }
             )
             
             # Format the answer
@@ -223,63 +231,74 @@ class OnChainQAAgent(BaseAgent):
                 action="format_answer",
                 inputs={"result": result},
                 outputs={"answer": answer},
-                metadata={}
+                metadata={"timestamp": datetime.utcnow().isoformat()}
             )
             
-            # Finalize trace and get commitment
+            # Finalize trace and compute commitment hash
+            logger.info("Finalizing trace and computing commitment hash...")
             commitment_hash = await self.finalize_trace()
+            logger.info(f"Computed commitment hash: {commitment_hash}")
             
             # Store trace on IPFS
+            logger.info("Storing trace on IPFS...")
             ipfs_hash = await self.store_trace()
+            logger.info(f"Stored trace on IPFS with hash: {ipfs_hash}")
             
-            return {
+            # Verify trace is complete
+            if not self.current_trace.commitment_hash or not self.current_trace.ipfs_hash:
+                raise ValueError("Trace is incomplete - missing commitment or IPFS hash")
+            
+            # Prepare response with full trace metadata
+            response = {
                 "answer": answer,
                 "trace_id": self.current_trace.trace_id,
                 "ipfs_hash": ipfs_hash,
                 "commitment_hash": commitment_hash,
-                "trace_metadata": self.current_trace.to_serializable_dict()
+                "trace_metadata": {
+                    "agent_id": self.current_trace.agent_id,
+                    "start_time": self.current_trace.start_time.isoformat() if self.current_trace.start_time else None,
+                    "end_time": self.current_trace.end_time.isoformat() if self.current_trace.end_time else None,
+                    "steps": [
+                        {
+                            "step_id": step.step_id,
+                            "action": step.action,
+                            "timestamp": step.timestamp.isoformat() if step.timestamp else None,
+                            "inputs": step.inputs,
+                            "outputs": step.outputs,
+                            "metadata": step.metadata,
+                            "step_hash": step.compute_hash()
+                        }
+                        for step in self.current_trace.steps
+                    ],
+                    "commitment_hash": self.current_trace.commitment_hash,
+                    "ipfs_hash": self.current_trace.ipfs_hash
+                }
             }
             
-        except ValueError as e:
-            # Log the error
-            await self.log_step(
-                action="error",
-                inputs={"question": question},
-                outputs={"error": str(e)},
-                metadata={}
-            )
-            # Format user-friendly error message
-            error_msg = str(e)
-            if "No valid contract address found" in error_msg:
-                error_msg = (
-                    "I couldn't find a valid token or contract address in your question. "
-                    "Please try one of these formats:\n"
-                    "1. Use a known token name (e.g., 'What is the total supply of USDC?')\n"
-                    "2. Provide a contract address (e.g., 'What is the balance of 0x123...?')\n\n"
-                    "Known tokens: " + ", ".join(TOKEN_REGISTRY.keys())
-                )
-            elif "Unsupported function" in error_msg:
-                error_msg = (
-                    "I don't support that function yet. Here are the supported functions:\n" +
-                    "\n".join(f"- {name}: {meta.description}" for name, meta in ERC20_FUNCTIONS.items())
-                )
-            elif "Contract function call failed" in error_msg:
-                error_msg = (
-                    "The contract call failed. This could be because:\n"
-                    "1. The contract address is incorrect\n"
-                    "2. The contract doesn't support this function\n"
-                    "3. The arguments provided are invalid\n\n"
-                    f"Error details: {str(e)}"
-                )
-            raise ValueError(error_msg)
+            logger.info(f"Execution complete. Trace ID: {self.current_trace.trace_id}")
+            return response
+            
         except Exception as e:
             # Log the error
             await self.log_step(
                 action="error",
                 inputs={"question": question},
                 outputs={"error": str(e)},
-                metadata={}
+                metadata={
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "error_type": type(e).__name__
+                }
             )
+            # Finalize trace even on error to maintain verifiability
+            try:
+                await self.finalize_trace()
+                await self.store_trace()
+            except Exception as trace_error:
+                logger.error(f"Failed to finalize error trace: {str(trace_error)}")
+            
+            # Re-raise with user-friendly message
+            if isinstance(e, ValueError):
+                raise ValueError(str(e))
             raise ValueError(
                 "I encountered an unexpected error. Please try rephrasing your question "
                 "or contact support if the issue persists."
@@ -337,13 +356,50 @@ class OnChainQAAgent(BaseAgent):
                 ],
                 temperature=0
             )
-            content = completion.choices[0].message.content
-
-            # Parse and validate the response
-            parsed = json.loads(content)
+            content = completion.choices[0].message.content.strip()
+            
+            # Log the raw response for debugging
+            logger.debug(f"Raw LLM response: {content}")
+            
+            # Try to extract JSON from the response
+            try:
+                # First try direct JSON parsing
+                parsed = json.loads(content)
+            except json.JSONDecodeError:
+                # If that fails, try to extract JSON from the response
+                import re
+                json_match = re.search(r'\{.*\}', content, re.DOTALL)
+                if json_match:
+                    try:
+                        parsed = json.loads(json_match.group())
+                    except json.JSONDecodeError:
+                        raise ValueError(
+                            "I had trouble understanding your question. Please try rephrasing it "
+                            "or use one of these example formats:\n"
+                            "1. 'What is the total supply of USDC?'\n"
+                            "2. 'What is the balance of 0x123...?'\n"
+                            "3. 'How many decimals does WETH have?'"
+                        )
+                else:
+                    raise ValueError(
+                        "I had trouble understanding your question. Please try rephrasing it "
+                        "or use one of these example formats:\n"
+                        "1. 'What is the total supply of USDC?'\n"
+                        "2. 'What is the balance of 0x123...?'\n"
+                        "3. 'How many decimals does WETH have?'"
+                    )
             
             # Always use our resolved contract address
             parsed["contract_address"] = contract_address
+            
+            # Validate required fields
+            required_fields = ["function", "args", "abi_type"]
+            missing_fields = [field for field in required_fields if field not in parsed]
+            if missing_fields:
+                raise ValueError(
+                    f"Missing required fields in response: {', '.join(missing_fields)}. "
+                    "Please try rephrasing your question."
+                )
             
             query = OnChainQuery(**parsed)
             
@@ -464,8 +520,31 @@ class OnChainQAAgent(BaseAgent):
             raise ValueError("No trace to store")
             
         try:
-            # Convert trace to serializable dictionary
-            trace_data = self.current_trace.to_serializable_dict()
+            # Ensure trace is finalized
+            if not self.current_trace.commitment_hash:
+                await self.finalize_trace()
+            
+            # Convert trace to serializable dictionary with all metadata
+            trace_data = {
+                "trace_id": self.current_trace.trace_id,
+                "agent_id": self.current_trace.agent_id,
+                "start_time": self.current_trace.start_time.isoformat() if self.current_trace.start_time else None,
+                "end_time": self.current_trace.end_time.isoformat() if self.current_trace.end_time else None,
+                "steps": [
+                    {
+                        "step_id": step.step_id,
+                        "action": step.action,
+                        "timestamp": step.timestamp.isoformat() if step.timestamp else None,
+                        "inputs": step.inputs,
+                        "outputs": step.outputs,
+                        "metadata": step.metadata,
+                        "step_hash": step.compute_hash()
+                    }
+                    for step in self.current_trace.steps
+                ],
+                "commitment_hash": self.current_trace.commitment_hash,
+                "ipfs_hash": self.current_trace.ipfs_hash
+            }
             
             # Upload to IPFS
             ipfs_hash = await self.ipfs_service.upload_json(trace_data)

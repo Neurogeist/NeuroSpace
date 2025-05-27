@@ -156,7 +156,7 @@ Available functions:
 Known tokens and their addresses:
 {token_descriptions}
 
-Convert the user question into this JSON format:
+IMPORTANT: You must respond with ONLY a valid JSON object in this exact format:
 {{
   "contract_address": "0x...",
   "function": "function_name",
@@ -169,12 +169,22 @@ Rules:
 2. For known tokens (USDC, WETH, etc.), ALWAYS use their exact contract addresses from the list above
 3. For unknown tokens, you must be given a valid contract address in the question
 4. Include all required arguments in the args array
-5. Only return valid JSON, no comments or text outside the JSON block
+5. ONLY return the JSON object, no other text or comments
 6. NEVER use placeholder addresses (0x...)
 7. If an address is mentioned, validate it's a proper Ethereum address
 
 Example questions and answers:
-{example_questions}
+Q: What is the total supply of USDC?
+A: {{"contract_address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "function": "totalSupply", "args": [], "abi_type": "ERC20"}}
+
+Q: What is the balance of 0x1234567890123456789012345678901234567890?
+A: {{"contract_address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "function": "balanceOf", "args": ["0x1234567890123456789012345678901234567890"], "abi_type": "ERC20"}}
+
+Q: How many decimals does WETH have?
+A: {{"contract_address": "0x4200000000000000000000000000000000000006", "function": "decimals", "args": [], "abi_type": "ERC20"}}
+
+Q: What is the symbol of neurocoin?
+A: {{"contract_address": "0x8Cb45bf3ECC760AEC9b4F575FB351Ad197580Ea3", "function": "symbol", "args": [], "abi_type": "ERC20"}}
 
 IMPORTANT: When a token name is mentioned (like USDC, WETH, etc.), you MUST use its exact contract address from the list above. Never use placeholder addresses.
 """.format(
@@ -185,11 +195,5 @@ IMPORTANT: When a token name is mentioned (like USDC, WETH, etc.), you MUST use 
     token_descriptions="\n".join(
         f"- {name}: {addr}" 
         for name, addr in TOKEN_REGISTRY.items()
-    ),
-    example_questions="\n".join(
-        f"Q: {meta.example_question}\n"
-        f"A: {{\"contract_address\": \"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913\", "
-        f"\"function\": \"{name}\", \"args\": [], \"abi_type\": \"ERC20\"}}\n"
-        for name, meta in ERC20_FUNCTIONS.items()
     )
 ) 
