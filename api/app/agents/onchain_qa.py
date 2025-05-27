@@ -7,8 +7,9 @@ performs the necessary queries, and maintains a verifiable execution trace.
 import logging
 import hashlib
 import json
+import re
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple, List
 import os
 import openai
 from openai import OpenAI
@@ -17,7 +18,7 @@ from web3.exceptions import ContractLogicError
 from web3.middleware import geth_poa_middleware
 
 from .base import BaseAgent, ExecutionStep, ExecutionTrace
-from .schemas import OnChainQuery, ERC20_FUNCTIONS, SYSTEM_PROMPT
+from .schemas import OnChainQuery, ERC20_FUNCTIONS, SYSTEM_PROMPT, TOKEN_REGISTRY
 from ..services.ipfs import IPFSService
 
 logger = logging.getLogger(__name__)
@@ -35,14 +36,6 @@ KNOWN_QUERIES = {
 # LLM setup
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-SYSTEM_PROMPT = """You are a blockchain assistant. Convert the user question into this JSON format:
-{
-  "contract_address": "0x...",
-  "function": "totalSupply",
-  "args": [],
-  "abi_type": "ERC20"
-}
-Only return valid JSON. No comments or text outside the JSON block."""
 
 # Minimal ERC-20 ABI for common functions
 ERC20_ABI = [
@@ -93,6 +86,9 @@ ERC20_ABI = [
     }
 ]
 
+# Regular expression for Ethereum addresses
+ETH_ADDRESS_PATTERN = re.compile(r'0x[a-fA-F0-9]{40}')
+
 class OnChainQAAgent(BaseAgent):
     """Agent for answering questions about on-chain data."""
     
@@ -109,6 +105,88 @@ class OnChainQAAgent(BaseAgent):
             
         self.ipfs_service = IPFSService()
         self.client = OpenAI()
+    
+    def _extract_addresses(self, text: str) -> List[str]:
+        """
+        Extract Ethereum addresses from text.
+        
+        Args:
+            text: Text to search for addresses
+            
+        Returns:
+            List[str]: List of found addresses
+        """
+        return ETH_ADDRESS_PATTERN.findall(text)
+    
+    def _extract_token_names(self, text: str) -> List[str]:
+        """
+        Extract potential token names from text.
+        
+        Args:
+            text: Text to search for token names
+            
+        Returns:
+            List[str]: List of found token names
+        """
+        # Convert text to lowercase and split into words
+        words = text.lower().strip().split()
+        
+        # Log the words we're checking
+        logger.debug(f"Checking words for token names: {words}")
+        
+        # Check each word against the token registry
+        found_tokens = []
+        for word in words:
+            # Remove any punctuation
+            clean_word = word.strip('.,!?')
+            if clean_word in TOKEN_REGISTRY:
+                found_tokens.append(clean_word)
+                logger.info(f"Found token name: {clean_word}")
+        
+        # If no exact matches, try partial matches
+        if not found_tokens:
+            for word in words:
+                clean_word = word.strip('.,!?')
+                # Check if any token name contains this word
+                for token_name in TOKEN_REGISTRY.keys():
+                    if clean_word in token_name or token_name in clean_word:
+                        found_tokens.append(token_name)
+                        logger.info(f"Found partial token match: {clean_word} -> {token_name}")
+        
+        logger.info(f"Extracted token names: {found_tokens}")
+        return found_tokens
+    
+    def _validate_query(self, query: OnChainQuery) -> Tuple[bool, Optional[str]]:
+        """
+        Validate a query and return helpful error messages.
+        
+        Args:
+            query: The query to validate
+            
+        Returns:
+            Tuple[bool, Optional[str]]: (is_valid, error_message)
+        """
+        # Check if function exists
+        if query.function not in ERC20_FUNCTIONS:
+            return False, f"Unsupported function: {query.function}"
+        
+        # Get function metadata
+        function_meta = ERC20_FUNCTIONS[query.function]
+        
+        # Check argument count
+        if len(query.args) != len(function_meta.args):
+            required_args = [arg.name for arg in function_meta.args]
+            return False, (
+                f"Function {query.function} requires {len(function_meta.args)} arguments: "
+                f"{', '.join(required_args)}"
+            )
+        
+        # Check argument types
+        for i, (arg, meta) in enumerate(zip(query.args, function_meta.args)):
+            if meta.type == "address" and not Web3.is_address(arg):
+                return False, f"Argument {i+1} ({meta.name}) must be a valid Ethereum address"
+        
+        return True, None
     
     async def execute(self, question: str) -> Dict[str, Any]:
         """
@@ -162,6 +240,38 @@ class OnChainQAAgent(BaseAgent):
                 "trace_metadata": self.current_trace.to_serializable_dict()
             }
             
+        except ValueError as e:
+            # Log the error
+            await self.log_step(
+                action="error",
+                inputs={"question": question},
+                outputs={"error": str(e)},
+                metadata={}
+            )
+            # Format user-friendly error message
+            error_msg = str(e)
+            if "No valid contract address found" in error_msg:
+                error_msg = (
+                    "I couldn't find a valid token or contract address in your question. "
+                    "Please try one of these formats:\n"
+                    "1. Use a known token name (e.g., 'What is the total supply of USDC?')\n"
+                    "2. Provide a contract address (e.g., 'What is the balance of 0x123...?')\n\n"
+                    "Known tokens: " + ", ".join(TOKEN_REGISTRY.keys())
+                )
+            elif "Unsupported function" in error_msg:
+                error_msg = (
+                    "I don't support that function yet. Here are the supported functions:\n" +
+                    "\n".join(f"- {name}: {meta.description}" for name, meta in ERC20_FUNCTIONS.items())
+                )
+            elif "Contract function call failed" in error_msg:
+                error_msg = (
+                    "The contract call failed. This could be because:\n"
+                    "1. The contract address is incorrect\n"
+                    "2. The contract doesn't support this function\n"
+                    "3. The arguments provided are invalid\n\n"
+                    f"Error details: {str(e)}"
+                )
+            raise ValueError(error_msg)
         except Exception as e:
             # Log the error
             await self.log_step(
@@ -170,7 +280,10 @@ class OnChainQAAgent(BaseAgent):
                 outputs={"error": str(e)},
                 metadata={}
             )
-            raise
+            raise ValueError(
+                "I encountered an unexpected error. Please try rephrasing your question "
+                "or contact support if the issue persists."
+            )
     
     async def _parse_question(self, question: str) -> OnChainQuery:
         """
@@ -188,11 +301,31 @@ class OnChainQAAgent(BaseAgent):
         try:
             q_lower = question.lower().strip()
 
-            # Rule-based matching
-            if q_lower in KNOWN_QUERIES:
-                logger.info(f"Matched known query: {q_lower}")
-                return OnChainQuery(**KNOWN_QUERIES[q_lower])
-
+            # Extract addresses and token names
+            addresses = self._extract_addresses(question)
+            token_names = self._extract_token_names(question)
+            
+            # If we found a token name, try to resolve it
+            contract_address = None
+            if token_names:
+                for token_name in token_names:
+                    contract_address = OnChainQuery.resolve_token_name(token_name)
+                    if contract_address:
+                        logger.info(f"Resolved token name '{token_name}' to address: {contract_address}")
+                        break
+            
+            # If we found an address, use it
+            if not contract_address and addresses:
+                contract_address = addresses[0]
+                logger.info(f"Using provided address: {contract_address}")
+            
+            # If no contract address found, raise error
+            if not contract_address:
+                raise ValueError(
+                    "No valid contract address found. Please specify a known token name "
+                    "(USDC, WETH, etc.) or provide a valid contract address."
+                )
+            
             # Fallback to LLM
             logger.info("Falling back to LLM-based parsing")
             
@@ -208,28 +341,37 @@ class OnChainQAAgent(BaseAgent):
 
             # Parse and validate the response
             parsed = json.loads(content)
+            
+            # Always use our resolved contract address
+            parsed["contract_address"] = contract_address
+            
             query = OnChainQuery(**parsed)
             
-            # Validate function exists
-            if query.function not in ERC20_FUNCTIONS:
-                raise ValueError(f"Unsupported function: {query.function}")
-                
-            # Validate arguments
-            function_meta = ERC20_FUNCTIONS[query.function]
-            if len(query.args) != len(function_meta.args):
-                raise ValueError(
-                    f"Function {query.function} expects {len(function_meta.args)} arguments, "
-                    f"got {len(query.args)}"
-                )
-
+            # Validate the query
+            is_valid, error_msg = self._validate_query(query)
+            if not is_valid:
+                raise ValueError(error_msg)
+            
             return query
 
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse LLM response as JSON: {e}")
-            raise ValueError("Could not parse the LLM response into a valid query")
+            raise ValueError(
+                "I had trouble understanding your question. Please try rephrasing it "
+                "or use one of these example formats:\n"
+                "1. 'What is the total supply of USDC?'\n"
+                "2. 'What is the balance of 0x123...?'\n"
+                "3. 'How many decimals does WETH have?'"
+            )
         except Exception as e:
             logger.error(f"Failed to parse question: {e}")
-            raise ValueError(f"Could not parse the question: {str(e)}")
+            raise ValueError(
+                "I couldn't understand your question. Please try:\n"
+                "1. Using a known token name (USDC, WETH, etc.)\n"
+                "2. Providing a valid contract address\n"
+                "3. Using one of these functions: " + 
+                ", ".join(ERC20_FUNCTIONS.keys())
+            )
     
     async def _execute_query(self, query: OnChainQuery) -> Any:
         """
