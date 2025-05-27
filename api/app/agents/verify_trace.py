@@ -9,14 +9,16 @@ This script verifies the integrity of an execution trace by:
 4. Reporting any mismatches
 """
 import argparse
+import asyncio
 import hashlib
 import json
 import logging
 import sys
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Any, Optional
 from datetime import datetime
 
 from ..services.ipfs import IPFSService
+from ..core.config import get_settings
 
 # Configure logging
 logging.basicConfig(
@@ -29,14 +31,18 @@ class TraceVerifier:
     """Verifies the integrity of execution traces."""
     
     def __init__(self):
-        self.ipfs_service = IPFSService()
+        settings = get_settings()
+        # Use local IPFS gateway for development
+        self.ipfs_service = IPFSService(
+            ipfs_gateway=settings.ipfs_gateway_url
+        )
     
-    def compute_step_hash(self, step: Dict) -> str:
+    def compute_step_hash(self, step: Dict[str, Any]) -> str:
         """
         Compute SHA-256 hash of a step using the same logic as ExecutionStep.
         
         Args:
-            step: Step data dictionary
+            step: Step data from the trace
             
         Returns:
             str: SHA-256 hash of the step
@@ -46,105 +52,109 @@ class TraceVerifier:
             "action": step["action"],
             "inputs": step["inputs"],
             "outputs": step["outputs"],
-            "metadata": step["metadata"]
+            "metadata": step.get("metadata", {})
         }
         
-        # Sort keys to ensure consistent ordering
+        # Sort keys to ensure consistent hashing
         serialized = json.dumps(step_data, sort_keys=True, default=str)
         return hashlib.sha256(serialized.encode()).hexdigest()
     
-    def compute_commitment_hash(self, step_hashes: List[str]) -> str:
+    def compute_commitment_hash(self, steps: list) -> str:
         """
-        Compute the commitment hash from step hashes.
+        Compute the commitment hash by hashing concatenated step hashes.
         
         Args:
-            step_hashes: List of step hashes
+            steps: List of step data from the trace
             
         Returns:
-            str: Commitment hash
+            str: SHA-256 hash of concatenated step hashes
         """
-        if not step_hashes:
+        if not steps:
             return hashlib.sha256(b"").hexdigest()
+            
+        # Compute hash for each step
+        step_hashes = [self.compute_step_hash(step) for step in steps]
         
         # Concatenate all step hashes and compute final hash
         concatenated = "".join(step_hashes)
         return hashlib.sha256(concatenated.encode()).hexdigest()
     
-    def verify_trace(self, trace_data: Dict) -> Tuple[bool, List[Dict]]:
+    async def verify_trace(self, trace_data: Dict[str, Any], verbose: bool = False) -> bool:
         """
         Verify the integrity of a trace.
         
         Args:
-            trace_data: Trace data dictionary
+            trace_data: The trace data to verify
+            verbose: Whether to print detailed information
             
         Returns:
-            Tuple[bool, List[Dict]]: (is_valid, list of mismatched steps)
+            bool: True if trace is valid, False otherwise
         """
-        mismatches = []
-        step_hashes = []
-        
-        # Verify each step
-        for i, step in enumerate(trace_data["steps"]):
-            computed_hash = self.compute_step_hash(step)
-            stored_hash = step.get("step_hash")
+        try:
+            # Get stored commitment hash
+            stored_hash = trace_data.get('commitment_hash')
+            if not stored_hash:
+                logger.error("No commitment hash found in trace")
+                return False
             
-            if computed_hash != stored_hash:
-                mismatches.append({
-                    "step_index": i,
-                    "action": step["action"],
-                    "computed_hash": computed_hash,
-                    "stored_hash": stored_hash
-                })
+            # Compute commitment hash from steps
+            computed_hash = self.compute_commitment_hash(trace_data.get('steps', []))
             
-            step_hashes.append(computed_hash)
-        
-        # Compute commitment hash
-        computed_commitment = self.compute_commitment_hash(step_hashes)
-        stored_commitment = trace_data.get("commitment_hash")
-        
-        # Check if commitment hashes match
-        is_valid = computed_commitment == stored_commitment and not mismatches
-        
-        if not is_valid:
-            if computed_commitment != stored_commitment:
-                logger.error("Commitment hash mismatch!")
-                logger.error(f"Computed: {computed_commitment}")
-                logger.error(f"Stored:   {stored_commitment}")
-        
-        return is_valid, mismatches
+            # Compare hashes
+            if stored_hash != computed_hash:
+                if verbose:
+                    logger.error(f"Hash mismatch!\nStored: {stored_hash}\nComputed: {computed_hash}")
+                    
+                    # Check individual step hashes
+                    for i, step in enumerate(trace_data.get('steps', [])):
+                        stored_step_hash = step.get('step_hash')
+                        computed_step_hash = self.compute_step_hash(step)
+                        if stored_step_hash != computed_step_hash:
+                            logger.error(f"Step {i} hash mismatch!")
+                            logger.error(f"Stored: {stored_step_hash}")
+                            logger.error(f"Computed: {computed_step_hash}")
+                            if verbose:
+                                logger.error("Step data:")
+                                logger.error(json.dumps(step, indent=2))
+                return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error verifying trace: {str(e)}")
+            return False
     
-    def load_trace(self, ipfs_hash: Optional[str] = None, file_path: Optional[str] = None) -> Dict:
+    async def load_trace(self, ipfs_hash: Optional[str] = None, file_path: Optional[str] = None) -> Dict[str, Any]:
         """
-        Load trace data from IPFS or file.
+        Load trace data from IPFS or local file.
         
         Args:
-            ipfs_hash: IPFS hash (CID) of the trace
-            file_path: Path to local trace file
+            ipfs_hash: IPFS hash to load from
+            file_path: Local file path to load from
             
         Returns:
-            Dict: Trace data
+            Dict[str, Any]: The loaded trace data
             
         Raises:
             ValueError: If neither ipfs_hash nor file_path is provided
-            FileNotFoundError: If file doesn't exist
-            Exception: For other loading errors
         """
         if ipfs_hash:
             logger.info(f"Loading trace from IPFS: {ipfs_hash}")
-            return self.ipfs_service.download_json(ipfs_hash)
+            try:
+                return await self.ipfs_service.download_json(ipfs_hash)
+            except Exception as e:
+                logger.error(f"Failed to download from IPFS: {str(e)}")
+                # Try using the API endpoint as fallback
+                logger.info("Trying API endpoint as fallback...")
+                return await self.ipfs_service.get_from_ipfs(ipfs_hash)
         elif file_path:
             logger.info(f"Loading trace from file: {file_path}")
-            try:
-                with open(file_path, 'r') as f:
-                    return json.load(f)
-            except FileNotFoundError:
-                raise FileNotFoundError(f"Trace file not found: {file_path}")
-            except json.JSONDecodeError:
-                raise ValueError(f"Invalid JSON in trace file: {file_path}")
+            with open(file_path, 'r') as f:
+                return json.load(f)
         else:
             raise ValueError("Either ipfs_hash or file_path must be provided")
 
-def main():
+async def main():
     """Main entry point for the script."""
     parser = argparse.ArgumentParser(description="Verify execution trace integrity")
     group = parser.add_mutually_exclusive_group(required=True)
@@ -156,10 +166,10 @@ def main():
     
     try:
         verifier = TraceVerifier()
-        trace_data = verifier.load_trace(args.ipfs_hash, args.file)
+        trace_data = await verifier.load_trace(args.ipfs_hash, args.file)
         
         logger.info("Verifying trace integrity...")
-        is_valid, mismatches = verifier.verify_trace(trace_data)
+        is_valid = await verifier.verify_trace(trace_data, args.verbose)
         
         if is_valid:
             logger.info("✅ Trace is valid!")
@@ -170,12 +180,15 @@ def main():
                 logger.info(f"Commitment hash: {trace_data['commitment_hash']}")
         else:
             logger.error("❌ Trace is invalid!")
-            if mismatches:
-                logger.error(f"Found {len(mismatches)} mismatched steps:")
-                for mismatch in mismatches:
-                    logger.error(f"Step {mismatch['step_index']} ({mismatch['action']}):")
-                    logger.error(f"  Computed: {mismatch['computed_hash']}")
-                    logger.error(f"  Stored:   {mismatch['stored_hash']}")
+            if trace_data.get('steps', []):
+                logger.error(f"Found {len(trace_data['steps'])} mismatched steps:")
+                for i, step in enumerate(trace_data['steps']):
+                    logger.error(f"Step {i} ({step['action']}):")
+                    logger.error(f"  Computed: {verifier.compute_step_hash(step)}")
+                    logger.error(f"  Stored:   {step.get('step_hash')}")
+                    if args.verbose:
+                        logger.error("  Step data:")
+                        logger.error(json.dumps(step, indent=2))
         
         return 0 if is_valid else 1
         
@@ -184,4 +197,4 @@ def main():
         return 1
 
 if __name__ == "__main__":
-    sys.exit(main()) 
+    sys.exit(asyncio.run(main())) 

@@ -8,6 +8,7 @@ import aiohttp
 from ..core.config import get_settings
 import os
 from pathlib import Path
+from aiohttp import ClientSession
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -15,7 +16,8 @@ settings = get_settings()
 class IPFSService:
     """Service for interacting with IPFS."""
     
-    def __init__(self):
+    def __init__(self, ipfs_gateway: str = "https://ipfs.io/ipfs/"):
+        self.ipfs_gateway = ipfs_gateway.rstrip('/')
         self.settings = get_settings()
         self.provider = self.settings.IPFS_PROVIDER
         self.api_url = self.settings.ipfs_api_url
@@ -195,6 +197,18 @@ class IPFSService:
             raise Exception(f"IPFS retrieval failed: {str(e)}")
 
     async def upload_json(self, data: Dict[str, Any]) -> str:
+        """
+        Upload JSON data to IPFS.
+        
+        Args:
+            data: Dictionary to upload
+            
+        Returns:
+            str: IPFS hash (CID) of the uploaded data
+            
+        Raises:
+            Exception: If upload fails
+        """
         try:
             json_data = json.dumps(data)
 
@@ -224,6 +238,40 @@ class IPFSService:
             logger.error(f"Error uploading JSON to IPFS: {str(e)}")
             raise Exception(f"Failed to upload JSON to IPFS: {str(e)}")
 
+    async def download_json(self, cid: str) -> Dict[str, Any]:
+        """
+        Download and parse JSON data from IPFS.
+        
+        Args:
+            cid: IPFS content identifier (hash)
+            
+        Returns:
+            Dict[str, Any]: Parsed JSON data
+            
+        Raises:
+            Exception: If download or parsing fails
+        """
+        try:
+            # First try the gateway
+            try:
+                response = requests.get(f"{self.gateway_url}/ipfs/{cid}")
+                if response.status_code == 200:
+                    return json.loads(response.text)
+            except Exception as e:
+                logger.debug(f"Gateway download failed, trying API: {str(e)}")
+            
+            # Fallback to API endpoint
+            response = requests.post(f"{self.api_url}/cat", params={'arg': cid})
+            response.raise_for_status()
+            
+            # Parse the JSON content
+            content = json.loads(response.text)
+            logger.info(f"Data retrieved from IPFS with hash: {cid}")
+            return content
+            
+        except Exception as e:
+            logger.error(f"Error downloading JSON from IPFS: {str(e)}")
+            raise Exception(f"Failed to download JSON from IPFS: {str(e)}")
 
     async def _make_request(self, endpoint: str, files: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Make a request to the IPFS API."""
@@ -257,6 +305,30 @@ class IPFSService:
         except Exception as e:
             logger.error(f"Error making IPFS request: {str(e)}")
             raise Exception(f"Failed to make IPFS request: {str(e)}")
+
+    async def get_file(self, cid: str) -> bytes:
+        """
+        Download raw file data from IPFS.
+        
+        Args:
+            cid: IPFS content identifier (hash)
+            
+        Returns:
+            bytes: Raw file data
+            
+        Raises:
+            Exception: If download fails
+        """
+        try:
+            async with ClientSession() as session:
+                async with session.get(f"{self.ipfs_gateway}/{cid}") as response:
+                    if response.status != 200:
+                        raise Exception(f"Failed to download from IPFS: {response.status}")
+                    return await response.read()
+                    
+        except Exception as e:
+            logger.error(f"Error downloading file from IPFS: {str(e)}")
+            raise Exception(f"Failed to download file from IPFS: {str(e)}")
 
     async def close(self):
         """Close any open connections."""
