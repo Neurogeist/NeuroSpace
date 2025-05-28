@@ -99,14 +99,41 @@ export default function AgentsPage() {
                 provider
             );
             setResponse(result);
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error processing query:', error);
+            
+            // Extract error message from the response if available
+            let errorMessage = 'Failed to process query';
+            if (error.response?.data?.detail) {
+                errorMessage = error.response.data.detail;
+            } else if (error.message) {
+                errorMessage = error.message;
+            }
+
+            // Show error toast with more specific message
             toast({
                 title: 'Error',
-                description: 'Failed to process query',
+                description: errorMessage,
                 status: 'error',
-                duration: 3000,
+                duration: 5000,
                 isClosable: true,
+                position: 'top',
+            });
+
+            // Set a user-friendly response for display
+            setResponse({
+                answer: `I encountered an error while processing your query: ${errorMessage}\n\nPlease try:\n1. Rephrasing your question\n2. Using one of the example queries\n3. Checking if you're asking about a supported token (USDC, WETH, NSPACE)`,
+                trace_id: '',
+                ipfs_hash: '',
+                commitment_hash: '',
+                metadata: {
+                    agent_id: selectedAgent.agent_id,
+                    start_time: new Date().toISOString(),
+                    end_time: new Date().toISOString(),
+                    steps: [],
+                    commitment_hash: '',
+                    ipfs_hash: ''
+                }
             });
         } finally {
             setIsLoading(false);
@@ -163,9 +190,21 @@ export default function AgentsPage() {
             <VStack spacing={8} align="stretch">
                 {/* Header */}
                 <HStack justify="space-between" bg={headerBgColor} p={4} borderRadius="lg">
-                    <Text fontSize="2xl" fontWeight="bold" color={textColor}>
-                        NeuroSpace Agents
-                    </Text>
+                    <HStack spacing={2}>
+                        <Text fontSize="2xl" fontWeight="bold" color={textColor}>
+                            NeuroSpace Agents
+                        </Text>
+                        <Badge
+                            colorScheme="purple"
+                            variant="solid"
+                            fontSize="xs"
+                            px={2}
+                            py={1}
+                            borderRadius="md"
+                        >
+                            BETA
+                        </Badge>
+                    </HStack>
                     <Button
                         colorScheme={isConnected ? "green" : "blue"}
                         onClick={connect}
