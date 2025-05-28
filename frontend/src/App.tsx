@@ -5,6 +5,7 @@ import Chat from './pages/Chat'
 import RAGPage from './pages/RAG'
 import LandingPage from './pages/LandingPage'
 import Documentation from './pages/Documentation'
+import AgentsPage from './pages/Agents'
 import Navigation from './components/Navigation'
 import { theme } from './theme'
 import { useColorModeValue } from '@chakra-ui/react'
@@ -29,6 +30,7 @@ function AppContent() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/chat" element={<Chat />} />
             <Route path="/rag" element={<RAGPage />} />
+            <Route path="/agents" element={<AgentsPage />} />
             <Route path="/docs" element={<Documentation />} />
           </Routes>
         </AnimatePresence>
