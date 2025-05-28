@@ -46,6 +46,7 @@ import shutil
 import magic
 import subprocess
 import tempfile
+from .routers import agents  # Add this import
 
 # Configure logging
 logging.basicConfig(
@@ -1142,3 +1143,6 @@ async def use_free_request(
     except Exception as e:
         logger.error(f"Error using free request: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# Include the agents router
+app.include_router(agents.router)
