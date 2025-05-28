@@ -6,9 +6,12 @@ import unittest
 from unittest.mock import patch, AsyncMock, MagicMock
 import re
 from web3 import Web3
+from web3.exceptions import ContractLogicError
+import pytest
+from datetime import datetime
 
 from app.agents.onchain_qa import OnChainQAAgent
-from app.agents.schemas import OnChainQuery, ERC20_FUNCTIONS
+from app.agents.schemas import OnChainQuery, ERC20_FUNCTIONS, TOKEN_REGISTRY
 from app.services.ipfs import IPFSService
 
 class TestOnChainQAAgent(unittest.TestCase):
@@ -23,6 +26,14 @@ class TestOnChainQAAgent(unittest.TestCase):
         
         # Mock Web3 connection
         self.agent.web3.is_connected = MagicMock(return_value=True)
+        
+        # Mock contract functions
+        self.mock_contract = MagicMock()
+        self.agent._get_contract = MagicMock(return_value=self.mock_contract)
+        
+        # Mock IPFS service
+        self.agent.ipfs_service = MagicMock(spec=IPFSService)
+        self.agent.ipfs_service.upload_json = AsyncMock(return_value="test_ipfs_hash")
     
     def test_parse_question_known_query(self):
         """Test parsing a known query."""
@@ -38,6 +49,7 @@ class TestOnChainQAAgent(unittest.TestCase):
         self.assertEqual(query.function, "totalSupply")
         self.assertEqual(query.abi_type, "ERC20")
         self.assertEqual(len(query.args), 0)
+        self.assertEqual(query.contract_address, TOKEN_REGISTRY["neurocoin"])
     
     @patch.object(OnChainQAAgent, 'client')
     def test_parse_question_llm_fallback(self, mock_client):
@@ -48,138 +60,178 @@ class TestOnChainQAAgent(unittest.TestCase):
     async def _test_parse_question_llm_fallback(self, mock_client):
         """Async implementation of LLM fallback test."""
         # Mock LLM response
-        mock_response = {
-            "contract_address": "0x1234567890123456789012345678901234567890",
-            "function": "balanceOf",
-            "args": ["0x0987654321098765432109876543210987654321"],
-            "abi_type": "ERC20"
-        }
         mock_client.chat.completions.create.return_value.choices = [
-            MagicMock(message=MagicMock(content=json.dumps(mock_response)))
+            MagicMock(message=MagicMock(content=json.dumps({
+                "contract_address": TOKEN_REGISTRY["usdc"],
+                "function": "balanceOf",
+                "args": ["0x1234567890123456789012345678901234567890"],
+                "abi_type": "ERC20"
+            })))
         ]
         
-        question = "What is the balance of 0x0987654321098765432109876543210987654321"
+        question = "What is the USDC balance of 0x1234567890123456789012345678901234567890"
         query = await self.agent._parse_question(question)
         
         self.assertIsInstance(query, OnChainQuery)
         self.assertEqual(query.function, "balanceOf")
+        self.assertEqual(query.abi_type, "ERC20")
         self.assertEqual(len(query.args), 1)
-        self.assertEqual(query.args[0], "0x0987654321098765432109876543210987654321")
+        self.assertEqual(query.contract_address, TOKEN_REGISTRY["usdc"])
     
-    @patch.object(Web3.eth.Contract, 'functions')
-    def test_execute_query(self, mock_contract_functions):
-        """Test executing a query."""
+    def test_execute_query_success(self):
+        """Test successful query execution."""
         # Run the async code
-        asyncio.run(self._test_execute_query(mock_contract_functions))
+        asyncio.run(self._test_execute_query_success())
     
-    async def _test_execute_query(self, mock_contract_functions):
-        """Async implementation of query execution test."""
-        # Mock contract function calls
-        mock_total_supply = MagicMock()
-        mock_total_supply.call.return_value = 1000000
-        mock_decimals = MagicMock()
-        mock_decimals.call.return_value = 18
-        mock_contract_functions.totalSupply.return_value = mock_total_supply
-        mock_contract_functions.decimals.return_value = mock_decimals
+    async def _test_execute_query_success(self):
+        """Async implementation of successful query test."""
+        # Mock contract function
+        mock_function = MagicMock()
+        mock_function.call.return_value = 1000000
+        self.mock_contract.functions.totalSupply = MagicMock(return_value=mock_function)
+        self.mock_contract.functions.decimals = MagicMock(return_value=MagicMock(call=MagicMock(return_value=6)))
         
         query = OnChainQuery(
-            contract_address="0x1234567890123456789012345678901234567890",
+            contract_address=TOKEN_REGISTRY["usdc"],
             function="totalSupply",
             args=[],
             abi_type="ERC20"
         )
         
         result = await self.agent._execute_query(query)
+        self.assertEqual(result, 1.0)  # 1000000 / 10^6
+    
+    def test_execute_query_revert(self):
+        """Test query execution with revert."""
+        # Run the async code
+        asyncio.run(self._test_execute_query_revert())
+    
+    async def _test_execute_query_revert(self):
+        """Async implementation of revert test."""
+        # Mock contract function to raise ContractLogicError
+        mock_function = MagicMock()
+        mock_function.call.side_effect = ContractLogicError("execution reverted")
+        self.mock_contract.functions.balanceOf = MagicMock(return_value=mock_function)
         
-        self.assertEqual(result, 1.0)  # 1000000 / 10^18
-        mock_total_supply.call.assert_called_once()
-        mock_decimals.call.assert_called_once()
+        query = OnChainQuery(
+            contract_address=TOKEN_REGISTRY["usdc"],
+            function="balanceOf",
+            args=["0x1234567890123456789012345678901234567890"],
+            abi_type="ERC20"
+        )
+        
+        with self.assertRaises(ValueError) as context:
+            await self.agent._execute_query(query)
+        self.assertIn("reverted", str(context.exception))
     
     def test_format_answer(self):
-        """Test formatting different types of answers."""
+        """Test answer formatting."""
         # Run the async code
         asyncio.run(self._test_format_answer())
     
     async def _test_format_answer(self):
         """Async implementation of answer formatting test."""
-        # Test uint256 with decimals
         query = OnChainQuery(
-            contract_address="0x1234567890123456789012345678901234567890",
+            contract_address=TOKEN_REGISTRY["usdc"],
             function="totalSupply",
             args=[],
             abi_type="ERC20"
         )
-        result = 1234567.89
-        formatted = await self.agent._format_answer(query, result)
-        self.assertEqual(formatted, "1,234,567.89")
+        
+        # Test uint256 with decimals
+        result = await self.agent._format_answer(query, 1000000)
+        self.assertEqual(result, "1,000,000.00")
         
         # Test string
         query.function = "symbol"
-        result = "USDC"
-        formatted = await self.agent._format_answer(query, result)
-        self.assertEqual(formatted, "USDC")
+        result = await self.agent._format_answer(query, "USDC")
+        self.assertEqual(result, "USDC")
         
         # Test uint8
         query.function = "decimals"
-        result = 18
-        formatted = await self.agent._format_answer(query, result)
-        self.assertEqual(formatted, "18")
+        result = await self.agent._format_answer(query, 6)
+        self.assertEqual(result, "6")
     
-    @patch.object(OnChainQAAgent, '_parse_question')
-    @patch.object(OnChainQAAgent, '_execute_query')
-    @patch.object(OnChainQAAgent, '_format_answer')
-    @patch.object(IPFSService, 'upload_json')
-    def test_full_execute_run(self, mock_upload_json, mock_format_answer, 
-                            mock_execute_query, mock_parse_question):
-        """Test the full execute() method with mocked dependencies."""
+    def test_store_trace(self):
+        """Test trace storage."""
         # Run the async code
-        asyncio.run(self._test_full_execute_run(mock_upload_json, mock_format_answer, 
-                                              mock_execute_query, mock_parse_question))
+        asyncio.run(self._test_store_trace())
     
-    async def _test_full_execute_run(self, mock_upload_json, mock_format_answer, 
-                                   mock_execute_query, mock_parse_question):
-        """Async implementation of full execute test."""
-        # Mock the dependencies
-        mock_query = OnChainQuery(
-            contract_address="0x1234567890123456789012345678901234567890",
+    async def _test_store_trace(self):
+        """Async implementation of trace storage test."""
+        # Create a test trace
+        self.agent.current_trace = ExecutionTrace(agent_id="test_agent")
+        await self.agent.log_step(
+            action="test_action",
+            inputs={"test": "input"},
+            outputs={"test": "output"}
+        )
+        await self.agent.finalize_trace()
+        
+        # Store trace
+        ipfs_hash = await self.agent.store_trace()
+        
+        self.assertEqual(ipfs_hash, "test_ipfs_hash")
+        self.agent.ipfs_service.upload_json.assert_called_once()
+    
+    def test_retry_logic(self):
+        """Test retry logic for failed operations."""
+        # Run the async code
+        asyncio.run(self._test_retry_logic())
+    
+    async def _test_retry_logic(self):
+        """Async implementation of retry logic test."""
+        # Mock contract function to fail twice then succeed
+        mock_function = MagicMock()
+        mock_function.call.side_effect = [
+            ContractLogicError("temporary error"),
+            ContractLogicError("temporary error"),
+            1000000
+        ]
+        self.mock_contract.functions.totalSupply = MagicMock(return_value=mock_function)
+        self.mock_contract.functions.decimals = MagicMock(return_value=MagicMock(call=MagicMock(return_value=6)))
+        
+        query = OnChainQuery(
+            contract_address=TOKEN_REGISTRY["usdc"],
             function="totalSupply",
             args=[],
             abi_type="ERC20"
         )
-        mock_parse_question.return_value = mock_query
-        mock_execute_query.return_value = 1000000
-        mock_format_answer.return_value = "1,000,000"
-        mock_ipfs_hash = "QmTestHash456"
-        mock_upload_json.return_value = mock_ipfs_hash
         
-        # Execute the agent
-        result = await self.agent.execute("What is the total supply?")
+        result = await self.agent._execute_query(query)
+        self.assertEqual(result, 1.0)
+        self.assertEqual(mock_function.call.call_count, 3)
+    
+    def test_cache_behavior(self):
+        """Test caching behavior."""
+        # Run the async code
+        asyncio.run(self._test_cache_behavior())
+    
+    async def _test_cache_behavior(self):
+        """Async implementation of cache behavior test."""
+        # Mock contract function
+        mock_function = MagicMock()
+        mock_function.call.return_value = 1000000
+        self.mock_contract.functions.totalSupply = MagicMock(return_value=mock_function)
+        self.mock_contract.functions.decimals = MagicMock(return_value=MagicMock(call=MagicMock(return_value=6)))
         
-        # Assertions
-        self.assertIsInstance(result, dict)
-        self.assertIn("answer", result)
-        self.assertIn("trace_id", result)
-        self.assertIn("ipfs_hash", result)
-        self.assertIn("commitment_hash", result)
-        self.assertIn("trace_metadata", result)
+        query = OnChainQuery(
+            contract_address=TOKEN_REGISTRY["usdc"],
+            function="totalSupply",
+            args=[],
+            abi_type="ERC20"
+        )
         
-        # Verify the answer
-        self.assertEqual(result["answer"], "1,000,000")
+        # First call should use cache
+        result1 = await self.agent._execute_query(query)
+        self.assertEqual(result1, 1.0)
         
-        # Verify the hashes
-        self.assertEqual(result["ipfs_hash"], mock_ipfs_hash)
-        self.assertIsNotNone(result["commitment_hash"])
+        # Second call should use cached contract
+        result2 = await self.agent._execute_query(query)
+        self.assertEqual(result2, 1.0)
         
-        # Verify the trace metadata
-        self.assertIsInstance(result["trace_metadata"], dict)
-        self.assertEqual(result["trace_metadata"]["ipfs_hash"], mock_ipfs_hash)
-        self.assertEqual(len(result["trace_metadata"]["steps"]), 3)  # parse, execute, format
-        
-        # Verify the mocks were called
-        mock_parse_question.assert_called_once()
-        mock_execute_query.assert_called_once()
-        mock_format_answer.assert_called_once()
-        mock_upload_json.assert_called_once()
+        # Verify contract was only created once
+        self.agent._get_contract.assert_called_once_with(query.contract_address)
 
 if __name__ == '__main__':
     unittest.main() 

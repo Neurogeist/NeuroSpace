@@ -8,7 +8,7 @@ import logging
 import hashlib
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Tuple, List
 import os
 import openai
@@ -16,12 +16,151 @@ from openai import OpenAI
 from web3 import Web3
 from web3.exceptions import ContractLogicError
 from web3.middleware import geth_poa_middleware
+import tenacity
+from functools import wraps, lru_cache
+from cachetools import TTLCache, cached
+import time
+import bleach
+from pydantic import BaseModel, Field, validator
 
 from .base import BaseAgent, ExecutionStep, ExecutionTrace
 from .schemas import OnChainQuery, ERC20_FUNCTIONS, SYSTEM_PROMPT, TOKEN_REGISTRY
 from ..services.ipfs import IPFSService
 
 logger = logging.getLogger(__name__)
+
+# Security constants
+MAX_QUESTION_LENGTH = 500
+MAX_LLM_RESPONSE_LENGTH = 1000
+MAX_CONTRACT_ADDRESS_LENGTH = 42  # 0x + 40 hex chars
+MAX_FUNCTION_NAME_LENGTH = 50
+ALLOWED_HTML_TAGS = []  # No HTML allowed
+ALLOWED_ATTRIBUTES = {}  # No attributes allowed
+
+class SecurityError(Exception):
+    """Base class for security-related errors."""
+    pass
+
+class InputValidationError(SecurityError):
+    """Raised when input validation fails."""
+    pass
+
+class SanitizedQuestion(BaseModel):
+    """Model for sanitized question input."""
+    question: str = Field(..., min_length=1, max_length=MAX_QUESTION_LENGTH)
+    
+    @validator('question')
+    def sanitize_question(cls, v: str) -> str:
+        """Sanitize the question input."""
+        # Remove any HTML/script tags
+        v = bleach.clean(v, tags=ALLOWED_HTML_TAGS, attributes=ALLOWED_ATTRIBUTES, strip=True)
+        
+        # Remove any control characters
+        v = ''.join(char for char in v if ord(char) >= 32 or char in '\n\r\t')
+        
+        # Normalize whitespace
+        v = ' '.join(v.split())
+        
+        return v
+
+def validate_contract_address(address: str) -> str:
+    """
+    Validate and sanitize a contract address.
+    
+    Args:
+        address: The contract address to validate
+        
+    Returns:
+        str: The sanitized address
+        
+    Raises:
+        InputValidationError: If the address is invalid
+    """
+    if not address or len(address) > MAX_CONTRACT_ADDRESS_LENGTH:
+        raise InputValidationError("Invalid contract address length")
+    
+    # Remove any whitespace
+    address = address.strip()
+    
+    # Ensure it starts with 0x
+    if not address.startswith('0x'):
+        raise InputValidationError("Contract address must start with 0x")
+    
+    # Validate hex characters
+    if not re.match(r'^0x[a-fA-F0-9]{40}$', address):
+        raise InputValidationError("Invalid contract address format")
+    
+    return Web3.to_checksum_address(address)
+
+def validate_function_name(name: str) -> str:
+    """
+    Validate and sanitize a function name.
+    
+    Args:
+        name: The function name to validate
+        
+    Returns:
+        str: The sanitized function name
+        
+    Raises:
+        InputValidationError: If the name is invalid
+    """
+    if not name or len(name) > MAX_FUNCTION_NAME_LENGTH:
+        raise InputValidationError("Invalid function name length")
+    
+    # Remove any whitespace
+    name = name.strip()
+    
+    # Validate function name format
+    if not re.match(r'^[a-zA-Z][a-zA-Z0-9_]*$', name):
+        raise InputValidationError("Invalid function name format")
+    
+    return name
+
+def validate_llm_response(response: str) -> Dict[str, Any]:
+    """
+    Validate and sanitize the LLM response.
+    
+    Args:
+        response: The LLM response to validate
+        
+    Returns:
+        Dict[str, Any]: The sanitized response
+        
+    Raises:
+        InputValidationError: If the response is invalid
+    """
+    if not response or len(response) > MAX_LLM_RESPONSE_LENGTH:
+        raise InputValidationError("Invalid LLM response length")
+    
+    try:
+        # Parse JSON response
+        parsed = json.loads(response)
+        
+        # Validate required fields
+        required_fields = ["contract_address", "function", "args", "abi_type"]
+        for field in required_fields:
+            if field not in parsed:
+                raise InputValidationError(f"Missing required field: {field}")
+        
+        # Validate and sanitize contract address
+        parsed["contract_address"] = validate_contract_address(parsed["contract_address"])
+        
+        # Validate and sanitize function name
+        parsed["function"] = validate_function_name(parsed["function"])
+        
+        # Validate args is a list
+        if not isinstance(parsed["args"], list):
+            raise InputValidationError("args must be a list")
+        
+        # Validate abi_type
+        if parsed["abi_type"] not in ["ERC20"]:
+            raise InputValidationError("Invalid ABI type")
+        
+        return parsed
+        
+    except json.JSONDecodeError:
+        raise InputValidationError("Invalid JSON response from LLM")
 
 # Rule-based known queries
 KNOWN_QUERIES = {
@@ -89,8 +228,30 @@ ERC20_ABI = [
 # Regular expression for Ethereum addresses
 ETH_ADDRESS_PATTERN = re.compile(r'0x[a-fA-F0-9]{40}')
 
+def with_retry(max_attempts=3, wait_seconds=1):
+    """Decorator to add retry logic to functions."""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            @tenacity.retry(
+                stop=tenacity.stop_after_attempt(max_attempts),
+                wait=tenacity.wait_fixed(wait_seconds),
+                retry=tenacity.retry_if_exception_type((ConnectionError, ContractLogicError)),
+                before_sleep=lambda retry_state: logger.warning(
+                    f"Retrying {func.__name__} after error. Attempt {retry_state.attempt_number}/{max_attempts}"
+                )
+            )
+            async def _retry_func():
+                return await func(*args, **kwargs)
+            return await _retry_func()
+        return wrapper
+    return decorator
+
 class OnChainQAAgent(BaseAgent):
     """Agent for answering questions about on-chain data."""
+    
+    # Cache for contract data with 5-minute TTL
+    _contract_cache = TTLCache(maxsize=100, ttl=300)
     
     def __init__(self, agent_id: str, web3_provider: str):
         super().__init__(agent_id)
@@ -99,12 +260,52 @@ class OnChainQAAgent(BaseAgent):
         # Add middleware for Base (PoS) compatibility
         self.web3.middleware_onion.inject(geth_poa_middleware, layer=0)
         
-        # Verify connection
-        if not self.web3.is_connected():
-            raise ConnectionError(f"Failed to connect to Web3 provider: {web3_provider}")
-            
         self.ipfs_service = IPFSService()
         self.client = OpenAI()
+    
+    async def initialize(self):
+        """Initialize the agent and verify connection."""
+        await self._verify_connection()
+    
+    @with_retry(max_attempts=3, wait_seconds=2)
+    async def _verify_connection(self):
+        """Verify Web3 connection with retry logic."""
+        if not self.web3.is_connected():
+            raise ConnectionError(f"Failed to connect to Web3 provider: {self.web3.provider.endpoint_uri}")
+        logger.info(f"Successfully connected to Web3 provider: {self.web3.provider.endpoint_uri}")
+    
+    @cached(cache=_contract_cache)
+    def _get_contract(self, address: str) -> Any:
+        """
+        Get contract instance with caching.
+        
+        Args:
+            address: Contract address
+            
+        Returns:
+            Contract instance
+        """
+        return self.web3.eth.contract(
+            address=address,
+            abi=ERC20_ABI
+        )
+    
+    @cached(cache=_contract_cache)
+    def _get_decimals(self, contract: Any) -> int:
+        """
+        Get token decimals with caching.
+        
+        Args:
+            contract: Contract instance
+            
+        Returns:
+            Number of decimals
+        """
+        try:
+            return contract.functions.decimals().call()
+        except ContractLogicError as e:
+            logger.warning(f"Failed to get decimals: {str(e)}")
+            return 18  # Default to 18 decimals
     
     def _extract_addresses(self, text: str) -> List[str]:
         """
@@ -197,8 +398,19 @@ class OnChainQAAgent(BaseAgent):
             
         Returns:
             Dict containing the answer and execution trace information
+            
+        Raises:
+            InputValidationError: If the input is invalid
+            SecurityError: For other security-related errors
         """
         try:
+            # Validate and sanitize input
+            try:
+                sanitized = SanitizedQuestion(question=question)
+                question = sanitized.question
+            except Exception as e:
+                raise InputValidationError(f"Invalid input: {str(e)}")
+            
             # Initialize new trace
             self.current_trace = ExecutionTrace(agent_id=self.agent_id)
             logger.info(f"Starting new execution trace: {self.current_trace.trace_id}")
@@ -278,6 +490,19 @@ class OnChainQAAgent(BaseAgent):
             logger.info(f"Execution complete. Trace ID: {self.current_trace.trace_id}")
             return response
             
+        except (InputValidationError, SecurityError) as e:
+            # Log security-related errors
+            logger.warning(f"Security error: {str(e)}")
+            await self.log_step(
+                action="security_error",
+                inputs={"question": question},
+                outputs={"error": str(e)},
+                metadata={
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "error_type": type(e).__name__
+                }
+            )
+            raise
         except Exception as e:
             # Log the error
             await self.log_step(
@@ -315,7 +540,7 @@ class OnChainQAAgent(BaseAgent):
             OnChainQuery: Structured query object
             
         Raises:
-            ValueError: If the question cannot be parsed
+            InputValidationError: If the question cannot be parsed
         """
         try:
             q_lower = question.lower().strip()
@@ -335,12 +560,12 @@ class OnChainQAAgent(BaseAgent):
             
             # If we found an address, use it
             if not contract_address and addresses:
-                contract_address = addresses[0]
+                contract_address = validate_contract_address(addresses[0])
                 logger.info(f"Using provided address: {contract_address}")
             
             # If no contract address found, raise error
             if not contract_address:
-                raise ValueError(
+                raise InputValidationError(
                     "No valid contract address found. Please specify a known token name "
                     "(USDC, WETH, etc.) or provide a valid contract address."
                 )
@@ -361,58 +586,33 @@ class OnChainQAAgent(BaseAgent):
             # Log the raw response for debugging
             logger.debug(f"Raw LLM response: {content}")
             
-            # Try to extract JSON from the response
+            # Validate and sanitize LLM response
             try:
-                # First try direct JSON parsing
-                parsed = json.loads(content)
-            except json.JSONDecodeError:
-                # If that fails, try to extract JSON from the response
-                import re
-                json_match = re.search(r'\{.*\}', content, re.DOTALL)
-                if json_match:
-                    try:
-                        parsed = json.loads(json_match.group())
-                    except json.JSONDecodeError:
-                        raise ValueError(
-                            "I had trouble understanding your question. Please try rephrasing it "
-                            "or use one of these example formats:\n"
-                            "1. 'What is the total supply of USDC?'\n"
-                            "2. 'What is the balance of 0x123...?'\n"
-                            "3. 'How many decimals does WETH have?'"
-                        )
-                else:
-                    raise ValueError(
-                        "I had trouble understanding your question. Please try rephrasing it "
-                        "or use one of these example formats:\n"
-                        "1. 'What is the total supply of USDC?'\n"
-                        "2. 'What is the balance of 0x123...?'\n"
-                        "3. 'How many decimals does WETH have?'"
-                    )
+                parsed = validate_llm_response(content)
+            except InputValidationError as e:
+                raise InputValidationError(
+                    "I had trouble understanding your question. Please try rephrasing it "
+                    "or use one of these example formats:\n"
+                    "1. 'What is the total supply of USDC?'\n"
+                    "2. 'What is the balance of 0x123...?'\n"
+                    "3. 'How many decimals does WETH have?'"
+                )
             
             # Always use our resolved contract address
             parsed["contract_address"] = contract_address
-            
-            # Validate required fields
-            required_fields = ["function", "args", "abi_type"]
-            missing_fields = [field for field in required_fields if field not in parsed]
-            if missing_fields:
-                raise ValueError(
-                    f"Missing required fields in response: {', '.join(missing_fields)}. "
-                    "Please try rephrasing your question."
-                )
             
             query = OnChainQuery(**parsed)
             
             # Validate the query
             is_valid, error_msg = self._validate_query(query)
             if not is_valid:
-                raise ValueError(error_msg)
+                raise InputValidationError(error_msg)
             
             return query
 
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse LLM response as JSON: {e}")
-            raise ValueError(
+            raise InputValidationError(
                 "I had trouble understanding your question. Please try rephrasing it "
                 "or use one of these example formats:\n"
                 "1. 'What is the total supply of USDC?'\n"
@@ -421,7 +621,7 @@ class OnChainQAAgent(BaseAgent):
             )
         except Exception as e:
             logger.error(f"Failed to parse question: {e}")
-            raise ValueError(
+            raise InputValidationError(
                 "I couldn't understand your question. Please try:\n"
                 "1. Using a known token name (USDC, WETH, etc.)\n"
                 "2. Providing a valid contract address\n"
@@ -429,9 +629,10 @@ class OnChainQAAgent(BaseAgent):
                 ", ".join(ERC20_FUNCTIONS.keys())
             )
     
+    @with_retry(max_attempts=3, wait_seconds=1)
     async def _execute_query(self, query: OnChainQuery) -> Any:
         """
-        Execute the parsed query against the blockchain.
+        Execute the parsed query against the blockchain with retry logic.
         
         Args:
             query: Structured query object
@@ -443,15 +644,13 @@ class OnChainQAAgent(BaseAgent):
             ValueError: If the query is invalid
             Exception: For other contract interaction errors
         """
+        start_time = time.time()
         try:
             # Get function metadata
             function_meta = ERC20_FUNCTIONS[query.function]
             
-            # Create contract instance
-            contract = self.web3.eth.contract(
-                address=query.contract_address,
-                abi=ERC20_ABI
-            )
+            # Get contract instance from cache
+            contract = self._get_contract(query.contract_address)
 
             try:
                 # Call the function
@@ -461,7 +660,7 @@ class OnChainQAAgent(BaseAgent):
                 # Apply decimals adjustment if needed
                 if function_meta.decimals_adjustment:
                     try:
-                        decimals = contract.functions.decimals().call()
+                        decimals = self._get_decimals(contract)
                         result = result / (10 ** decimals)
                     except ContractLogicError as e:
                         logger.warning(f"Failed to get decimals, returning raw result: {str(e)}")
@@ -469,11 +668,21 @@ class OnChainQAAgent(BaseAgent):
                 return result
                 
             except ContractLogicError as e:
-                raise ValueError(f"Contract function call failed: {str(e)}")
+                error_msg = str(e)
+                if "execution reverted" in error_msg.lower():
+                    raise ValueError(f"Contract function call reverted: {error_msg}")
+                elif "gas required exceeds allowance" in error_msg.lower():
+                    raise ValueError("Insufficient gas for contract call")
+                else:
+                    raise ValueError(f"Contract function call failed: {error_msg}")
 
         except Exception as e:
             logger.error(f"Error executing contract query: {str(e)}")
+            if isinstance(e, ValueError):
+                raise
             raise Exception(f"Failed to execute contract query: {str(e)}")
+        finally:
+            pass
     
     async def _format_answer(self, query: OnChainQuery, result: Any) -> str:
         """

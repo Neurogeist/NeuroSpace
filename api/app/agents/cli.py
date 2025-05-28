@@ -32,6 +32,9 @@ async def run_qa_agent(question: str, web3_provider: Optional[str] = None) -> No
     )
     
     try:
+        # Initialize the agent (verify connection)
+        await agent.initialize()
+        
         # Execute the question
         result = await agent.execute(question)
         
@@ -56,9 +59,40 @@ async def run_qa_agent(question: str, web3_provider: Optional[str] = None) -> No
     except Exception as e:
         print(f"\nError: {str(e)}")
 
+async def interactive_mode(web3_provider: Optional[str] = None):
+    """Run the CLI in interactive mode."""
+    print("NeuroSpace Agent CLI (Interactive Mode)")
+    print("Type 'exit' or 'quit' to end the session")
+    print("----------------------------------------")
+    
+    while True:
+        try:
+            question = input("\nEnter your question: ").strip()
+            if question.lower() in ["exit", "quit"]:
+                break
+            if question:
+                await run_qa_agent(question, web3_provider)
+        except KeyboardInterrupt:
+            print("\nExiting...")
+            break
+        except Exception as e:
+            print(f"Error: {str(e)}")
+
 def main():
     """Main entry point for the CLI."""
-    parser = argparse.ArgumentParser(description="NeuroSpace Agent CLI")
+    parser = argparse.ArgumentParser(
+        description="NeuroSpace Agent CLI - Query on-chain data about tokens",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Example queries:
+  - "What is the total supply of USDC?"
+  - "What is the balance of 0x1234...5678 for USDT?"
+  - "What is the name of the token at 0x1234...5678?"
+  - "What is the symbol of the token at 0x1234...5678?"
+
+Common token names: USDC, USDT, DAI, WETH, WBTC
+        """
+    )
     parser.add_argument(
         "question",
         nargs="?",
@@ -73,22 +107,7 @@ def main():
     
     # If no question provided, enter interactive mode
     if not args.question:
-        print("NeuroSpace Agent CLI (Interactive Mode)")
-        print("Type 'exit' or 'quit' to end the session")
-        print("----------------------------------------")
-        
-        while True:
-            try:
-                question = input("\nEnter your question: ").strip()
-                if question.lower() in ["exit", "quit"]:
-                    break
-                if question:
-                    asyncio.run(run_qa_agent(question, args.web3_provider))
-            except KeyboardInterrupt:
-                print("\nExiting...")
-                break
-            except Exception as e:
-                print(f"Error: {str(e)}")
+        asyncio.run(interactive_mode(args.web3_provider))
     else:
         # Run single question mode
         asyncio.run(run_qa_agent(args.question, args.web3_provider))
