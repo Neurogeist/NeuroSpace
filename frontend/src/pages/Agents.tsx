@@ -268,6 +268,12 @@ export default function AgentsPage() {
                                 onChange={(e) => setQuery(e.target.value)}
                                 placeholder="Enter your question here..."
                                 size="lg"
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                        e.preventDefault();
+                                        handleQuery();
+                                    }
+                                }}
                             />
                             <Button
                                 colorScheme="blue"

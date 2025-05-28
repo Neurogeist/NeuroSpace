@@ -8,7 +8,7 @@ from web3 import Web3
 # Token registry mapping names to contract addresses
 TOKEN_REGISTRY = {
     "neurocoin": "0x8Cb45bf3ECC760AEC9b4F575FB351Ad197580Ea3",
-    "neuro": "0x8Cb45bf3ECC760AEC9b4F575FB351Ad197580Ea3",  # aliases
+    "nspace": "0x8Cb45bf3ECC760AEC9b4F575FB351Ad197580Ea3",  # aliases
     "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",  # Base USDC
     "usd coin": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
     "weth": "0x4200000000000000000000000000000000000006",  # Base WETH

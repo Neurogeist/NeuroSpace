@@ -50,7 +50,7 @@ class AgentRegistry:
                 example_queries=[
                     "What is the total supply of USDC?",
                     "What is the balance of 0x123... for WETH?",
-                    "How many decimals does NEURO have?"
+                    "How many decimals does NSPACE have?"
                 ],
                 max_concurrent_requests=10,
                 rate_limit_per_minute=60
