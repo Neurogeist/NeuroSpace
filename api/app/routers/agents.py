@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime
+import os
 
 from ..core.auth import TokenData, require_jwt_auth
 from ..services.agent_registry import AgentRegistry, AgentConfig
@@ -128,7 +129,7 @@ async def query_agent(
         # Create agent instance
         agent = agent_class(
             agent_id=f"{request.agent_id}_{token_data.wallet_address}",
-            web3_provider=config.required_config.get("web3_provider")
+            web3_provider=os.getenv("WEB3_PROVIDER")
         )
         
         # Initialize agent
@@ -137,6 +138,10 @@ async def query_agent(
         try:
             # Execute query
             result = await agent.execute(request.query)
+            
+            # If IPFS storage failed, still return the answer
+            if not result.get("ipfs_hash"):
+                result["ipfs_hash"] = "ipfs_storage_failed"
             
             return AgentQueryResponse(
                 answer=result["answer"],
