@@ -3,26 +3,29 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-from unittest.mock import Mock, patch, AsyncMock
 import os
 from datetime import datetime, timedelta
 import uuid
 import logging
 import asyncio
+import sys
+from unittest.mock import MagicMock, AsyncMock, Mock
 
-# Mock transformers before importing app
-with patch('transformers.AutoModelForCausalLM'), \
-     patch('transformers.AutoTokenizer'):
-    from api.app.main import app
-    from api.app.models.database import Base, get_db
-    from api.app.services.blockchain import BlockchainService
-    from api.app.services.ipfs import IPFSService
-    from api.app.services.llm import LLMService
-    from api.app.services.chat_session import ChatSessionService
-    from api.app.services.model_registry import ModelRegistry
-    from api.app.services.payment import PaymentService
-    from api.app.services.rag import RAGService
-    from api.app.services.flagging import FlaggingService
+pytest_plugins = ["pytest_asyncio"]
+
+# Completely fake out the transformers module
+sys.modules["transformers"] = MagicMock()
+
+from api.app.main import app
+from api.app.models.database import Base, get_db
+from api.app.services.blockchain import BlockchainService
+from api.app.services.ipfs import IPFSService
+from api.app.services.llm import LLMService
+from api.app.services.chat_session import ChatSessionService
+from api.app.services.model_registry import ModelRegistry
+from api.app.services.payment import PaymentService
+from api.app.services.rag import RAGService
+from api.app.services.flagging import FlaggingService
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)

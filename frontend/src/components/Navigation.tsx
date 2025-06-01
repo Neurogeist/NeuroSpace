@@ -20,6 +20,7 @@ import { useState, useEffect } from 'react'
 const Links = [
   { name: 'Chat', path: '/chat' },
   { name: 'RAG', path: '/rag' },
+  { name: 'Agents', path: '/agents' },
   { name: 'Documentation', path: '/docs' },
 ]
 

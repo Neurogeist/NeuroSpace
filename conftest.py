@@ -1,5 +1,5 @@
-import os
-import sys
+# conftest.py in root dir
+import pytest
 
-# Add the project root directory to the Python path
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__))) 
+def pytest_configure(config):
+    config.addinivalue_line("markers", "asyncio: mark test to run with asyncio")

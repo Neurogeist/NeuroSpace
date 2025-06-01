@@ -23,7 +23,7 @@ import {
   ModalFooter,
 } from '@chakra-ui/react'
 import { useNavigate } from 'react-router-dom'
-import { FaRobot, FaDatabase, FaShieldAlt, FaCheckCircle, FaNetworkWired, FaCoins, FaEdit, FaMagic, FaKey, FaLink, FaFileAlt } from 'react-icons/fa'
+import { FaRobot, FaDatabase, FaShieldAlt, FaCheckCircle, FaNetworkWired, FaCoins, FaEdit, FaMagic, FaKey, FaLink, FaFileAlt, FaDownload } from 'react-icons/fa'
 
 const Feature = ({ title, text, icon }: { title: string; text: string; icon: any }) => {
   return (
@@ -390,17 +390,38 @@ const LandingPage = () => {
       </Box>
 
       {/* Whitepaper Modal */}
-      <Modal isOpen={isOpen} onClose={onClose} size="full">
+      <Modal isOpen={isOpen} onClose={onClose} size="md">
         <ModalOverlay />
         <ModalContent>
           <ModalHeader>NeuroSpace Whitepaper</ModalHeader>
           <ModalCloseButton />
-          <ModalBody p={0}>
-            <iframe
-              src="/NeuroSpace_Whitepaper.pdf"
-              style={{ width: '100%', height: '100vh', border: 'none' }}
-              title="NeuroSpace Whitepaper"
-            />
+          <ModalBody>
+            <VStack spacing={4}>
+              <Text>Choose how you'd like to view the whitepaper:</Text>
+              <Button
+                colorScheme="blue"
+                leftIcon={<FaFileAlt />}
+                onClick={() => window.open('/NeuroSpace_Whitepaper.pdf', '_blank')}
+                w="full"
+              >
+                Open in New Tab
+              </Button>
+              <Button
+                colorScheme="purple"
+                leftIcon={<FaDownload />}
+                onClick={() => {
+                  const link = document.createElement('a');
+                  link.href = '/NeuroSpace_Whitepaper.pdf';
+                  link.download = 'NeuroSpace_Whitepaper.pdf';
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                }}
+                w="full"
+              >
+                Download PDF
+              </Button>
+            </VStack>
           </ModalBody>
           <ModalFooter>
             <Button colorScheme="blue" mr={3} onClick={onClose}>

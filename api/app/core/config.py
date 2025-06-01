@@ -83,6 +83,8 @@ class Settings(BaseSettings):
     JWT_SECRET: str # Fallback secret, should be overridden in production
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+
+    WEB3_PROVIDER: str = Field(..., env="WEB3_PROVIDER")
     
     @property
     def is_production(self) -> bool:
