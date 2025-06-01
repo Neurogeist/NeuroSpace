@@ -3,6 +3,8 @@ import { API_BASE_URL } from './api';
 import { getAuthHeaders } from './auth';
 import { ethers } from 'ethers';
 
+console.log("API_BASE_URL =", API_BASE_URL);
+
 export interface Agent {
     agent_id: string;
     display_name: string;
