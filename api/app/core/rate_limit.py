@@ -19,6 +19,8 @@ RATE_LIMIT_CONFIG = {
     "/rag/upload": {"requests": 10, "window": 60},  # 10 requests per minute
     "/rag/query": {"requests": 20, "window": 60},  # 20 requests per minute
     "/verify": {"requests": 300, "window": 60},  # 300 requests per minute for verify endpoint
+    "/agents": {"requests": 30, "window": 60},  # 30 requests per minute for agent listing
+    "/agents/query": {"requests": 20, "window": 60},  # 20 requests per minute for agent queries
 }
 
 class RateLimiter:
@@ -169,7 +171,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             "/favicon.ico",  # Favicon
             "/api-docs",  # Swagger UI
             "/redoc",  # ReDoc
-            "/openapi.json"  # OpenAPI schema
+            "/openapi.json",  # OpenAPI schema
+            "/agents/health",  # Agent health check
+            "/agents/docs",  # Agent documentation
         }
         
         # File extensions that don't require rate limiting
