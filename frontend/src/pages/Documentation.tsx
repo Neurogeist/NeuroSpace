@@ -27,7 +27,7 @@ import {
   AlertTitle,
   AlertDescription,
 } from '@chakra-ui/react'
-import { FaRocket, FaShieldAlt, FaDatabase, FaFileAlt, FaCheckCircle, FaWallet, FaRobot, FaLock, FaLink, FaQuestionCircle, FaCode, FaThumbsUp, FaVoteYea, FaCoins, FaExclamationTriangle, FaStar, FaLightbulb } from 'react-icons/fa'
+import { FaRocket, FaShieldAlt, FaDatabase, FaFileAlt, FaCheckCircle, FaWallet, FaRobot, FaLock, FaLink, FaQuestionCircle, FaCode, FaThumbsUp, FaVoteYea, FaCoins, FaExclamationTriangle, FaStar, FaLightbulb, FaDownload } from 'react-icons/fa'
 
 const Section = ({ title, icon, children }: { title: string; icon: any; children: React.ReactNode }) => {
   const bgColor = useColorModeValue('white', 'gray.800')
@@ -491,17 +491,38 @@ const Documentation = () => {
       </Container>
 
       {/* Whitepaper Modal */}
-      <Modal isOpen={isOpen} onClose={onClose} size="full">
+      <Modal isOpen={isOpen} onClose={onClose} size="md">
         <ModalOverlay />
         <ModalContent>
           <ModalHeader>NeuroSpace Whitepaper</ModalHeader>
           <ModalCloseButton />
-          <ModalBody p={0}>
-            <iframe
-              src="/NeuroSpace_Whitepaper.pdf"
-              style={{ width: '100%', height: '100vh', border: 'none' }}
-              title="NeuroSpace Whitepaper"
-            />
+          <ModalBody>
+            <VStack spacing={4}>
+              <Text>Choose how you'd like to view the whitepaper:</Text>
+              <Button
+                colorScheme="blue"
+                leftIcon={<FaFileAlt />}
+                onClick={() => window.open('/NeuroSpace_Whitepaper.pdf', '_blank')}
+                w="full"
+              >
+                Open in New Tab
+              </Button>
+              <Button
+                colorScheme="purple"
+                leftIcon={<FaDownload />}
+                onClick={() => {
+                  const link = document.createElement('a');
+                  link.href = '/NeuroSpace_Whitepaper.pdf';
+                  link.download = 'NeuroSpace_Whitepaper.pdf';
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                }}
+                w="full"
+              >
+                Download PDF
+              </Button>
+            </VStack>
           </ModalBody>
           <ModalFooter>
             <Button colorScheme="blue" mr={3} onClick={onClose}>
