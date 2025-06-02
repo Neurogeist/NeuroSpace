@@ -49,7 +49,10 @@ export const getAgents = async (
 ): Promise<Agent[]> => {
     console.log("[getAgents] Starting request with API_BASE_URL:", API_BASE_URL);
     const authHeaders = await getAuthHeaders(walletAddress, provider);
-    const url = `${API_BASE_URL}/agents`;
+    
+    // Ensure URL starts with https and has no trailing slash
+    const baseUrl = API_BASE_URL.replace(/\/$/, '').replace(/^http:/, 'https:');
+    const url = `${baseUrl}/agents`;
     console.log("[getAgents] Making request to URL:", url);
     
     // Validate URL format
@@ -61,7 +64,11 @@ export const getAgents = async (
     }
     
     const response = await axios.get<Agent[]>(url, {
-        headers: authHeaders
+        headers: authHeaders,
+        maxRedirects: 0, // Prevent automatic redirects
+        validateStatus: function (status) {
+            return status >= 200 && status < 300; // Only accept 2xx status codes
+        }
     });
     return response.data;
 };
