@@ -47,8 +47,20 @@ export const getAgents = async (
     walletAddress: string,
     provider: ethers.BrowserProvider
 ): Promise<Agent[]> => {
+    console.log("[getAgents] Starting request with API_BASE_URL:", API_BASE_URL);
     const authHeaders = await getAuthHeaders(walletAddress, provider);
-    const response = await axios.get<Agent[]>(`${API_BASE_URL}/agents`, {
+    const url = `${API_BASE_URL}/agents`;
+    console.log("[getAgents] Making request to URL:", url);
+    
+    // Validate URL format
+    try {
+        new URL(url);
+    } catch (e) {
+        console.error("[getAgents] Invalid URL format:", url);
+        throw new Error(`Invalid API URL format: ${url}`);
+    }
+    
+    const response = await axios.get<Agent[]>(url, {
         headers: authHeaders
     });
     return response.data;
