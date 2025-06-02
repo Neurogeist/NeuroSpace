@@ -2,7 +2,9 @@ import axios, { AxiosHeaders } from 'axios';
 import { ethers } from 'ethers';
 import { getAuthHeaders } from './auth';
 
+console.log("[api.ts] Loading VITE_API_URL from environment:", import.meta.env.VITE_API_URL);
 export const API_BASE_URL = import.meta.env.VITE_API_URL;
+console.log("[api.ts] API_BASE_URL set to:", API_BASE_URL);
 
 // Configure axios defaults
 axios.defaults.withCredentials = false;
