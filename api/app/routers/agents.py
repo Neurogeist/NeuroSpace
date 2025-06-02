@@ -8,10 +8,13 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime
 import os
+import logging
 
 from ..core.auth import TokenData, require_jwt_auth
 from ..services.agent_registry import AgentRegistry, AgentConfig
 from ..agents.base import BaseAgent
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/agents",
@@ -49,8 +52,13 @@ class AgentQueryResponse(BaseModel):
 async def list_agents(token_data: TokenData = Depends(require_jwt_auth)):
     """Get a list of all available agents."""
     try:
+        logger.info(f"[list_agents] Request received from wallet: {token_data.wallet_address}")
+        logger.info("[list_agents] Getting available agents from registry")
+        
         agents = agent_registry.get_available_agents()
-        return [
+        logger.info(f"[list_agents] Found {len(agents)} available agents")
+        
+        response = [
             AgentResponse(
                 agent_id=agent_id,
                 display_name=config.display_name,
@@ -61,7 +69,11 @@ async def list_agents(token_data: TokenData = Depends(require_jwt_auth)):
             )
             for agent_id, config in agents.items()
         ]
+        
+        logger.info("[list_agents] Successfully prepared response")
+        return response
     except Exception as e:
+        logger.error(f"[list_agents] Error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)

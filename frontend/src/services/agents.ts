@@ -2,6 +2,7 @@ import axios from 'axios';
 import { API_BASE_URL } from './api';
 import { getAuthHeaders } from './auth';
 import { ethers } from 'ethers';
+import { AxiosHeaders } from 'axios';
 
 console.log("API_BASE_URL =", API_BASE_URL);
 
@@ -48,29 +49,48 @@ export const getAgents = async (
     provider: ethers.BrowserProvider
 ): Promise<Agent[]> => {
     console.log("[getAgents] Starting request with API_BASE_URL:", API_BASE_URL);
+    
+    // Log raw auth headers
     const authHeaders = await getAuthHeaders(walletAddress, provider);
+    console.log("[getAgents] Raw auth headers:", authHeaders);
     
-    // Ensure URL starts with https and has no trailing slash
-    const baseUrl = API_BASE_URL.replace(/\/$/, '').replace(/^http:/, 'https:');
-    const url = `${baseUrl}/agents`;
-    console.log("[getAgents] Making request to URL:", url);
+    // Log headers after AxiosHeaders conversion
+    const headers = new AxiosHeaders(authHeaders as Record<string, string>);
+    console.log("[getAgents] Converted headers:", headers);
     
-    // Validate URL format
+    // Log full request URL
+    const requestUrl = `${API_BASE_URL}/agents`;
+    console.log("[getAgents] Full request URL:", requestUrl);
+    
+    // Log request configuration
+    const config = {
+        headers,
+        maxRedirects: 5, // Allow redirects to see if Railway is redirecting
+        validateStatus: null // Allow all status codes to see what's happening
+    };
+    console.log("[getAgents] Request config:", config);
+    
     try {
-        new URL(url);
-    } catch (e) {
-        console.error("[getAgents] Invalid URL format:", url);
-        throw new Error(`Invalid API URL format: ${url}`);
-    }
-    
-    const response = await axios.get<Agent[]>(url, {
-        headers: authHeaders,
-        maxRedirects: 0, // Prevent automatic redirects
-        validateStatus: function (status) {
-            return status >= 200 && status < 300; // Only accept 2xx status codes
+        const response = await axios.get<Agent[]>(requestUrl, config);
+        console.log("[getAgents] Response status:", response.status);
+        console.log("[getAgents] Response headers:", response.headers);
+        return response.data;
+    } catch (error) {
+        if (axios.isAxiosError(error)) {
+            console.error("[getAgents] Axios error details:", {
+                status: error.response?.status,
+                statusText: error.response?.statusText,
+                headers: error.response?.headers,
+                data: error.response?.data,
+                config: {
+                    url: error.config?.url,
+                    method: error.config?.method,
+                    headers: error.config?.headers
+                }
+            });
         }
-    });
-    return response.data;
+        throw error;
+    }
 };
 
 export const queryAgent = async (
