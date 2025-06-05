@@ -55,7 +55,7 @@ pip install -r requirements.txt
 
 4. Install Node.js dependencies for smart contracts:
 ```bash
-cd hardhat/contracts
+cd frontend/contracts
 npm install
 ```
 
