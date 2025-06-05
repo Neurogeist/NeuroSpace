@@ -457,20 +457,6 @@ export default function Chat() {
                 display={{ base: 'flex', md: 'none' }}
             />
 
-            <IconButton
-                as={RouterLink}
-                to="/"
-                aria-label="Go to home"
-                icon={<FiHome />}
-                position="fixed"
-                right={2}
-                top={2}
-                zIndex={2}
-                bg={inputBgColor}
-                _hover={{ bg: buttonHoverBgColor }}
-                size="sm"
-            />
-
             <Collapse in={isSidebarOpen} animateOpacity>
                 <Box
                     w={{ base: '100%', md: '300px' }}
@@ -547,15 +533,27 @@ export default function Chat() {
                                         ))}
                                     </Select>
                                 </FormControl>
-                                <IconButton
-                                    aria-label="Toggle color mode"
-                                    icon={colorMode === 'light' ? <FiMoon /> : <FiSun />}
-                                    onClick={toggleColorMode}
-                                    size={{ base: 'sm', md: 'md' }}
-                                    colorScheme="blue"
-                                    variant="ghost"
-                                    color={iconColor}
-                                />
+                                <HStack spacing={2}>
+                                    <IconButton
+                                        aria-label="Toggle color mode"
+                                        icon={colorMode === 'light' ? <FiMoon /> : <FiSun />}
+                                        onClick={toggleColorMode}
+                                        size={{ base: 'sm', md: 'md' }}
+                                        colorScheme="blue"
+                                        variant="ghost"
+                                        color={iconColor}
+                                    />
+                                    <IconButton
+                                        aria-label="Go home"
+                                        icon={<FiHome />}
+                                        as={RouterLink}
+                                        to="/"
+                                        size={{ base: 'sm', md: 'md' }}
+                                        colorScheme="blue"
+                                        variant="ghost"
+                                        color={iconColor}
+                                    />
+                                </HStack>
                             </HStack>
                         </Flex>
                     </Container>
