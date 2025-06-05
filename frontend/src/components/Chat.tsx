@@ -103,6 +103,7 @@ export default function Chat() {
 
     useEffect(() => {
         if (availableSessions.length > 0 && !activeSessionId) {
+            console.log('Setting initial active session:', availableSessions[0].session_id);
             setActiveSessionId(availableSessions[0].session_id);
         }
     }, [availableSessions]);
@@ -110,12 +111,15 @@ export default function Chat() {
     useEffect(() => {
         const loadSession = async () => {
             if (!activeSessionId || !userAddress || !provider) {
+                console.log('Cannot load session:', { activeSessionId, userAddress, hasProvider: !!provider });
                 setMessages([]);
                 return;
             }
 
             try {
+                console.log('Loading session:', activeSessionId);
                 const session = await getSession(activeSessionId, userAddress, provider);
+                console.log('Loaded session messages:', session.messages);
                 setMessages(session.messages);
             } catch (error) {
                 console.error('Error loading session:', error);

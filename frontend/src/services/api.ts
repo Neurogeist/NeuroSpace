@@ -147,20 +147,43 @@ export const getSessions = async (
             throw new Error('Provider is required for authentication');
         }
 
+        console.log('Getting auth headers for sessions...');
         const authHeaders = await getAuthHeaders(userAddress, provider);
+        console.log('Auth headers:', authHeaders);
         const headers = new AxiosHeaders(authHeaders as Record<string, string>);
 
+        console.log('Making GET request to sessions endpoint...');
         const response = await axios.get(`${API_BASE_URL}/sessions`, {
-            headers
+            headers,
+            validateStatus: (status) => status < 500 // Don't throw on 4xx errors
         });
+
+        console.log('Sessions response status:', response.status);
+        console.log('Sessions response data:', response.data);
+
+        if (response.status === 404) {
+            console.log('Sessions endpoint not available, returning empty array');
+            return [];
+        }
+
+        if (response.status !== 200) {
+            console.error('Unexpected response status:', response.status);
+            console.error('Response data:', response.data);
+            return [];
+        }
+
+        if (!Array.isArray(response.data)) {
+            console.error('Response data is not an array:', response.data);
+            return [];
+        }
+
         return response.data;
     } catch (error) {
         if (axios.isAxiosError(error)) {
-            if (error.response?.status === 404) {
-                console.log('Sessions endpoint not available, returning empty array');
-                return [];
-            }
             console.error('Error fetching sessions:', error.response?.data);
+            console.error('Error status:', error.response?.status);
+            console.error('Error headers:', error.response?.headers);
+            console.error('Error config:', error.config);
         } else {
             console.error('Error fetching sessions:', error);
         }

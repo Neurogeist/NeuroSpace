@@ -77,7 +77,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     setIsLoadingSessions(true);
     try {
+      console.log('Loading sessions for address:', userAddress);
       const sessionsData = await getSessions(userAddress, provider);
+      console.log('Loaded sessions:', sessionsData);
       setSessions(sessionsData);
       setError(null);
     } catch (err) {

@@ -41,6 +41,9 @@ export default function Sidebar({ sessions, activeSessionId, onNewChat, onSelect
     const { refreshSessions } = useApp();
     const toast = useToast();
 
+    console.log('Sidebar received sessions:', sessions);
+    console.log('Sidebar props:', { activeSessionId, userAddress, hasProvider: !!provider });
+
     const textColor = useColorModeValue('gray.800', 'gray.200');
     const hoverBgColor = useColorModeValue('gray.100', 'gray.700');
     const activeBgColor = useColorModeValue('blue.50', 'blue.900');
