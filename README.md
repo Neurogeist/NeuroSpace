@@ -59,8 +59,9 @@ cd hardhat/contracts
 npm install
 ```
 
-5. Create a `.env` file in the root directory:
+5. Navigate to the root directory and create a `.env` file:
 ```bash
+cd ../..
 cp .env.example .env
 ```
 
