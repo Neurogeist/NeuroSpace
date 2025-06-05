@@ -1,16 +1,15 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { getAvailableModels, getSessions, ChatSession } from '../services/api'; // Assuming ChatSession is exported from api or types
-import { connectWallet as connectWalletService } from '../services/blockchain'; // Import your actual connect service
+import { getAvailableModels, getSessions, ChatSession } from '../services/api';
 import { ethers } from 'ethers';
+import { useAccount, useWalletClient } from 'wagmi';
 
 interface AppContextType {
-  userAddress: string | null; // Add userAddress state
+  userAddress: string | null;
   provider: ethers.BrowserProvider | null;
-  connectWallet: () => Promise<string | null>; // Add connect function
   models: { [key: string]: string };
-  sessions: ChatSession[]; // Use correct type if available
-  isLoadingModels: boolean; // Separate loading states
-  isLoadingSessions: boolean; // Separate loading states
+  sessions: ChatSession[];
+  isLoadingModels: boolean;
+  isLoadingSessions: boolean;
   error: string | null;
   refreshSessions: () => Promise<void>;
   refreshModels: () => Promise<void>;
@@ -25,157 +24,102 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [userAddress, setUserAddress] = useState<string | null>(null); // Wallet address state
+  const { address } = useAccount();
+  const { data: walletClient } = useWalletClient();
   const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null);
   const [models, setModels] = useState<{ [key: string]: string }>({});
-  const [sessions, setSessions] = useState<ChatSession[]>([]); // Use specific type
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(true);
-  const [isLoadingSessions, setIsLoadingSessions] = useState(false); // Initially false, load sessions only when address is known
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isApproved, setIsApproved] = useState(false);
   const [tokenBalance, setTokenBalance] = useState<string>('0');
   const [remainingFreeRequests, setRemainingFreeRequests] = useState<number>(0);
-  
-  useEffect(() => {
-    const tryAutoConnect = async () => {
-      if (!userAddress) {
-        try {
-          const address = await connectWalletService();
-          setUserAddress(address);
-          if (window.ethereum) {
-            const provider = new ethers.BrowserProvider(window.ethereum);
-            setProvider(provider);
-          }
-          console.log("🔁 Auto-connected wallet:", address);
-        } catch (err) {
-          console.warn("⚠️ Auto-connect failed or wallet not available");
-        }
-      }
-    };
-  
-    tryAutoConnect();
-  }, []);
-  
 
-  // --- Wallet Connection ---
-  const connectWallet = async (): Promise<string | null> => {
-    try {
-      const address = await connectWalletService();
-      setUserAddress(address);
-      if (window.ethereum) {
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        setProvider(provider);
-      }
-      setError(null); // Clear previous errors on successful connect
-      console.log("Wallet connected in context:", address);
-      return address;
-    } catch (err) {
-      console.error('Error connecting wallet in context:', err);
-      setUserAddress(null); // Ensure address is null on error
+  // Update provider when wallet client changes
+  useEffect(() => {
+    if (walletClient) {
+      const provider = new ethers.BrowserProvider(walletClient as any);
+      setProvider(provider);
+    } else {
       setProvider(null);
-      setSessions([]); // Clear sessions if wallet disconnects or fails to connect
-      setError(err instanceof Error ? err.message : 'Failed to connect wallet');
-      return null;
     }
-  };
+  }, [walletClient]);
 
   // --- Model Loading ---
   const loadModels = useCallback(async () => {
     setIsLoadingModels(true);
     try {
-        if (!userAddress || !provider) {
-            console.log('No user address or provider available, skipping model load');
-            setModels({});
-            return;
-        }
-
-        const modelsData = await getAvailableModels(userAddress, provider);
-        setModels(modelsData);
-        setError(null);
-    } catch (err) {
-        console.error('Error loading models:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load models');
-        setModels({}); // Clear models on error
-    } finally {
-        setIsLoadingModels(false);
-    }
-}, [userAddress, provider]); // Add dependencies
-
-  // --- Session Loading (Depends on userAddress) ---
-  const loadSessions = useCallback(async (address: string | null) => {
-    // Only load if address is valid and provider is available
-    if (!address || !provider) {
-        console.log("No address or provider available, clearing sessions.");
-        setSessions([]); // Clear sessions if no address
-        setIsLoadingSessions(false);
+      if (!address || !provider) {
+        console.log('No user address or provider available, skipping model load');
+        setModels({});
         return;
+      }
+
+      const modelsData = await getAvailableModels(address, provider);
+      setModels(modelsData);
+      setError(null);
+    } catch (err) {
+      console.error('Error loading models:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load models');
+      setModels({});
+    } finally {
+      setIsLoadingModels(false);
+    }
+  }, [address, provider]);
+
+  // --- Session Loading ---
+  const loadSessions = useCallback(async (userAddress: string) => {
+    if (!provider) {
+      console.log('Provider not available yet, skipping session load');
+      return;
     }
 
     setIsLoadingSessions(true);
-    setError(null);
     try {
-        const sessionsData = await getSessions(address, provider);
-        setSessions(sessionsData);
-
-        // Validate active session (optional, but good practice)
-        const activeSessionId = localStorage.getItem('activeSessionId');
-        if (activeSessionId && sessionsData.length > 0) {
-            const sessionExists = sessionsData.some(session => session.session_id === activeSessionId);
-            if (!sessionExists) {
-                console.log(`Context: Active session ${activeSessionId} not found in loaded sessions, clearing local storage.`);
-                localStorage.removeItem('activeSessionId');
-            }
-        } else if (activeSessionId) {
-            // Clear if there are no sessions but local storage still has an ID
-            localStorage.removeItem('activeSessionId');
-        }
-
+      const sessionsData = await getSessions(userAddress, provider);
+      setSessions(sessionsData);
+      setError(null);
     } catch (err) {
-        console.error('Error loading sessions in context:', err instanceof Error ? err.message : 'Unknown error');
-        setError(err instanceof Error ? err.message : 'Failed to load sessions');
-        setSessions([]); // Clear sessions on error
+      console.error('Error loading sessions:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load sessions');
+      setSessions([]);
     } finally {
-        setIsLoadingSessions(false);
+      setIsLoadingSessions(false);
     }
-}, [provider]); // Add provider as a dependency
+  }, [provider]);
 
-  // Function exposed to components for refreshing sessions
-  const refreshSessions = async () => {
-    // Uses the current userAddress from state
-    await loadSessions(userAddress);
-  };
+  const refreshSessions = useCallback(async () => {
+    if (address) {
+      await loadSessions(address);
+    }
+  }, [address, loadSessions]);
 
-  // Function exposed for refreshing models
-  const refreshModels = async () => {
+  const refreshModels = useCallback(async () => {
     await loadModels();
-  };
+  }, [loadModels]);
 
   // --- Initial Data Loading Effects ---
-
-  // Load models when userAddress or provider changes
   useEffect(() => {
-    if (userAddress && provider) {
-        loadModels();
+    if (address && provider) {
+      loadModels();
     }
-  }, [userAddress, provider, loadModels]);
+  }, [address, provider, loadModels]);
 
-  // Load sessions whenever the userAddress changes
   useEffect(() => {
-    if (userAddress) {
-      loadSessions(userAddress);
+    if (address) {
+      loadSessions(address);
     } else {
-      // If user disconnects (address becomes null), clear sessions
       setSessions([]);
-      setIsLoadingSessions(false); // Ensure loading is stopped
+      setIsLoadingSessions(false);
     }
-  }, [userAddress, loadSessions]); // Run when address changes or loadSessions definition changes
+  }, [address, loadSessions]);
 
   return (
     <AppContext.Provider
       value={{
-        userAddress,
+        userAddress: address || null,
         provider,
-        connectWallet,
         models,
         sessions,
         isLoadingModels,
