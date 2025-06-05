@@ -2,10 +2,9 @@ import axios, { AxiosHeaders } from 'axios';
 import { ethers } from 'ethers';
 import { getAuthHeaders } from './auth';
 
-
-// Ensure the API URL is HTTPS and has no trailing slash
+// Ensure the API URL has no trailing slash
 const rawUrl = import.meta.env.VITE_API_URL;
-const cleanUrl = rawUrl.replace(/\/$/, '').replace(/^http:/, 'https:');
+const cleanUrl = rawUrl.replace(/\/$/, '');
 
 export const API_BASE_URL = cleanUrl;
 

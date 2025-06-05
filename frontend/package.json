@@ -21,6 +21,11 @@
     "@chakra-ui/toast": "^7.0.2",
     "@emotion/react": "^11.11.3",
     "@emotion/styled": "^11.11.0",
+    "@tanstack/react-query": "^5.80.5",
+    "@wagmi/core": "^2.17.2",
+    "@walletconnect/ethereum-provider": "^2.21.1",
+    "@web3modal/ethereum": "^2.7.1",
+    "@web3modal/react": "^2.7.1",
     "axios": "^1.6.7",
     "ethers": "^6.13.5",
     "framer-motion": "^11.0.3",
@@ -31,7 +36,10 @@
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.5.3",
     "rehype-raw": "^7.0.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "viem": "^2.30.6",
+    "wagmi": "^2.15.5",
+    "web3modal": "^1.9.12"
   },
   "devDependencies": {
     "@eslint/js": "^9.21.0",
