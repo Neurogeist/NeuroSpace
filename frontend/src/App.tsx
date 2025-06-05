@@ -17,7 +17,7 @@ import Documentation from './pages/Documentation';
 import AgentsPage from './pages/Agents';
 import './App.css';
 
-const projectId = '42646914ef3f478b688716921690e7ea';
+const projectId = import.meta.env.VITE_WALLET_CONNECT_PROJECT_ID;
 const ENVIRONMENT = import.meta.env.VITE_ENVIRONMENT || 'development';
 
 const wagmiConfig = createConfig({
