@@ -41,6 +41,7 @@ const Section = ({ title, icon, children }: { title: string; icon: any; children
       shadow="md"
       borderWidth="1px"
       borderColor={borderColor}
+      textAlign="left"
     >
       <HStack spacing={4} mb={4}>
         <Icon as={icon} w={6} h={6} color="blue.500" />
@@ -62,7 +63,7 @@ const Documentation = () => {
       <Container maxW="container.xl">
         <VStack spacing={8} align="stretch">
           {/* Page Header */}
-          <Stack spacing={4}>
+          <Stack spacing={4} textAlign="center">
             <Heading color={headingColor}>NeuroSpace Documentation</Heading>
             <Text fontSize="lg" color={textColor}>
               Everything you need to know to get started and understand how NeuroSpace works.
@@ -74,7 +75,7 @@ const Documentation = () => {
 
           {/* Quick Start */}
           <Section title="Getting Started" icon={FaRocket}>
-            <VStack align="stretch" spacing={4}>
+            <VStack align="stretch" spacing={4} textAlign="left">
               <Text color={textColor}>
                 NeuroSpace lets you interact with AI verifiably. You can start for free or choose to pay using ETH or NeuroCoin.
               </Text>

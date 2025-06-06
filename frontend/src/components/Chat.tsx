@@ -35,6 +35,8 @@ import { useApp } from '../context/AppContext';
 import { payForMessage, checkTokenAllowance, approveToken, getTokenBalance, getRemainingFreeRequests } from '../services/blockchain';
 import { FiMoon, FiSun, FiHome } from 'react-icons/fi';
 import { Link as RouterLink } from 'react-router-dom';
+import { useWeb3Modal } from '@web3modal/wagmi/react';
+import { useDisconnect } from 'wagmi';
 
 export default function Chat() {
     const {
@@ -42,7 +44,6 @@ export default function Chat() {
         sessions: availableSessions,
         userAddress,
         provider,
-        connectWallet,
         error,
         refreshSessions,
         isApproved,
@@ -73,6 +74,8 @@ export default function Chat() {
     const [paymentMethod, setPaymentMethod] = useState<'ETH' | 'NEURO' | 'FREE'>('ETH');
     const [isApproving, setIsApproving] = useState(false);
     const [tokenPrice] = useState<string>('1');
+    const { open } = useWeb3Modal();
+    const { disconnect } = useDisconnect();
 
     const bgColor = useColorModeValue('gray.50', 'gray.900');
     const borderColor = useColorModeValue('gray.200', 'gray.700');
@@ -457,20 +460,6 @@ export default function Chat() {
                 display={{ base: 'flex', md: 'none' }}
             />
 
-            <IconButton
-                as={RouterLink}
-                to="/"
-                aria-label="Go to home"
-                icon={<FiHome />}
-                position="fixed"
-                right={2}
-                top={2}
-                zIndex={2}
-                bg={inputBgColor}
-                _hover={{ bg: buttonHoverBgColor }}
-                size="sm"
-            />
-
             <Collapse in={isSidebarOpen} animateOpacity>
                 <Box
                     w={{ base: '100%', md: '300px' }}
@@ -547,15 +536,27 @@ export default function Chat() {
                                         ))}
                                     </Select>
                                 </FormControl>
-                                <IconButton
-                                    aria-label="Toggle color mode"
-                                    icon={colorMode === 'light' ? <FiMoon /> : <FiSun />}
-                                    onClick={toggleColorMode}
-                                    size={{ base: 'sm', md: 'md' }}
-                                    colorScheme="blue"
-                                    variant="ghost"
-                                    color={iconColor}
-                                />
+                                <HStack spacing={2}>
+                                    <IconButton
+                                        aria-label="Toggle color mode"
+                                        icon={colorMode === 'light' ? <FiMoon /> : <FiSun />}
+                                        onClick={toggleColorMode}
+                                        size={{ base: 'sm', md: 'md' }}
+                                        colorScheme="blue"
+                                        variant="ghost"
+                                        color={iconColor}
+                                    />
+                                    <IconButton
+                                        aria-label="Go home"
+                                        icon={<FiHome />}
+                                        as={RouterLink}
+                                        to="/"
+                                        size={{ base: 'sm', md: 'md' }}
+                                        colorScheme="blue"
+                                        variant="ghost"
+                                        color={iconColor}
+                                    />
+                                </HStack>
                             </HStack>
                         </Flex>
                     </Container>
@@ -609,104 +610,124 @@ export default function Chat() {
                     <Container maxW={maxMessageWidth}>
                         {!userAddress ? (
                             <Button 
-                                onClick={connectWallet} 
+                                onClick={() => open()} 
                                 colorScheme="blue"
                                 size={{ base: 'sm', md: 'md' }}
                                 w="100%"
+                                mb={4}
                             >
                                 Connect Wallet
                             </Button>
                         ) : (
-                            <form onSubmit={handleSubmit}>
-                                <VStack spacing={4}>
-                                    <RadioGroup 
-                                        value={paymentMethod} 
-                                        onChange={(value: 'ETH' | 'NEURO' | 'FREE') => handlePaymentMethodChange(value)}
-                                    >
-                                        <Stack direction="row" spacing={4}>
-                                            <Radio 
-                                                value="FREE" 
-                                                isDisabled={remainingFreeRequests === 0}
-                                                colorScheme={remainingFreeRequests === 0 ? "gray" : "blue"}
-                                            >
-                                                Use Free Request ({remainingFreeRequests} left)
-                                            </Radio>
-                                            <Radio value="ETH">Pay with ETH (0.00001 ETH)</Radio>
-                                            <Radio value="NEURO">
-                                                Pay with NeuroCoin ({tokenPrice} NSPACE)
-                                            </Radio>
-                                        </Stack>
-                                    </RadioGroup>
-
-                                    {paymentMethod === 'NEURO' && (
-                                        <HStack spacing={2}>
-                                            {!isApproved ? (
-                                                <Button
-                                                    onClick={handleApproveTokens}
-                                                    isLoading={isApproving}
-                                                    colorScheme="blue"
-                                                    variant="outline"
-                                                    size="sm"
-                                                >
-                                                    Approve NeuroCoin
-                                                </Button>
-                                            ) : (
-                                                <Text color="green.500" fontSize="sm">
-                                                    ✓ NeuroCoin Approved
-                                                </Text>
-                                            )}
-                                        </HStack>
-                                    )}
-
-                                    <HStack spacing={2} w="100%">
-                                        <FormControl>
-                                            <Textarea
-                                                ref={inputRef}
-                                                value={input}
-                                                onChange={(e) => setInput(e.target.value)}
-                                                placeholder="Type your message..."
-                                                size={{ base: 'sm', md: 'md' }}
-                                                resize="none"
-                                                minH="40px"
-                                                maxH="150px"
-                                                overflowY="auto"
-                                                bg={inputBgColor}
-                                                borderColor={inputBorderColor}
-                                                color={inputTextColor}
-                                                _hover={{ borderColor: buttonBgColor }}
-                                                _focus={{ borderColor: buttonBgColor, boxShadow: 'none' }}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter' && !e.shiftKey) {
-                                                        e.preventDefault();
-                                                        handleSubmit(e);
-                                                    }
-                                                }}
-                                            />
-                                        </FormControl>
-                                        <Button
-                                            type="submit"
-                                            colorScheme="blue"
-                                            isLoading={!!thinkingStatus}
-                                            isDisabled={
-                                                !input.trim() || 
-                                                (paymentMethod === 'NEURO' && (!isApproved || parseFloat(tokenBalance) < parseFloat(tokenPrice))) ||
-                                                (paymentMethod === 'FREE' && remainingFreeRequests === 0)
-                                            }
-                                            px={{ base: 4, md: 6 }}
-                                            size={{ base: 'sm', md: 'md' }}
-                                        >
-                                            <Text display={{ base: 'none', sm: 'block' }}>
-                                                {paymentMethod === 'FREE' 
-                                                    ? 'Use Free Request' 
-                                                    : `Send (${paymentMethod === 'ETH' ? '0.00001 ETH' : `${tokenPrice} NSPACE`})`
-                                                }
-                                            </Text>
-                                            <Text display={{ base: 'block', sm: 'none' }}>Send</Text>
-                                        </Button>
-                                    </HStack>
-                                </VStack>
-                            </form>
+                            <HStack spacing={4} w="100%" mb={4}>
+                                <Button 
+                                    onClick={() => disconnect()} 
+                                    colorScheme="red"
+                                    size={{ base: 'sm', md: 'md' }}
+                                    flex={1}
+                                >
+                                    Disconnect
+                                </Button>
+                                <Button 
+                                    onClick={() => open()} 
+                                    colorScheme="blue"
+                                    size={{ base: 'sm', md: 'md' }}
+                                    flex={1}
+                                >
+                                    Switch Account
+                                </Button>
+                            </HStack>
                         )}
+
+                        <form onSubmit={handleSubmit}>
+                            <VStack spacing={4}>
+                                <RadioGroup 
+                                    value={paymentMethod} 
+                                    onChange={(value: 'ETH' | 'NEURO' | 'FREE') => handlePaymentMethodChange(value)}
+                                >
+                                    <Stack direction="row" spacing={4}>
+                                        <Radio 
+                                            value="FREE" 
+                                            isDisabled={remainingFreeRequests === 0}
+                                            colorScheme={remainingFreeRequests === 0 ? "gray" : "blue"}
+                                        >
+                                            Use Free Request ({remainingFreeRequests} left)
+                                        </Radio>
+                                        <Radio value="ETH">Pay with ETH (0.00001 ETH)</Radio>
+                                        <Radio value="NEURO">
+                                            Pay with NeuroCoin ({tokenPrice} NSPACE)
+                                        </Radio>
+                                    </Stack>
+                                </RadioGroup>
+
+                                {paymentMethod === 'NEURO' && (
+                                    <HStack spacing={2}>
+                                        {!isApproved ? (
+                                            <Button 
+                                                onClick={handleApproveTokens}
+                                                isLoading={isApproving}
+                                                colorScheme="blue"
+                                                variant="outline"
+                                                size="sm"
+                                            >
+                                                Approve NeuroCoin
+                                            </Button>
+                                        ) : (
+                                            <Text color="green.500" fontSize="sm">
+                                                ✓ NeuroCoin Approved
+                                            </Text>
+                                        )}
+                                    </HStack>
+                                )}
+
+                                <HStack spacing={2} w="100%">
+                                    <FormControl>
+                                        <Textarea
+                                            ref={inputRef}
+                                            value={input}
+                                            onChange={(e) => setInput(e.target.value)}
+                                            placeholder="Type your message..."
+                                            size={{ base: 'sm', md: 'md' }}
+                                            resize="none"
+                                            minH="40px"
+                                            maxH="150px"
+                                            overflowY="auto"
+                                            bg={inputBgColor}
+                                            borderColor={inputBorderColor}
+                                            color={inputTextColor}
+                                            _hover={{ borderColor: buttonBgColor }}
+                                            _focus={{ borderColor: buttonBgColor, boxShadow: 'none' }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' && !e.shiftKey) {
+                                                    e.preventDefault();
+                                                    handleSubmit(e);
+                                                }
+                                            }}
+                                        />
+                                    </FormControl>
+                                    <Button 
+                                        type="submit"
+                                        colorScheme="blue"
+                                        isLoading={!!thinkingStatus}
+                                        isDisabled={
+                                            !input.trim() || 
+                                            (paymentMethod === 'NEURO' && (!isApproved || parseFloat(tokenBalance) < parseFloat(tokenPrice))) ||
+                                            (paymentMethod === 'FREE' && remainingFreeRequests === 0)
+                                        }
+                                        px={{ base: 4, md: 6 }}
+                                        size={{ base: 'sm', md: 'md' }}
+                                    >
+                                        <Text display={{ base: 'none', sm: 'block' }}>
+                                            {paymentMethod === 'FREE' 
+                                                ? 'Use Free Request' 
+                                                : `Send (${paymentMethod === 'ETH' ? '0.00001 ETH' : `${tokenPrice} NSPACE`})`
+                                            }
+                                        </Text>
+                                        <Text display={{ base: 'block', sm: 'none' }}>Send</Text>
+                                    </Button>
+                                </HStack>
+                            </VStack>
+                        </form>
                     </Container>
                 </Box>
             </Flex>

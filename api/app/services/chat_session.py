@@ -6,6 +6,7 @@ import logging
 from sqlalchemy.orm import Session
 from ..models.chat import ChatSessionDB, ChatMessageDB
 from ..models.database import SessionLocal
+from sqlalchemy import func
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +180,8 @@ class ChatSessionService:
         try:
             query = self.db.query(ChatSessionDB)
             if wallet_address:
-                query = query.filter(ChatSessionDB.wallet_address == wallet_address)
+                # Use case-insensitive comparison for wallet address
+                query = query.filter(func.lower(ChatSessionDB.wallet_address) == func.lower(wallet_address))
             db_sessions = query.all()
             sessions = []
 

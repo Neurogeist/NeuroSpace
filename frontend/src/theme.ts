@@ -14,6 +14,19 @@ export const theme = extendTheme({
         bg: 'gray.50',
         overflowX: 'hidden',
         width: '100%',
+        minHeight: '100vh',
+      },
+      '#root': {
+        width: '100%',
+        minHeight: '100vh',
+      },
+    },
+  },
+  components: {
+    Container: {
+      baseStyle: {
+        maxW: 'container.xl',
+        px: { base: 4, md: 6 },
       },
     },
   },

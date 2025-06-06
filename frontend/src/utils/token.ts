@@ -1,7 +1,7 @@
-interface TokenPayload {
-    exp: number;
+export interface TokenPayload {
     sub: string;
-    [key: string]: any;
+    exp: number;
+    iat: number;
 }
 
 export const decodeToken = (token: string): TokenPayload | null => {
@@ -21,19 +21,18 @@ export const isTokenExpired = (token: string): boolean => {
     const payload = decodeToken(token);
     if (!payload) return true;
     
-    const expirationTime = payload.exp * 1000; // Convert to milliseconds
-    const currentTime = Date.now();
-    return currentTime >= expirationTime;
+    const expirationTime = new Date(payload.exp * 1000);
+    return expirationTime <= new Date();
 };
 
-export const isTokenExpiringSoon = (token: string, thresholdMinutes: number = 1): boolean => {
+export const isTokenExpiringSoon = (token: string, minutes = 5): boolean => {
     const payload = decodeToken(token);
     if (!payload) return true;
     
-    const expirationTime = payload.exp * 1000;
-    const currentTime = Date.now();
-    const thresholdMs = thresholdMinutes * 60 * 1000;
-    return (expirationTime - currentTime) < thresholdMs;
+    const expirationTime = new Date(payload.exp * 1000);
+    const now = new Date();
+    const timeUntilExpiration = expirationTime.getTime() - now.getTime();
+    return timeUntilExpiration <= minutes * 60 * 1000;
 };
 
 export const getTokenExpirationTime = (token: string): Date | null => {
@@ -41,4 +40,11 @@ export const getTokenExpirationTime = (token: string): Date | null => {
     if (!payload) return null;
     
     return new Date(payload.exp * 1000);
+};
+
+export const getTokenWalletAddress = (token: string): string | null => {
+    const payload = decodeToken(token);
+    if (!payload) return null;
+    
+    return payload.sub;
 }; 

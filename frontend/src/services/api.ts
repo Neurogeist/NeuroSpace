@@ -2,10 +2,9 @@ import axios, { AxiosHeaders } from 'axios';
 import { ethers } from 'ethers';
 import { getAuthHeaders } from './auth';
 
-
-// Ensure the API URL is HTTPS and has no trailing slash
+// Ensure the API URL has no trailing slash
 const rawUrl = import.meta.env.VITE_API_URL;
-const cleanUrl = rawUrl.replace(/\/$/, '').replace(/^http:/, 'https:');
+const cleanUrl = rawUrl.replace(/\/$/, '');
 
 export const API_BASE_URL = cleanUrl;
 
@@ -152,16 +151,33 @@ export const getSessions = async (
         const headers = new AxiosHeaders(authHeaders as Record<string, string>);
 
         const response = await axios.get(`${API_BASE_URL}/sessions`, {
-            headers
+            headers,
+            validateStatus: (status) => status < 500 // Don't throw on 4xx errors
         });
+
+        if (response.status === 404) {
+            console.log('Sessions endpoint not available, returning empty array');
+            return [];
+        }
+
+        if (response.status !== 200) {
+            console.error('Unexpected response status:', response.status);
+            console.error('Response data:', response.data);
+            return [];
+        }
+
+        if (!Array.isArray(response.data)) {
+            console.error('Response data is not an array:', response.data);
+            return [];
+        }
+
         return response.data;
     } catch (error) {
         if (axios.isAxiosError(error)) {
-            if (error.response?.status === 404) {
-                console.log('Sessions endpoint not available, returning empty array');
-                return [];
-            }
             console.error('Error fetching sessions:', error.response?.data);
+            console.error('Error status:', error.response?.status);
+            console.error('Error headers:', error.response?.headers);
+            console.error('Error config:', error.config);
         } else {
             console.error('Error fetching sessions:', error);
         }

@@ -30,6 +30,8 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { Components } from 'react-markdown';
 import { verifyHash } from '../utils/verification';
+import { useWeb3Modal } from '@web3modal/wagmi/react';
+import { useDisconnect } from 'wagmi';
 
 export default function RAGPage() {
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -44,7 +46,9 @@ export default function RAGPage() {
     const [documentToDelete, setDocumentToDelete] = useState<string | null>(null);
     const cancelRef = useRef<HTMLButtonElement>(null);
     const toast = useToast();
-    const { address, connect, isConnected, provider } = useWallet();
+    const { address, isConnected, provider } = useWallet();
+    const { open } = useWeb3Modal();
+    const { disconnect } = useDisconnect();
 
     const borderColor = useColorModeValue('gray.200', 'gray.700');
     const linkColor = useColorModeValue('blue.500', 'blue.300');
@@ -57,6 +61,7 @@ export default function RAGPage() {
     const documentBgColor = useColorModeValue('gray.50', 'gray.700');
     const responseBgColor = useColorModeValue('gray.50', 'gray.700');
     const sourceBgColor = useColorModeValue('gray.50', 'gray.700');
+    const bgColor = useColorModeValue('gray.100', 'gray.900');
 
     const blockExplorerUrl = import.meta.env.VITE_ENVIRONMENT?.toLowerCase() === 'production'
         ? 'https://basescan.org'
@@ -295,176 +300,87 @@ export default function RAGPage() {
     };
 
     return (
-        <Box maxW="1200px" mx="auto" p={4} minH="100vh">
-            <VStack spacing={8} align="stretch">
-                {/* Header */}
-                <HStack justify="space-between" bg={headerBgColor} p={4} borderRadius="lg">
-                    <Text fontSize="2xl" fontWeight="bold" color={textColor}>
-                        NeuroSpace Document Q&A
-                    </Text>
-                    <Button
-                        colorScheme={isConnected ? "green" : "blue"}
-                        onClick={connect}
-                    >
-                        {isConnected ? `Connected: ${address?.slice(0, 6)}...${address?.slice(-4)}` : "Connect Wallet"}
-                    </Button>
-                </HStack>
-
-                {/* Upload Section */}
-                <Box
-                    p={6}
-                    bg={cardBgColor}
-                    borderRadius="lg"
-                    borderWidth="1px"
-                    borderColor={borderColor}
-                    shadow="md"
-                >
-                    <VStack spacing={4} align="stretch">
-                        <Text fontSize="lg" fontWeight="semibold" color={textColor}>Upload Documents</Text>
-                        <HStack>
-                            <Input
-                                type="file"
-                                accept=".pdf,.txt"
-                                onChange={handleFileUpload}
-                                display="none"
-                                id="file-upload"
-                            />
+        <Box minH="100vh" bg={bgColor}>
+            <Box maxW="1200px" mx="auto" p={4}>
+                <VStack spacing={8} align="stretch">
+                    {/* Header */}
+                    <HStack justify="space-between" bg={headerBgColor} p={4} borderRadius="lg">
+                        <Text fontSize="2xl" fontWeight="bold" color={textColor}>
+                            NeuroSpace Document Q&A
+                        </Text>
+                        {!isConnected ? (
                             <Button
-                                as="label"
-                                htmlFor="file-upload"
-                                leftIcon={<FiUpload />}
                                 colorScheme="blue"
-                                isDisabled={!isConnected}
+                                onClick={() => open()}
                             >
-                                Choose File
+                                Connect Wallet
                             </Button>
-                            {selectedFile && (
-                                <Text color={textColor}>{selectedFile.name}</Text>
-                            )}
-                            {uploadStatus && (
-                                <Badge colorScheme={uploadStatus === 'Uploaded' ? 'green' : 'blue'}>
-                                    {uploadStatus}
-                                </Badge>
-                            )}
-                        </HStack>
-                        {!isConnected && (
-                            <Text color="orange.500" fontSize="sm">
-                                Please connect your wallet to upload documents
-                            </Text>
-                        )}
-                    </VStack>
-                </Box>
-
-                {/* Document List */}
-                <Box
-                    p={6}
-                    bg={cardBgColor}
-                    borderRadius="lg"
-                    borderWidth="1px"
-                    borderColor={borderColor}
-                >
-                    <VStack spacing={4} align="stretch">
-                        <Text fontSize="lg" fontWeight="semibold" color={textColor}>Uploaded Documents</Text>
-                        {documents.map(doc => (
-                            <HStack key={doc.id} justify="space-between" p={2} bg={documentBgColor} borderRadius="md">
-                                <Text color={textColor}>{doc.name}</Text>
-                                <HStack>
-                                    <Tooltip label="View on IPFS">
-                                        <Link
-                                            href={`https://ipfs.io/ipfs/${doc.ipfsHash}`}
-                                            isExternal
-                                            color={linkColor}
-                                        >
-                                            <IconButton
-                                                aria-label="View on IPFS"
-                                                icon={<FiHash />}
-                                                size="sm"
-                                                variant="ghost"
-                                            />
-                                        </Link>
-                                    </Tooltip>
-                                    <Tooltip label="Delete document">
-                                        <IconButton
-                                            aria-label="Delete document"
-                                            icon={<FiTrash2 />}
-                                            size="sm"
-                                            variant="ghost"
-                                            colorScheme="red"
-                                            onClick={() => handleDeleteClick(doc.id)}
-                                        />
-                                    </Tooltip>
-                                </HStack>
+                        ) : (
+                            <HStack spacing={4}>
+                                <Button
+                                    onClick={() => disconnect()}
+                                    colorScheme="red"
+                                    size="sm"
+                                >
+                                    Disconnect
+                                </Button>
+                                <Button
+                                    onClick={() => open()}
+                                    colorScheme="blue"
+                                    size="sm"
+                                >
+                                    Switch Account
+                                </Button>
                             </HStack>
-                        ))}
-                    </VStack>
-                </Box>
+                        )}
+                    </HStack>
 
-                {/* Query Section */}
-                <Box
-                    p={6}
-                    bg={cardBgColor}
-                    borderRadius="lg"
-                    borderWidth="1px"
-                    borderColor={borderColor}
-                >
-                    <VStack spacing={4} align="stretch">
-                        <Text fontSize="lg" fontWeight="semibold" color={textColor}>Ask a Question</Text>
-                        <Textarea
-                            value={query}
-                            onChange={(e) => setQuery(e.target.value)}
-                            placeholder="Enter your question here..."
-                            size="lg"
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' && !e.shiftKey) {
-                                    e.preventDefault();
-                                    handleQuery();
-                                }
-                            }}
-                        />
-                        <Button
-                            colorScheme="blue"
-                            onClick={handleQuery}
-                            isLoading={isLoading}
-                            loadingText="Processing..."
-                        >
-                            Submit
-                        </Button>
-                    </VStack>
-                </Box>
-
-                {/* Response Section */}
-                {response && (
+                    {/* Upload Section */}
                     <Box
                         p={6}
                         bg={cardBgColor}
                         borderRadius="lg"
                         borderWidth="1px"
                         borderColor={borderColor}
+                        shadow="md"
                     >
                         <VStack spacing={4} align="stretch">
-                            <HStack justify="space-between">
-                                <Text fontSize="lg" fontWeight="semibold" color={textColor}>Response</Text>
-                                {verificationResult !== null && (
-                                    <Badge colorScheme={verificationResult ? 'green' : 'red'}>
-                                        {verificationResult ? 'Verified' : 'Unverified'}
+                            <Text fontSize="lg" fontWeight="semibold" color={textColor}>Upload Documents</Text>
+                            <HStack>
+                                <Input
+                                    type="file"
+                                    accept=".pdf,.txt"
+                                    onChange={handleFileUpload}
+                                    display="none"
+                                    id="file-upload"
+                                />
+                                <Button
+                                    as="label"
+                                    htmlFor="file-upload"
+                                    leftIcon={<FiUpload />}
+                                    colorScheme="blue"
+                                    isDisabled={!isConnected}
+                                >
+                                    Choose File
+                                </Button>
+                                {selectedFile && (
+                                    <Text color={textColor}>{selectedFile.name}</Text>
+                                )}
+                                {uploadStatus && (
+                                    <Badge colorScheme={uploadStatus === 'Uploaded' ? 'green' : 'blue'}>
+                                        {uploadStatus}
                                     </Badge>
                                 )}
                             </HStack>
-                            <Box p={4} bg={responseBgColor} borderRadius="md">
-                                <ReactMarkdown
-                                    remarkPlugins={[remarkGfm]}
-                                    rehypePlugins={[rehypeRaw]}
-                                    components={markdownComponents}
-                                >
-                                    {response}
-                                </ReactMarkdown>
-                            </Box>
+                            {!isConnected && (
+                                <Text color="orange.500" fontSize="sm">
+                                    Please connect your wallet to upload documents
+                                </Text>
+                            )}
                         </VStack>
                     </Box>
-                )}
 
-                {/* Sources Section */}
-                {sources.length > 0 && (
+                    {/* Document List */}
                     <Box
                         p={6}
                         bg={cardBgColor}
@@ -473,53 +389,163 @@ export default function RAGPage() {
                         borderColor={borderColor}
                     >
                         <VStack spacing={4} align="stretch">
-                            <Text fontSize="lg" fontWeight="semibold" color={textColor}>Sources</Text>
-                            {sources.map((source, index) => (
-                                <Box
-                                    key={`${source.id}-${index}`}
-                                    p={4}
-                                    bg={sourceBgColor}
-                                    borderRadius="md"
-                                >
-                                    <VStack align="stretch" spacing={2}>
-                                        <Text color={textColor}>{source.snippet}</Text>
-                                        <HStack spacing={4}>
-                                            <Tooltip label="View on IPFS">
-                                                <Link
-                                                    href={`https://ipfs.io/ipfs/${source.ipfsHash}`}
-                                                    isExternal
-                                                    color={linkColor}
-                                                    display="flex"
-                                                    alignItems="center"
-                                                    gap={1}
-                                                >
-                                                    <FiHash />
-                                                    {formatHash(source.ipfsHash)}
-                                                </Link>
-                                            </Tooltip>
-                                            {source.transaction_hash && (
-                                                <Tooltip label="View on BaseScan">
+                            <Text fontSize="lg" fontWeight="semibold" color={textColor}>Uploaded Documents</Text>
+                            {documents.map(doc => (
+                                <HStack key={doc.id} justify="space-between" p={2} bg={documentBgColor} borderRadius="md">
+                                    <Text color={textColor}>{doc.name}</Text>
+                                    <HStack>
+                                        <Tooltip label="View on IPFS">
+                                            <Link
+                                                href={`https://ipfs.io/ipfs/${doc.ipfsHash}`}
+                                                isExternal
+                                                color={linkColor}
+                                            >
+                                                <IconButton
+                                                    aria-label="View on IPFS"
+                                                    icon={<FiHash />}
+                                                    size="sm"
+                                                    variant="ghost"
+                                                />
+                                            </Link>
+                                        </Tooltip>
+                                        <Tooltip label="Delete document">
+                                            <IconButton
+                                                aria-label="Delete document"
+                                                icon={<FiTrash2 />}
+                                                size="sm"
+                                                variant="ghost"
+                                                colorScheme="red"
+                                                onClick={() => handleDeleteClick(doc.id)}
+                                            />
+                                        </Tooltip>
+                                    </HStack>
+                                </HStack>
+                            ))}
+                        </VStack>
+                    </Box>
+
+                    {/* Query Section */}
+                    <Box
+                        p={6}
+                        bg={cardBgColor}
+                        borderRadius="lg"
+                        borderWidth="1px"
+                        borderColor={borderColor}
+                    >
+                        <VStack spacing={4} align="stretch">
+                            <Text fontSize="lg" fontWeight="semibold" color={textColor}>Ask a Question</Text>
+                            <Textarea
+                                value={query}
+                                onChange={(e) => setQuery(e.target.value)}
+                                placeholder="Enter your question here..."
+                                size="lg"
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                        e.preventDefault();
+                                        handleQuery();
+                                    }
+                                }}
+                            />
+                            <Button
+                                colorScheme="blue"
+                                onClick={handleQuery}
+                                isLoading={isLoading}
+                                loadingText="Processing..."
+                            >
+                                Submit
+                            </Button>
+                        </VStack>
+                    </Box>
+
+                    {/* Response Section */}
+                    {response && (
+                        <Box
+                            p={6}
+                            bg={cardBgColor}
+                            borderRadius="lg"
+                            borderWidth="1px"
+                            borderColor={borderColor}
+                        >
+                            <VStack spacing={4} align="stretch">
+                                <HStack justify="space-between">
+                                    <Text fontSize="lg" fontWeight="semibold" color={textColor}>Response</Text>
+                                    {verificationResult !== null && (
+                                        <Badge colorScheme={verificationResult ? 'green' : 'red'}>
+                                            {verificationResult ? 'Verified' : 'Unverified'}
+                                        </Badge>
+                                    )}
+                                </HStack>
+                                <Box p={4} bg={responseBgColor} borderRadius="md">
+                                    <ReactMarkdown
+                                        remarkPlugins={[remarkGfm]}
+                                        rehypePlugins={[rehypeRaw]}
+                                        components={markdownComponents}
+                                    >
+                                        {response}
+                                    </ReactMarkdown>
+                                </Box>
+                            </VStack>
+                        </Box>
+                    )}
+
+                    {/* Sources Section */}
+                    {sources.length > 0 && (
+                        <Box
+                            p={6}
+                            bg={cardBgColor}
+                            borderRadius="lg"
+                            borderWidth="1px"
+                            borderColor={borderColor}
+                        >
+                            <VStack spacing={4} align="stretch">
+                                <Text fontSize="lg" fontWeight="semibold" color={textColor}>Sources</Text>
+                                {sources.map((source, index) => (
+                                    <Box
+                                        key={`${source.id}-${index}`}
+                                        p={4}
+                                        bg={sourceBgColor}
+                                        borderRadius="md"
+                                    >
+                                        <VStack align="stretch" spacing={2}>
+                                            <Text color={textColor}>{source.snippet}</Text>
+                                            <HStack spacing={4}>
+                                                <Tooltip label="View on IPFS">
                                                     <Link
-                                                        href={`${blockExplorerUrl}/tx/${source.transaction_hash}`}
+                                                        href={`https://ipfs.io/ipfs/${source.ipfsHash}`}
                                                         isExternal
                                                         color={linkColor}
                                                         display="flex"
                                                         alignItems="center"
                                                         gap={1}
                                                     >
-                                                        <FiLink />
-                                                        {formatHash(source.transaction_hash)}
+                                                        <FiHash />
+                                                        {formatHash(source.ipfsHash)}
                                                     </Link>
                                                 </Tooltip>
-                                            )}
-                                        </HStack>
-                                    </VStack>
-                                </Box>
-                            ))}
-                        </VStack>
-                    </Box>
-                )}
-            </VStack>
+                                                {source.transaction_hash && (
+                                                    <Tooltip label="View on BaseScan">
+                                                        <Link
+                                                            href={`${blockExplorerUrl}/tx/${source.transaction_hash}`}
+                                                            isExternal
+                                                            color={linkColor}
+                                                            display="flex"
+                                                            alignItems="center"
+                                                            gap={1}
+                                                        >
+                                                            <FiLink />
+                                                            {formatHash(source.transaction_hash)}
+                                                        </Link>
+                                                    </Tooltip>
+                                                )}
+                                            </HStack>
+                                        </VStack>
+                                    </Box>
+                                ))}
+                            </VStack>
+                        </Box>
+                    )}
+                </VStack>
+            </Box>
 
             {/* Delete Confirmation Dialog */}
             <AlertDialog
