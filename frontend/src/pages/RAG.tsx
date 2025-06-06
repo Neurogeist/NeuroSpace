@@ -46,7 +46,7 @@ export default function RAGPage() {
     const [documentToDelete, setDocumentToDelete] = useState<string | null>(null);
     const cancelRef = useRef<HTMLButtonElement>(null);
     const toast = useToast();
-    const { address, connect, isConnected, provider } = useWallet();
+    const { address, isConnected, provider } = useWallet();
     const { open } = useWeb3Modal();
     const { disconnect } = useDisconnect();
 

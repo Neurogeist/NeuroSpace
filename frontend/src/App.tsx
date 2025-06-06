@@ -5,7 +5,6 @@ import { Box, ChakraProvider, CSSReset } from '@chakra-ui/react';
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { base, baseSepolia } from 'wagmi/chains';
-import { useAccount } from 'wagmi';
 import { theme } from './theme';
 import Navigation from './components/Navigation';
 import { AppProvider } from './context/AppContext';
@@ -39,17 +38,6 @@ createWeb3Modal({
 });
 
 const queryClient = new QueryClient();
-
-function TestComponent() {
-  const { address, isConnected } = useAccount();
-  return (
-    <Box p={4}>
-      <h1>Wallet Status</h1>
-      <p>Connected: {isConnected ? 'Yes' : 'No'}</p>
-      <p>Address: {address}</p>
-    </Box>
-  );
-}
 
 function AppContent() {
   const location = useLocation();

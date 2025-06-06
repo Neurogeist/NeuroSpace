@@ -35,7 +35,7 @@ export default function AgentsPage() {
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [response, setResponse] = useState<AgentQueryResponse | null>(null);
     const toast = useToast();
-    const { address, connect, isConnected, provider } = useWallet();
+    const { address, isConnected, provider } = useWallet();
     const { open } = useWeb3Modal();
     const { disconnect } = useDisconnect();
 
