@@ -120,7 +120,7 @@ const Documentation = () => {
               </Box>
 
               <Box>
-                <Heading size="sm" mb={2}>Option 3: Pay with NeuroCoin (Coming Soon)</Heading>
+                <Heading size="sm" mb={2}>Option 3: Pay with NeuroCoin</Heading>
                 <List spacing={2}>
                   <ListItem>
                     <ListIcon as={FaCheckCircle} color="blue.500" />
