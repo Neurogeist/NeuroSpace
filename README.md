@@ -55,12 +55,13 @@ pip install -r requirements.txt
 
 4. Install Node.js dependencies for smart contracts:
 ```bash
-cd contracts
+cd frontend/contracts
 npm install
 ```
 
-5. Create a `.env` file in the root directory:
+5. Navigate to the root directory and create a `.env` file:
 ```bash
+cd ../..
 cp .env.example .env
 ```
 
