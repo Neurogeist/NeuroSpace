@@ -23,7 +23,7 @@ import {
   ModalFooter,
 } from '@chakra-ui/react'
 import { useNavigate } from 'react-router-dom'
-import { FaRobot, FaDatabase, FaShieldAlt, FaCheckCircle, FaNetworkWired, FaCoins, FaEdit, FaMagic, FaKey, FaLink, FaFileAlt, FaDownload } from 'react-icons/fa'
+import { FaRobot, FaDatabase, FaShieldAlt, FaCheckCircle, FaNetworkWired, FaCoins, FaEdit, FaMagic, FaKey, FaLink, FaFileAlt, FaDownload, FaUserCog } from 'react-icons/fa'
 
 const Feature = ({ title, text, icon }: { title: string; text: string; icon: any }) => {
   return (
@@ -165,6 +165,16 @@ const LandingPage = () => {
                 _hover={{ transform: 'translateY(-2px)', shadow: 'lg' }}
               >
                 Explore RAG
+              </Button>
+              <Button
+                colorScheme="green"
+                size="lg"
+                onClick={() => navigate('/agents')}
+                leftIcon={<FaUserCog />}
+                px={8}
+                _hover={{ transform: 'translateY(-2px)', shadow: 'lg' }}
+              >
+                AI Agents
               </Button>
               <Button
                 colorScheme="teal"
